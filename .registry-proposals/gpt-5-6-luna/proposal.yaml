@@ -1,0 +1,87 @@
+schema_version: '1'
+model: gpt-5.6-luna
+proposal_date: '2026-08-29'
+changes:
+- field_path: evidence_conflicts
+  change_type: update
+  current_value:
+  - field_path: pricing
+    statements:
+    - The dedicated GPT-5.6 Luna model page lists $1 input, $0.10 cached input, and
+      $6 output per million tokens.
+    - The models catalog summary lists $0.20 input and $1.20 output per million tokens.
+    source_ids:
+    - openai-gpt-5-6-luna-2026-08-08
+    - openai-model-catalog-2026-08-08
+    notes: Pricing is deliberately omitted until the official pages converge or a
+      structured authority resolves the conflict.
+  proposed_value: []
+  confidence: authoritative
+  risk: low
+  supporting_sources:
+  - openai-gpt-5-6-luna-2026-08-29
+  - openai-model-catalog-2026-08-29
+  reason: authoritative claim supported by a tier 1-3 source
+- field_path: pricing
+  change_type: update
+  current_value: null
+  proposed_value:
+    input:
+      amount: '0.2'
+      currency: USD
+      unit: per_1m_tokens
+      valid_from: null
+      valid_until: null
+      notes: null
+      sources: []
+    output:
+      amount: '1.2'
+      currency: USD
+      unit: per_1m_tokens
+      valid_from: null
+      valid_until: null
+      notes: null
+      sources: []
+    cached_input:
+      amount: '0.02'
+      currency: USD
+      unit: per_1m_tokens
+      valid_from: null
+      valid_until: null
+      notes: null
+      sources: []
+    batch: null
+  confidence: authoritative
+  risk: high
+  supporting_sources:
+  - openai-gpt-5-6-luna-2026-08-29
+  reason: authoritative claim supported by a tier 1-3 source
+conflicts: []
+unknown_fields: []
+warnings:
+- The registry cannot yet represent long-context price multipliers or cache-write
+  pricing.
+candidate_errors: []
+review:
+  status: approved
+  reviewed_at: '2026-08-29'
+  decisions:
+  - field_path: evidence_conflicts
+    decision: approved
+    disposition: promoted
+    rationale: The GPT-5.6 Luna model page and the models catalog were independently
+      refetched on 2026-08-29 and both list $0.20 input and $1.20 output per million
+      tokens, so the recorded official pricing conflict is resolved.
+  - field_path: pricing
+    decision: approved
+    disposition: promoted
+    rationale: With the conflict resolved, the refetched official Luna model page
+      supports $0.20 input, $0.02 cached input, and $1.20 output per million tokens.
+  - field_path: freshness
+    decision: approved
+    disposition: promoted
+    rationale: The refetched official model page, models catalog, and GPT-5.6 guide
+      support the candidate profile and the evidence refresh.
+  notes: Long-context price multipliers and cache-write pricing remain unrepresentable
+    in the current schema; a future schema change is tracked separately and does not
+    block this promotion.

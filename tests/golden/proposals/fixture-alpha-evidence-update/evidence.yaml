@@ -1,0 +1,115 @@
+schema_version: '1'
+subject: Fixture Alpha evidence update
+canonical_model_candidate: alpha large
+research_date: '2026-08-08'
+claims:
+- id: unchanged
+  field_path: capabilities.tool_use
+  value: true
+  statement: Tool use remains supported.
+  kind: fact
+  evidence_type: direct
+  confidence: high
+  sources:
+  - official
+  action: set
+  notes: null
+- id: updated
+  field_path: capabilities.context_window_tokens
+  value: 250000
+  statement: The context limit changed.
+  kind: fact
+  evidence_type: direct
+  confidence: authoritative
+  sources:
+  - official
+  action: set
+  notes: null
+- id: added
+  field_path: parameters.new_control
+  value:
+    state: supported
+  statement: A new control exists.
+  kind: fact
+  evidence_type: direct
+  confidence: high
+  sources:
+  - official
+  action: set
+  notes: null
+- id: conflict-yes
+  field_path: capabilities.reasoning
+  value: true
+  statement: Reasoning is supported.
+  kind: fact
+  evidence_type: direct
+  confidence: high
+  sources:
+  - official
+  action: set
+  notes: null
+- id: conflict-no
+  field_path: capabilities.reasoning
+  value: false
+  statement: Reasoning is unavailable on one endpoint.
+  kind: fact
+  evidence_type: direct
+  confidence: high
+  sources:
+  - official
+  action: set
+  notes: null
+- id: weak
+  field_path: capabilities.telepathy
+  value: true
+  statement: A community user reports telepathy.
+  kind: observation
+  evidence_type: direct
+  confidence: low
+  sources:
+  - community
+  action: set
+  notes: null
+sources:
+- id: official
+  url: https://example.com/official
+  title: official
+  source_type: official_documentation
+  authority_tier: 2
+  publisher: Example
+  retrieved_at: '2026-08-08'
+  published_at: null
+  supports:
+  - capabilities
+  - parameters
+  notes: null
+- id: community
+  url: https://example.com/community
+  title: community
+  source_type: community_report
+  authority_tier: 6
+  publisher: Example
+  retrieved_at: '2026-08-08'
+  published_at: null
+  supports:
+  - capabilities
+  - parameters
+  notes: null
+observations:
+- id: eager-tools
+  topic: tool_eagerness
+  statement: A user observed eager tool calls.
+  confidence: low
+  sources:
+  - community
+  model: null
+  notes: null
+conflicts:
+- id: reasoning-conflict
+  claim_ids:
+  - conflict-yes
+  - conflict-no
+  statement: Endpoint evidence conflicts.
+  notes: null
+unresolved_questions: []
+warnings: []

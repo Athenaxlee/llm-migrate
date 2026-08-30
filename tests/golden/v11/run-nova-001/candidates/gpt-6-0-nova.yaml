@@ -1,0 +1,97 @@
+schema_version: '1'
+fixture: false
+identity:
+  canonical_name: gpt-6.0-nova
+  display_name: GPT-6.0 Nova
+  provider: openai
+  model_family: gpt-6.0
+  version: nova
+  aliases:
+  - gpt 6.0 nova
+platforms:
+- platform: openai-api
+  model_id: gpt-6.0-nova
+  endpoint: responses
+  regions: []
+  capability_overrides: null
+  sources: []
+lifecycle:
+  status: active
+  announced_on: null
+  deprecated_on: null
+  end_of_life_on: null
+  earliest_end_of_life_on: null
+  sources: []
+pricing:
+  input:
+    amount: '6'
+    currency: USD
+    unit: per_1m_tokens
+    valid_from: null
+    valid_until: null
+    notes: null
+    sources: []
+  output:
+    amount: '24'
+    currency: USD
+    unit: per_1m_tokens
+    valid_from: null
+    valid_until: null
+    notes: null
+    sources: []
+  cached_input: null
+  batch: null
+capabilities:
+  text_input: true
+  image_input: null
+  document_input: null
+  structured_output: true
+  tool_use: true
+  parallel_tool_use: null
+  reasoning: null
+  prompt_caching: null
+  streaming: true
+  batch_inference: null
+  context_window_tokens: 2000000
+  maximum_output_tokens: 256000
+  sources: []
+parameters: {}
+prompt_guidance:
+  preferred_structure: []
+  delimiter_guidance: []
+  reasoning_guidance: []
+  verbosity_sensitivity: []
+  negative_instruction_guidance: []
+  structured_output_guidance: []
+  tool_use_guidance: []
+  sources: []
+freshness:
+  availability:
+    checked_at: '2026-08-29'
+    max_age_days: 14
+  capabilities:
+    checked_at: '2026-08-29'
+    max_age_days: 30
+  lifecycle:
+    checked_at: '2026-08-29'
+    max_age_days: 7
+  pricing:
+    checked_at: '2026-08-29'
+    max_age_days: 7
+evidence_conflicts: []
+sources:
+- id: official-nova-model-page
+  url: https://developers.example.com/docs/gpt-6.0-nova
+  title: gpt-6.0-nova
+  source_type: official_documentation
+  authority_tier: 2
+  publisher: Example Provider
+  retrieved_at: '2026-08-29'
+  published_at: null
+  supports:
+  - identity
+  - platforms
+  - lifecycle
+  - pricing
+  - capabilities
+  notes: null

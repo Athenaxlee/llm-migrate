@@ -1,0 +1,61 @@
+{
+  "target": {
+    "provider": "openai",
+    "platform": "openai-api",
+    "sdk": "openai",
+    "client": "OpenAI",
+    "operation": "responses.create",
+    "model_field": "model",
+    "model_id": "gpt-5.6-sol",
+    "message_field": "input",
+    "system_field": "instructions",
+    "parameter_container": null,
+    "tool_field": "tools",
+    "structured_output_field": "text.format",
+    "image_input_format": "input.content.input_image",
+    "document_input_format": "input.content.input_file"
+  },
+  "parameter_mappings": [
+    {
+      "source_name": "max_tokens",
+      "target_name": "max_output_tokens",
+      "target_container": null,
+      "value": 500,
+      "state": "mechanically_convertible",
+      "rationale": "Map max_tokens to max_output_tokens for openai-api."
+    },
+    {
+      "source_name": "temperature",
+      "target_name": null,
+      "target_container": null,
+      "value": 0,
+      "state": "unknown",
+      "rationale": "Target registry has no support fact for this parameter."
+    }
+  ],
+  "required_changes": [
+    "Replace model identifier with gpt-5.6-sol in field model.",
+    "Use openai.OpenAI and responses.create.",
+    "Translate request shape to the openai-api message contract.",
+    "Translate tool configuration to tools.",
+    "Replace provider/platform authentication, configuration, and error-handling assumptions."
+  ],
+  "warnings": [
+    "Unknown target support for parameter temperature."
+  ],
+  "blockers": [],
+  "tool_compatibility": {
+    "concern": "tool use",
+    "state": "mechanically_convertible",
+    "rationale": "Tool wrappers can be converted while preserving the resolved JSON Schemas.",
+    "locations": [
+      {
+        "path": "app.py",
+        "line": 15,
+        "column": 10,
+        "end_line": 25
+      }
+    ],
+    "issues": []
+  }
+}

@@ -1,0 +1,218 @@
+{
+  "files_scanned": 1,
+  "findings": [
+    {
+      "detail": "imports from anthropic",
+      "kind": "provider_sdk",
+      "location": {
+        "column": 0,
+        "end_line": 4,
+        "line": 4,
+        "path": "app.py"
+      },
+      "metadata": null,
+      "platform": "anthropic-api",
+      "provider": "anthropic",
+      "value": "anthropic"
+    },
+    {
+      "detail": "reads LLM configuration ANTHROPIC_API_KEY",
+      "kind": "configuration",
+      "location": {
+        "column": 27,
+        "end_line": 6,
+        "line": 6,
+        "path": "app.py"
+      },
+      "metadata": null,
+      "platform": null,
+      "provider": null,
+      "value": "ANTHROPIC_API_KEY"
+    },
+    {
+      "detail": "loads prompt content from a file",
+      "kind": "prompt",
+      "location": {
+        "column": 0,
+        "end_line": 7,
+        "line": 7,
+        "path": "app.py"
+      },
+      "metadata": null,
+      "platform": null,
+      "provider": null,
+      "value": "prompts/system.txt"
+    },
+    {
+      "detail": "calls client.messages.create",
+      "kind": "invocation",
+      "location": {
+        "column": 11,
+        "end_line": 27,
+        "line": 9,
+        "path": "app.py"
+      },
+      "metadata": null,
+      "platform": "anthropic-api",
+      "provider": "anthropic",
+      "value": "client.messages.create"
+    },
+    {
+      "detail": "passes a literal model identifier",
+      "kind": "model_identifier",
+      "location": {
+        "column": 10,
+        "end_line": 10,
+        "line": 10,
+        "path": "app.py"
+      },
+      "metadata": null,
+      "platform": "anthropic-api",
+      "provider": "anthropic",
+      "value": "claude-sonnet-5"
+    },
+    {
+      "detail": "supplies prompt content through system",
+      "kind": "prompt",
+      "location": {
+        "column": 11,
+        "end_line": 11,
+        "line": 11,
+        "path": "app.py"
+      },
+      "metadata": null,
+      "platform": "anthropic-api",
+      "provider": "anthropic",
+      "value": "system"
+    },
+    {
+      "detail": "supplies prompt content through messages",
+      "kind": "prompt",
+      "location": {
+        "column": 13,
+        "end_line": 12,
+        "line": 12,
+        "path": "app.py"
+      },
+      "metadata": null,
+      "platform": "anthropic-api",
+      "provider": "anthropic",
+      "value": "messages"
+    },
+    {
+      "detail": "sets generation parameter max_tokens",
+      "kind": "parameter",
+      "location": {
+        "column": 15,
+        "end_line": 13,
+        "line": 13,
+        "path": "app.py"
+      },
+      "metadata": {
+        "name": "max_tokens",
+        "value": 500
+      },
+      "platform": "anthropic-api",
+      "provider": "anthropic",
+      "value": "max_tokens=500"
+    },
+    {
+      "detail": "sets generation parameter temperature",
+      "kind": "parameter",
+      "location": {
+        "column": 16,
+        "end_line": 14,
+        "line": 14,
+        "path": "app.py"
+      },
+      "metadata": {
+        "name": "temperature",
+        "value": 0
+      },
+      "platform": "anthropic-api",
+      "provider": "anthropic",
+      "value": "temperature=0"
+    },
+    {
+      "detail": "configures tools",
+      "kind": "tool",
+      "location": {
+        "column": 10,
+        "end_line": 25,
+        "line": 15,
+        "path": "app.py"
+      },
+      "metadata": {
+        "definition_count": 1
+      },
+      "platform": "anthropic-api",
+      "provider": "anthropic",
+      "value": "tools"
+    },
+    {
+      "detail": "enables streaming",
+      "kind": "streaming",
+      "location": {
+        "column": 11,
+        "end_line": 26,
+        "line": 26,
+        "path": "app.py"
+      },
+      "metadata": null,
+      "platform": "anthropic-api",
+      "provider": "anthropic",
+      "value": true
+    }
+  ],
+  "multimodal_inputs": [],
+  "requirements": {
+    "minimum_context_window": null,
+    "required_capabilities": [
+      "streaming",
+      "tool_use"
+    ],
+    "required_parameters": [
+      "max_tokens",
+      "temperature"
+    ],
+    "source_models": [
+      "claude-sonnet-5"
+    ],
+    "source_platforms": [
+      "anthropic-api"
+    ],
+    "source_providers": [
+      "anthropic"
+    ]
+  },
+  "root": "<fixture>",
+  "schema_version": "2",
+  "structured_outputs": [],
+  "tool_definitions": [
+    {
+      "choice": null,
+      "description": "Return current weather for a city.",
+      "input_schema": {
+        "properties": {
+          "city": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "city"
+        ],
+        "type": "object"
+      },
+      "location": {
+        "column": 10,
+        "end_line": 25,
+        "line": 15,
+        "path": "app.py"
+      },
+      "name": "get_weather",
+      "provider_format": "anthropic-api.tools",
+      "strict": null
+    }
+  ],
+  "warnings": []
+}

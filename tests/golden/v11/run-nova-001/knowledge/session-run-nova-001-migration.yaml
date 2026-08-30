@@ -1,0 +1,29 @@
+schema_version: '1'
+id: session-run-nova-001-migration
+source_model: claude-sonnet-5
+target_model: gpt-6.0-nova
+changes:
+- field_path: tools
+  statement: Nova requires flattened tool schemas; nested anyOf branches must be expanded
+    before migration.
+  severity: high
+  recommended_action: Flatten nested tool schemas during migration.
+  supporting_sources:
+  - official-nova-migration-guide
+sources:
+- id: official-nova-migration-guide
+  url: https://developers.example.com/docs/migrating-to-nova
+  title: migrating-to-nova
+  source_type: official_documentation
+  authority_tier: 2
+  publisher: Example Provider
+  retrieved_at: '2026-08-29'
+  published_at: null
+  supports:
+  - identity
+  - platforms
+  - lifecycle
+  - pricing
+  - capabilities
+  notes: null
+checked_at: '2026-08-29'

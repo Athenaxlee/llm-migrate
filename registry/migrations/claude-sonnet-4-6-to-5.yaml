@@ -1,0 +1,36 @@
+schema_version: "1"
+id: claude-sonnet-4-6-to-5
+source_model: claude-sonnet-4-6
+target_model: claude-sonnet-5
+checked_at: 2026-08-08
+changes:
+  - field_path: parameters.thinking
+    statement: Manual extended thinking is removed and returns HTTP 400 on Sonnet 5.
+    severity: breaking
+    recommended_action: Use adaptive thinking with the effort parameter.
+    supporting_sources: [anthropic-sonnet-5-migration-2026-08-08]
+  - field_path: parameters.sampling
+    statement: Non-default temperature, top_p, or top_k values return HTTP 400 on Sonnet 5.
+    severity: breaking
+    recommended_action: Remove non-default sampling parameters and use prompt instructions.
+    supporting_sources: [anthropic-sonnet-5-migration-2026-08-08]
+  - field_path: reasoning.default
+    statement: Adaptive thinking is on by default on Sonnet 5.
+    severity: high
+    recommended_action: Revisit max_tokens and explicitly disable thinking when appropriate.
+    supporting_sources: [anthropic-sonnet-5-migration-2026-08-08]
+  - field_path: tokenizer
+    statement: The same input text produces approximately 30 percent more tokens than on Sonnet 4.6.
+    severity: high
+    recommended_action: Recount prompts and revisit context, output, and cost budgets.
+    supporting_sources: [anthropic-sonnet-5-migration-2026-08-08]
+sources:
+  - id: anthropic-sonnet-5-migration-2026-08-08
+    url: https://platform.claude.com/docs/en/about-claude/models/whats-new-sonnet-5
+    title: What's new in Claude Sonnet 5
+    source_type: official_documentation
+    authority_tier: 2
+    publisher: Anthropic
+    retrieved_at: 2026-08-08
+    published_at: 2026-06-30
+    supports: [parameters.thinking, parameters.sampling, reasoning.default, tokenizer]

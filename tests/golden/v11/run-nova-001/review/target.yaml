@@ -1,0 +1,117 @@
+schema_version: '1'
+reviewer_id: reviewer-independent
+researcher_id: researcher-target
+research_sha256: c35ae003519d0f219445302ad6190186b5a0954f172dd6d9ff0b718a4852d891
+reviewed_at: '2026-08-29'
+verdicts:
+- claim_id: nova-identity
+  verdict: supported
+  checked_source_ids:
+  - official-nova-model-page
+  scope:
+    provider: openai
+    platform: null
+  rationale: Refetched the cited official page; it states this fact.
+  warnings: []
+  blockers: []
+- claim_id: nova-platform
+  verdict: supported
+  checked_source_ids:
+  - official-nova-model-page
+  scope:
+    provider: openai
+    platform: null
+  rationale: Refetched the cited official page; it states this fact.
+  warnings: []
+  blockers: []
+- claim_id: nova-lifecycle
+  verdict: supported
+  checked_source_ids:
+  - official-nova-model-page
+  scope:
+    provider: openai
+    platform: null
+  rationale: Refetched the cited official page; it states this fact.
+  warnings: []
+  blockers: []
+- claim_id: nova-text-input
+  verdict: supported
+  checked_source_ids:
+  - official-nova-model-page
+  scope:
+    provider: openai
+    platform: null
+  rationale: Refetched the cited official page; it states this fact.
+  warnings: []
+  blockers: []
+- claim_id: nova-tool-use
+  verdict: supported
+  checked_source_ids:
+  - official-nova-model-page
+  scope:
+    provider: openai
+    platform: null
+  rationale: Refetched the cited official page; it states this fact.
+  warnings: []
+  blockers: []
+- claim_id: nova-structured-output
+  verdict: supported
+  checked_source_ids:
+  - official-nova-model-page
+  scope:
+    provider: openai
+    platform: null
+  rationale: Refetched the cited official page; it states this fact.
+  warnings: []
+  blockers: []
+- claim_id: nova-streaming
+  verdict: supported
+  checked_source_ids:
+  - official-nova-model-page
+  scope:
+    provider: openai
+    platform: null
+  rationale: Refetched the cited official page; it states this fact.
+  warnings: []
+  blockers: []
+- claim_id: nova-context
+  verdict: supported
+  checked_source_ids:
+  - official-nova-model-page
+  scope:
+    provider: openai
+    platform: null
+  rationale: Refetched the cited official page; it states this fact.
+  warnings: []
+  blockers: []
+- claim_id: nova-output-limit
+  verdict: supported
+  checked_source_ids:
+  - official-nova-model-page
+  scope:
+    provider: openai
+    platform: null
+  rationale: Refetched the cited official page; it states this fact.
+  warnings: []
+  blockers: []
+- claim_id: nova-price-input
+  verdict: supported
+  checked_source_ids:
+  - official-nova-model-page
+  scope:
+    provider: openai
+    platform: null
+  rationale: Refetched the cited official page; it states this fact.
+  warnings: []
+  blockers: []
+- claim_id: nova-price-output
+  verdict: supported
+  checked_source_ids:
+  - official-nova-model-page
+  scope:
+    provider: openai
+    platform: null
+  rationale: Refetched the cited official page; it states this fact.
+  warnings: []
+  blockers: []
+warnings: []

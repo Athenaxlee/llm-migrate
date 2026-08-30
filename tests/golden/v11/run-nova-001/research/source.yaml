@@ -1,0 +1,47 @@
+schema_version: '1'
+subject: claude-sonnet-5
+canonical_model_candidate: claude-sonnet-5
+research_date: '2026-08-29'
+claims:
+- id: sonnet-5-lifecycle
+  field_path: lifecycle.status
+  value: active
+  statement: The official catalog still recommends Sonnet 5.
+  kind: fact
+  evidence_type: direct
+  confidence: authoritative
+  sources:
+  - official-sonnet-5-model-page
+  action: set
+  notes: null
+- id: sonnet-5-price-input
+  field_path: pricing.input.amount
+  value: '2'
+  statement: The official pricing page still lists two dollars per million.
+  kind: fact
+  evidence_type: direct
+  confidence: authoritative
+  sources:
+  - official-sonnet-5-model-page
+  action: set
+  notes: null
+sources:
+- id: official-sonnet-5-model-page
+  url: https://developers.example.com/docs/claude-sonnet-5
+  title: claude-sonnet-5
+  source_type: official_documentation
+  authority_tier: 2
+  publisher: Example Provider
+  retrieved_at: '2026-08-29'
+  published_at: null
+  supports:
+  - identity
+  - platforms
+  - lifecycle
+  - pricing
+  - capabilities
+  notes: null
+observations: []
+conflicts: []
+unresolved_questions: []
+warnings: []

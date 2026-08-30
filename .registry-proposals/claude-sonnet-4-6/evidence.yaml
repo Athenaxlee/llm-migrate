@@ -1,0 +1,75 @@
+schema_version: "1"
+subject: claude-sonnet-4-6
+canonical_model_candidate: claude-sonnet-4-6
+research_date: 2026-08-09
+claims:
+  - id: sonnet-4-6-active
+    field_path: lifecycle.status
+    value: active
+    statement: Anthropic and AWS list Claude Sonnet 4.6 as active.
+    kind: fact
+    evidence_type: direct
+    confidence: authoritative
+    sources: [anthropic-model-deprecations-2026-08-08, aws-sonnet-4-6-card-2026-08-08]
+  - id: sonnet-4-6-context
+    field_path: capabilities.context_window_tokens
+    value: 1000000
+    statement: Official Anthropic and AWS documentation specify a 1M-token context window.
+    kind: fact
+    evidence_type: direct
+    confidence: authoritative
+    sources: [anthropic-sonnet-migration-2026-08-08, aws-sonnet-4-6-card-2026-08-08]
+  - id: sonnet-4-6-output
+    field_path: capabilities.maximum_output_tokens
+    value: 128000
+    statement: Anthropic states that Sonnet 5's 128K output maximum is unchanged from Sonnet 4.6.
+    kind: fact
+    evidence_type: direct
+    confidence: authoritative
+    sources: [anthropic-sonnet-migration-2026-08-08]
+  - id: sonnet-4-6-adaptive-thinking
+    field_path: parameters.thinking.state
+    value: deprecated
+    statement: Manual extended thinking is deprecated and adaptive thinking is supported.
+    kind: fact
+    evidence_type: direct
+    confidence: authoritative
+    sources: [anthropic-sonnet-migration-2026-08-08]
+sources:
+  - id: anthropic-models-overview-2026-08-08
+    url: https://platform.claude.com/docs/en/about-claude/models/overview
+    title: Models overview
+    source_type: official_documentation
+    authority_tier: 2
+    publisher: Anthropic
+    retrieved_at: 2026-08-09
+    supports: [identity, pricing, capabilities, platforms]
+  - id: anthropic-sonnet-migration-2026-08-08
+    url: https://platform.claude.com/docs/en/about-claude/models/migration-guide
+    title: Migration guide
+    source_type: official_documentation
+    authority_tier: 2
+    publisher: Anthropic
+    retrieved_at: 2026-08-09
+    supports: [parameters, prompt_guidance, capabilities]
+  - id: anthropic-model-deprecations-2026-08-08
+    url: https://platform.claude.com/docs/en/about-claude/model-deprecations
+    title: Model deprecations
+    source_type: official_documentation
+    authority_tier: 2
+    publisher: Anthropic
+    retrieved_at: 2026-08-09
+    supports: [lifecycle]
+  - id: aws-sonnet-4-6-card-2026-08-08
+    url: https://docs.aws.amazon.com/bedrock/latest/userguide/model-card-anthropic-claude-sonnet-4-6.html
+    title: Claude Sonnet 4.6 - Amazon Bedrock
+    source_type: official_documentation
+    authority_tier: 2
+    publisher: Amazon Web Services
+    retrieved_at: 2026-08-09
+    supports: [platforms, lifecycle, capabilities]
+observations: []
+conflicts: []
+unresolved_questions:
+  - Does Sonnet 4.6 enable adaptive thinking by default when the thinking field is omitted?
+warnings: []

@@ -1,0 +1,43 @@
+schema_version: '1'
+subject: claude-sonnet-5 -> gpt-6.0-nova
+canonical_model_candidate: null
+research_date: '2026-08-29'
+claims:
+- id: pair-tool-schema
+  field_path: migration_behavior.tools
+  value:
+    field_path: tools
+    statement: Nova requires flattened tool schemas; nested anyOf branches must be
+      expanded before migration.
+    severity: high
+    recommended_action: Flatten nested tool schemas during migration.
+    supporting_sources:
+    - official-nova-migration-guide
+  statement: The official migration guide documents a tool-schema change.
+  kind: fact
+  evidence_type: direct
+  confidence: authoritative
+  sources:
+  - official-nova-migration-guide
+  action: set
+  notes: null
+sources:
+- id: official-nova-migration-guide
+  url: https://developers.example.com/docs/migrating-to-nova
+  title: migrating-to-nova
+  source_type: official_documentation
+  authority_tier: 2
+  publisher: Example Provider
+  retrieved_at: '2026-08-29'
+  published_at: null
+  supports:
+  - identity
+  - platforms
+  - lifecycle
+  - pricing
+  - capabilities
+  notes: null
+observations: []
+conflicts: []
+unresolved_questions: []
+warnings: []

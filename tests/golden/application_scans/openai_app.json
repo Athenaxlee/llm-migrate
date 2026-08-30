@@ -1,0 +1,242 @@
+{
+  "files_scanned": 1,
+  "findings": [
+    {
+      "detail": "imports from openai",
+      "kind": "provider_sdk",
+      "location": {
+        "column": 0,
+        "end_line": 3,
+        "line": 3,
+        "path": "app.py"
+      },
+      "metadata": null,
+      "platform": "openai-api",
+      "provider": "openai",
+      "value": "openai"
+    },
+    {
+      "detail": "calls client.responses.create",
+      "kind": "invocation",
+      "location": {
+        "column": 11,
+        "end_line": 43,
+        "line": 7,
+        "path": "app.py"
+      },
+      "metadata": null,
+      "platform": "openai-api",
+      "provider": "openai",
+      "value": "client.responses.create"
+    },
+    {
+      "detail": "passes a literal model identifier",
+      "kind": "model_identifier",
+      "location": {
+        "column": 10,
+        "end_line": 8,
+        "line": 8,
+        "path": "app.py"
+      },
+      "metadata": null,
+      "platform": "openai-api",
+      "provider": "openai",
+      "value": "gpt-5.6-sol"
+    },
+    {
+      "detail": "supplies prompt content through input",
+      "kind": "prompt",
+      "location": {
+        "column": 10,
+        "end_line": 17,
+        "line": 9,
+        "path": "app.py"
+      },
+      "metadata": null,
+      "platform": "openai-api",
+      "provider": "openai",
+      "value": "input"
+    },
+    {
+      "detail": "supplies image input",
+      "kind": "multimodal",
+      "location": {
+        "column": 16,
+        "end_line": 14,
+        "line": 14,
+        "path": "app.py"
+      },
+      "metadata": null,
+      "platform": null,
+      "provider": null,
+      "value": "image_input"
+    },
+    {
+      "detail": "sets generation parameter max_output_tokens",
+      "kind": "parameter",
+      "location": {
+        "column": 22,
+        "end_line": 18,
+        "line": 18,
+        "path": "app.py"
+      },
+      "metadata": {
+        "name": "max_output_tokens",
+        "value": 1000
+      },
+      "platform": "openai-api",
+      "provider": "openai",
+      "value": "max_output_tokens=1000"
+    },
+    {
+      "detail": "sets generation parameter reasoning_effort",
+      "kind": "parameter",
+      "location": {
+        "column": 21,
+        "end_line": 19,
+        "line": 19,
+        "path": "app.py"
+      },
+      "metadata": {
+        "name": "reasoning_effort",
+        "value": "medium"
+      },
+      "platform": "openai-api",
+      "provider": "openai",
+      "value": "reasoning_effort=medium"
+    },
+    {
+      "detail": "configures tools",
+      "kind": "tool",
+      "location": {
+        "column": 10,
+        "end_line": 31,
+        "line": 20,
+        "path": "app.py"
+      },
+      "metadata": {
+        "definition_count": 1
+      },
+      "platform": "openai-api",
+      "provider": "openai",
+      "value": "tools"
+    },
+    {
+      "detail": "configures structured output through text",
+      "kind": "structured_output",
+      "location": {
+        "column": 9,
+        "end_line": 42,
+        "line": 32,
+        "path": "app.py"
+      },
+      "metadata": {
+        "schema_detected": true
+      },
+      "platform": "openai-api",
+      "provider": "openai",
+      "value": "text"
+    },
+    {
+      "detail": "parses a model response with json.loads",
+      "kind": "response_parser",
+      "location": {
+        "column": 10,
+        "end_line": 44,
+        "line": 44,
+        "path": "app.py"
+      },
+      "metadata": null,
+      "platform": null,
+      "provider": null,
+      "value": "json.loads"
+    }
+  ],
+  "multimodal_inputs": [
+    {
+      "location": {
+        "column": 16,
+        "end_line": 14,
+        "line": 14,
+        "path": "app.py"
+      },
+      "modality": "image_input",
+      "provider_format": "input.content.input_image",
+      "source_kind": "url"
+    }
+  ],
+  "requirements": {
+    "minimum_context_window": null,
+    "required_capabilities": [
+      "image_input",
+      "structured_output",
+      "tool_use"
+    ],
+    "required_parameters": [
+      "max_output_tokens",
+      "reasoning_effort"
+    ],
+    "source_models": [
+      "gpt-5.6-sol"
+    ],
+    "source_platforms": [
+      "openai-api"
+    ],
+    "source_providers": [
+      "openai"
+    ]
+  },
+  "root": "<fixture>",
+  "schema_version": "2",
+  "structured_outputs": [
+    {
+      "json_schema": {
+        "properties": {
+          "vendor_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "vendor_id"
+        ],
+        "type": "object"
+      },
+      "location": {
+        "column": 9,
+        "end_line": 42,
+        "line": 32,
+        "path": "app.py"
+      },
+      "name": "invoice",
+      "provider_format": "openai-api.text",
+      "strict": null
+    }
+  ],
+  "tool_definitions": [
+    {
+      "choice": null,
+      "description": "Look up a vendor by ID.",
+      "input_schema": {
+        "properties": {
+          "vendor_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "vendor_id"
+        ],
+        "type": "object"
+      },
+      "location": {
+        "column": 10,
+        "end_line": 31,
+        "line": 20,
+        "path": "app.py"
+      },
+      "name": "lookup_vendor",
+      "provider_format": "openai-api.tools",
+      "strict": null
+    }
+  ],
+  "warnings": []
+}

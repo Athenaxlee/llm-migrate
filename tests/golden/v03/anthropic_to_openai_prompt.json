@@ -1,0 +1,88 @@
+{
+  "source_model": "claude-sonnet-5",
+  "target_model": "gpt-5.6-sol",
+  "source_provider": "anthropic",
+  "target_provider": "openai",
+  "source_platform": "anthropic-api",
+  "target_platform": "openai-api",
+  "source_role": "system",
+  "candidate_prompt": "# Task\nProvide a concise justification and return JSON.\nNever invent facts. Do not omit fields. Avoid prose. You must not add keys.\nUse the weather tool when needed.\nExample 1:\nInput: Seattle\nOutput: {\"city\": \"Seattle\"}\nUse the weather tool when needed.\n<context>Grounded data</context>\n",
+  "semantic_diff": [
+    {
+      "state": "preserved",
+      "concern": "objective",
+      "before": "Never invent facts. Do not omit fields. Avoid prose. You must not add keys.",
+      "after": "Never invent facts. Do not omit fields. Avoid prose. You must not add keys."
+    },
+    {
+      "state": "preserved",
+      "concern": "input/output contract",
+      "before": "Think step by step and return JSON.",
+      "after": "Provide a concise justification and return JSON."
+    },
+    {
+      "state": "preserved",
+      "concern": "examples",
+      "before": "Example 1:\nInput: Seattle\nOutput: {\"city\": \"Seattle\"}",
+      "after": "Example 1:\nInput: Seattle\nOutput: {\"city\": \"Seattle\"}"
+    },
+    {
+      "state": "preserved",
+      "concern": "grounding policy",
+      "before": "Never invent facts. Do not omit fields. Avoid prose. You must not add keys.\n<context>Grounded data</context>",
+      "after": "Never invent facts. Do not omit fields. Avoid prose. You must not add keys.\n<context>Grounded data</context>"
+    },
+    {
+      "state": "preserved",
+      "concern": "tool policy",
+      "before": "Use the weather tool when needed.\nUse the weather tool when needed.",
+      "after": "Use the weather tool when needed.\nUse the weather tool when needed."
+    },
+    {
+      "state": "preserved",
+      "concern": "verbosity policy",
+      "before": "Never invent facts. Do not omit fields. Avoid prose. You must not add keys.",
+      "after": "Never invent facts. Do not omit fields. Avoid prose. You must not add keys."
+    },
+    {
+      "state": "replaced",
+      "concern": "reasoning policy",
+      "before": "Explicit reasoning-process request",
+      "after": "Provide a concise justification"
+    },
+    {
+      "state": "replaced",
+      "concern": "system-message transport",
+      "before": "system request field",
+      "after": "instructions request field"
+    },
+    {
+      "state": "unresolved",
+      "concern": "source-model prompting assumption",
+      "before": "Reconsider source-specific guidance: Use adaptive thinking with effort rather than manual thinking budgets.",
+      "after": null
+    },
+    {
+      "state": "unresolved",
+      "concern": "source-model prompting assumption",
+      "before": "Reconsider source-specific guidance: Use structured outputs, system instructions, or output_config.format instead of assistant prefilling.",
+      "after": null
+    },
+    {
+      "state": "unresolved",
+      "concern": "target prompt structure",
+      "before": null,
+      "after": "Set reasoning.effort intentionally for the workload."
+    }
+  ],
+  "finding_categories": [
+    "duplicated_requirements",
+    "negative_wording",
+    "explicit_chain_of_thought",
+    "structured_output",
+    "few_shot_examples",
+    "tool_instructions",
+    "section_structure",
+    "provider_specific_formatting"
+  ]
+}

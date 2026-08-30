@@ -1,0 +1,37 @@
+name: Feature request
+description: Propose a scoped product or developer-experience improvement.
+title: "[Feature]: "
+labels: [enhancement]
+body:
+  - type: checkboxes
+    attributes:
+      label: Before submitting
+      options:
+        - label: I searched existing issues and discussions.
+          required: true
+        - label: This proposal preserves local-first, provider-neutral behavior.
+          required: true
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What migration workflow is difficult or impossible today?
+    validations:
+      required: true
+
+  - type: textarea
+    id: outcome
+    attributes:
+      label: Desired outcome
+      description: Describe the user-visible result rather than only an implementation.
+    validations:
+      required: true
+
+  - type: textarea
+    id: boundaries
+    attributes:
+      label: Safety and architecture considerations
+      description: Note provider-specific behavior, credentials, source mutation, evidence, or trust implications.
+    validations:
+      required: true

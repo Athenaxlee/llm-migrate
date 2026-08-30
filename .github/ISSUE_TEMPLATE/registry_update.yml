@@ -1,0 +1,47 @@
+name: Registry update
+description: Propose new or corrected model and migration knowledge.
+title: "[Registry]: "
+labels: [registry, evidence-required]
+body:
+  - type: checkboxes
+    attributes:
+      label: Evidence requirements
+      options:
+        - label: I read docs/research-policy.md.
+          required: true
+        - label: I will provide claim-level sources, retrieval dates, and provider/platform scope.
+          required: true
+        - label: I understand that unreviewed research cannot directly modify the canonical registry.
+          required: true
+
+  - type: input
+    id: subject
+    attributes:
+      label: Model or migration subject
+      placeholder: provider / platform / model / endpoint or source -> target
+    validations:
+      required: true
+
+  - type: textarea
+    id: facts
+    attributes:
+      label: Facts to add or correct
+      description: List exact field paths, current values, proposed values, and impact.
+    validations:
+      required: true
+
+  - type: textarea
+    id: sources
+    attributes:
+      label: Authoritative sources
+      description: Link official model, API, pricing, lifecycle, and migration documentation where applicable.
+    validations:
+      required: true
+
+  - type: textarea
+    id: conflicts
+    attributes:
+      label: Conflicts and unknowns
+      description: Record contradictory evidence and unresolved questions instead of averaging them away.
+    validations:
+      required: true

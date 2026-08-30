@@ -1,0 +1,49 @@
+schema_version: "1"
+model: claude-sonnet-4-6
+proposal_date: 2026-08-09
+changes:
+  - field_path: capabilities.maximum_output_tokens
+    change_type: update
+    current_value: 64000
+    proposed_value: 128000
+    confidence: authoritative
+    risk: high
+    supporting_sources:
+      - anthropic-sonnet-migration-2026-08-08
+    reason: Anthropic's migration guide says Sonnet 5 retains the same 128K maximum output as Sonnet 4.6.
+  - field_path: freshness
+    change_type: update
+    current_value:
+      checked_at: 2026-08-08
+    proposed_value:
+      checked_at: 2026-08-09
+    confidence: authoritative
+    risk: low
+    supporting_sources:
+      - anthropic-models-overview-2026-08-08
+      - anthropic-sonnet-migration-2026-08-08
+      - anthropic-model-deprecations-2026-08-08
+      - aws-sonnet-4-6-card-2026-08-08
+    reason: Official model, migration, lifecycle, and Bedrock documentation was rechecked.
+conflicts: []
+unknown_fields:
+  - parameters.adaptive_thinking.default
+warnings:
+  - The repository has no commit history, so the pre-research registry baseline cannot be reconstructed. This proposal compares against the files currently in registry/.
+candidate_errors: []
+review:
+  status: approved
+  reviewed_at: 2026-08-15
+  decisions:
+    - field_path: capabilities.maximum_output_tokens
+      decision: approved
+      disposition: promoted
+      rationale: Anthropic explicitly states that Sonnet 5's 128K maximum is unchanged from Sonnet 4.6.
+    - field_path: freshness
+      decision: approved
+      disposition: promoted
+      rationale: The cited official sources support the candidate and the evidence refresh.
+    - field_path: parameters.adaptive_thinking.default
+      decision: hold
+      disposition: remains_unknown
+      rationale: Anthropic documents that omitted thinking runs without thinking, but the registry cannot yet express the full mode/default distinction.

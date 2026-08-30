@@ -1,0 +1,127 @@
+schema_version: '1'
+fixture: true
+identity:
+  canonical_name: fixture-alpha-large-v1
+  display_name: TEST/FIXTURE Alpha Large v1
+  provider: fixture-labs
+  model_family: alpha
+  version: '1'
+  aliases:
+  - alpha large
+  - alpha v1
+  - shared alias
+platforms:
+- platform: fixture-api
+  model_id: fixture.alpha-large-v1
+  endpoint: null
+  regions:
+  - test-east
+  - test-west
+  capability_overrides: null
+  sources: []
+lifecycle:
+  status: legacy
+  announced_on: null
+  deprecated_on: null
+  end_of_life_on: null
+  earliest_end_of_life_on: null
+  sources: []
+pricing:
+  input:
+    amount: '5'
+    currency: USD
+    unit: per_1m_tokens
+    valid_from: null
+    valid_until: null
+    notes: null
+    sources: []
+  output:
+    amount: '15'
+    currency: USD
+    unit: per_1m_tokens
+    valid_from: null
+    valid_until: null
+    notes: null
+    sources: []
+  cached_input: null
+  batch: null
+capabilities:
+  text_input: true
+  image_input: true
+  document_input: null
+  structured_output: true
+  tool_use: true
+  parallel_tool_use: true
+  reasoning: null
+  prompt_caching: null
+  streaming: true
+  batch_inference: null
+  context_window_tokens: 250000
+  maximum_output_tokens: 16000
+  sources: []
+parameters:
+  temperature:
+    state: supported
+    default: 1
+    notes: null
+    sources: []
+  top_k:
+    state: supported
+    default: null
+    notes: null
+    sources: []
+  max_tokens:
+    state: required
+    default: null
+    notes: null
+    sources: []
+  new_control:
+    state: supported
+    default: null
+    notes: null
+    sources: []
+prompt_guidance:
+  preferred_structure:
+  - 'TEST ONLY: put task requirements before examples.'
+  delimiter_guidance:
+  - 'TEST ONLY: use consistent explicit delimiters for long context.'
+  reasoning_guidance: []
+  verbosity_sensitivity: []
+  negative_instruction_guidance: []
+  structured_output_guidance: []
+  tool_use_guidance: []
+  sources: []
+freshness:
+  capabilities:
+    checked_at: '2026-08-08'
+    max_age_days: 30
+evidence_conflicts: []
+sources:
+- id: fixture-alpha-source
+  url: null
+  title: Synthetic test fixture; not a real model
+  source_type: test_fixture
+  authority_tier: 1
+  publisher: llm-migrate tests
+  retrieved_at: '2026-01-01'
+  published_at: null
+  supports:
+  - identity
+  - platforms
+  - lifecycle
+  - pricing
+  - capabilities
+  - parameters
+  notes: null
+- id: official
+  url: https://example.com/official
+  title: official
+  source_type: official_documentation
+  authority_tier: 2
+  publisher: Example
+  retrieved_at: '2026-08-08'
+  published_at: null
+  supports:
+  - capabilities
+  - parameters
+  notes: null

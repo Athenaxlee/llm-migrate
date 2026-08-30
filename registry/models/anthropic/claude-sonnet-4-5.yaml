@@ -1,0 +1,72 @@
+schema_version: "1"
+identity:
+  canonical_name: claude-sonnet-4-5-20250929
+  display_name: Claude Sonnet 4.5
+  provider: anthropic
+  model_family: claude-sonnet
+  version: "4.5-20250929"
+  aliases: [claude-sonnet-4-5, "claude sonnet 4.5", "sonnet 4.5"]
+platforms:
+  - platform: anthropic-api
+    model_id: claude-sonnet-4-5-20250929
+  - platform: amazon-bedrock
+    endpoint: bedrock-runtime
+    model_id: anthropic.claude-sonnet-4-5-20250929-v1:0
+    regions: ["geo:us", "geo:eu", "geo:au", "geo:jp", global]
+    capability_overrides:
+      structured_output: true
+      prompt_caching: true
+      streaming: true
+lifecycle:
+  status: active
+  earliest_end_of_life_on: 2026-09-29
+pricing:
+  input: {amount: "3", currency: USD, unit: per_1m_tokens}
+  output: {amount: "15", currency: USD, unit: per_1m_tokens}
+capabilities:
+  text_input: true
+  image_input: true
+  document_input: true
+  structured_output: true
+  tool_use: true
+  reasoning: true
+  prompt_caching: true
+  streaming: true
+  batch_inference: true
+  context_window_tokens: 200000
+  maximum_output_tokens: 64000
+parameters:
+  max_tokens: {state: required}
+  thinking: {state: supported, notes: "Manual extended thinking is supported."}
+prompt_guidance: {}
+freshness:
+  pricing: {checked_at: 2026-08-09, max_age_days: 7}
+  lifecycle: {checked_at: 2026-08-09, max_age_days: 7}
+  availability: {checked_at: 2026-08-09, max_age_days: 14}
+  capabilities: {checked_at: 2026-08-09, max_age_days: 30}
+  prompting_guidance: {checked_at: 2026-08-09, max_age_days: 30}
+sources:
+  - id: anthropic-models-overview-2026-08-08
+    url: https://platform.claude.com/docs/en/about-claude/models/overview
+    title: Models overview
+    source_type: official_documentation
+    authority_tier: 2
+    publisher: Anthropic
+    retrieved_at: 2026-08-09
+    supports: [identity, pricing, capabilities, platforms]
+  - id: anthropic-model-deprecations-2026-08-08
+    url: https://platform.claude.com/docs/en/about-claude/model-deprecations
+    title: Model deprecations
+    source_type: official_documentation
+    authority_tier: 2
+    publisher: Anthropic
+    retrieved_at: 2026-08-09
+    supports: [lifecycle]
+  - id: aws-sonnet-4-5-card-2026-08-08
+    url: https://docs.aws.amazon.com/bedrock/latest/userguide/model-card-anthropic-claude-sonnet-4-5.html
+    title: Claude Sonnet 4.5 - Amazon Bedrock
+    source_type: official_documentation
+    authority_tier: 2
+    publisher: Amazon Web Services
+    retrieved_at: 2026-08-09
+    supports: [platforms, lifecycle, capabilities]

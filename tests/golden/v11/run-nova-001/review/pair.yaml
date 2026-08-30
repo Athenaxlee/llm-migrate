@@ -1,0 +1,17 @@
+schema_version: '1'
+reviewer_id: reviewer-independent
+researcher_id: researcher-pair
+research_sha256: 7832b6aec5326f55edbd0039b207d60833882cff2ccbbf32078744a0e83370cf
+reviewed_at: '2026-08-29'
+verdicts:
+- claim_id: pair-tool-schema
+  verdict: supported
+  checked_source_ids:
+  - official-nova-migration-guide
+  scope:
+    provider: openai
+    platform: null
+  rationale: Refetched the cited official page; it states this fact.
+  warnings: []
+  blockers: []
+warnings: []

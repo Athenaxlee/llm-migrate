@@ -1,0 +1,22 @@
+schema_version: '1'
+subject: claude-sonnet-5
+research_sha256: ea5ac126837fc423fda2726768bdee0c64af6a8db1fb9afda3c6fcfc210bf0c2
+review_sha256: 6a507bc8fccd87354f2906c83adb722c77589854a784566fbde2c882ed6d800c
+accepted_claim_ids:
+- sonnet-5-lifecycle
+- sonnet-5-price-input
+rejected_claims: []
+unresolved_conflicts: []
+topic_coverage:
+  pricing: covered
+  lifecycle: covered
+  availability: missing
+  capabilities: missing
+  migration_behavior: missing
+trust_level: session_agent_reviewed
+suitability: suitable
+blockers: []
+warnings:
+- requested topic 'availability' has no accepted claims
+- requested topic 'capabilities' has no accepted claims
+- requested topic 'migration_behavior' has no accepted claims

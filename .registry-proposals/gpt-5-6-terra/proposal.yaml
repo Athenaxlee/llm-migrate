@@ -1,0 +1,23 @@
+schema_version: '1'
+model: gpt-5.6-terra
+proposal_date: '2026-08-29'
+changes: []
+conflicts: []
+unknown_fields: []
+warnings:
+- The registry cannot yet represent long-context price multipliers or cache-write
+  pricing.
+candidate_errors: []
+review:
+  status: approved_no_change
+  reviewed_at: '2026-08-29'
+  decisions:
+  - field_path: freshness
+    decision: approved
+    disposition: promoted
+    rationale: The GPT-5.6 Terra model page and models catalog were refetched on
+      2026-08-29 and confirm the existing canonical facts unchanged, so only the
+      refreshed evidence, sources, and freshness metadata are promoted.
+  notes: Long-context price multipliers and cache-write pricing remain unrepresentable
+    in the current schema; a future schema change is tracked separately and does not
+    block this promotion.

@@ -1,0 +1,1022 @@
+{
+  "$defs": {
+    "AuthorityTier": {
+      "enum": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6
+      ],
+      "title": "AuthorityTier",
+      "type": "integer"
+    },
+    "CapabilityOverrides": {
+      "additionalProperties": false,
+      "description": "Explicit platform differences; omitted values inherit the model profile.",
+      "properties": {
+        "batch_inference": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Batch Inference"
+        },
+        "context_window_tokens": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Context Window Tokens"
+        },
+        "document_input": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Document Input"
+        },
+        "image_input": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Image Input"
+        },
+        "maximum_output_tokens": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Maximum Output Tokens"
+        },
+        "parallel_tool_use": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Parallel Tool Use"
+        },
+        "prompt_caching": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Prompt Caching"
+        },
+        "reasoning": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Reasoning"
+        },
+        "streaming": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Streaming"
+        },
+        "structured_output": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Structured Output"
+        },
+        "text_input": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Text Input"
+        },
+        "tool_use": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Tool Use"
+        }
+      },
+      "title": "CapabilityOverrides",
+      "type": "object"
+    },
+    "FreshnessCategory": {
+      "enum": [
+        "pricing",
+        "lifecycle",
+        "availability",
+        "capabilities",
+        "prompting_guidance"
+      ],
+      "title": "FreshnessCategory",
+      "type": "string"
+    },
+    "FreshnessMetadata": {
+      "additionalProperties": false,
+      "properties": {
+        "checked_at": {
+          "format": "date",
+          "title": "Checked At",
+          "type": "string"
+        },
+        "max_age_days": {
+          "exclusiveMinimum": 0,
+          "title": "Max Age Days",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "checked_at",
+        "max_age_days"
+      ],
+      "title": "FreshnessMetadata",
+      "type": "object"
+    },
+    "LifecycleStatus": {
+      "enum": [
+        "active",
+        "legacy",
+        "deprecated",
+        "end_of_life"
+      ],
+      "title": "LifecycleStatus",
+      "type": "string"
+    },
+    "ModelCapabilities": {
+      "additionalProperties": false,
+      "properties": {
+        "batch_inference": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Batch Inference"
+        },
+        "context_window_tokens": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Context Window Tokens"
+        },
+        "document_input": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Document Input"
+        },
+        "image_input": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Image Input"
+        },
+        "maximum_output_tokens": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Maximum Output Tokens"
+        },
+        "parallel_tool_use": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Parallel Tool Use"
+        },
+        "prompt_caching": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Prompt Caching"
+        },
+        "reasoning": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Reasoning"
+        },
+        "sources": {
+          "items": {
+            "$ref": "#/$defs/SourceReference"
+          },
+          "title": "Sources",
+          "type": "array"
+        },
+        "streaming": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Streaming"
+        },
+        "structured_output": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Structured Output"
+        },
+        "text_input": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Text Input"
+        },
+        "tool_use": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Tool Use"
+        }
+      },
+      "title": "ModelCapabilities",
+      "type": "object"
+    },
+    "ModelIdentity": {
+      "additionalProperties": false,
+      "properties": {
+        "aliases": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Aliases",
+          "type": "array"
+        },
+        "canonical_name": {
+          "minLength": 1,
+          "title": "Canonical Name",
+          "type": "string"
+        },
+        "display_name": {
+          "minLength": 1,
+          "title": "Display Name",
+          "type": "string"
+        },
+        "model_family": {
+          "minLength": 1,
+          "title": "Model Family",
+          "type": "string"
+        },
+        "provider": {
+          "minLength": 1,
+          "title": "Provider",
+          "type": "string"
+        },
+        "version": {
+          "minLength": 1,
+          "title": "Version",
+          "type": "string"
+        }
+      },
+      "required": [
+        "canonical_name",
+        "display_name",
+        "provider",
+        "model_family",
+        "version"
+      ],
+      "title": "ModelIdentity",
+      "type": "object"
+    },
+    "ModelLifecycle": {
+      "additionalProperties": false,
+      "properties": {
+        "announced_on": {
+          "anyOf": [
+            {
+              "format": "date",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Announced On"
+        },
+        "deprecated_on": {
+          "anyOf": [
+            {
+              "format": "date",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Deprecated On"
+        },
+        "earliest_end_of_life_on": {
+          "anyOf": [
+            {
+              "format": "date",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Earliest End Of Life On"
+        },
+        "end_of_life_on": {
+          "anyOf": [
+            {
+              "format": "date",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "End Of Life On"
+        },
+        "sources": {
+          "items": {
+            "$ref": "#/$defs/SourceReference"
+          },
+          "title": "Sources",
+          "type": "array"
+        },
+        "status": {
+          "$ref": "#/$defs/LifecycleStatus"
+        }
+      },
+      "required": [
+        "status"
+      ],
+      "title": "ModelLifecycle",
+      "type": "object"
+    },
+    "ModelPricing": {
+      "additionalProperties": false,
+      "properties": {
+        "batch": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/PricePerMillionTokens"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "cached_input": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/PricePerMillionTokens"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "input": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/PricePerMillionTokens"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "output": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/PricePerMillionTokens"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "title": "ModelPricing",
+      "type": "object"
+    },
+    "ParameterState": {
+      "enum": [
+        "supported",
+        "unsupported",
+        "deprecated",
+        "required"
+      ],
+      "title": "ParameterState",
+      "type": "string"
+    },
+    "ParameterSupport": {
+      "additionalProperties": false,
+      "properties": {
+        "default": {
+          "anyOf": [
+            {},
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Default"
+        },
+        "notes": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Notes"
+        },
+        "sources": {
+          "items": {
+            "$ref": "#/$defs/SourceReference"
+          },
+          "title": "Sources",
+          "type": "array"
+        },
+        "state": {
+          "$ref": "#/$defs/ParameterState"
+        }
+      },
+      "required": [
+        "state"
+      ],
+      "title": "ParameterSupport",
+      "type": "object"
+    },
+    "PlatformAvailability": {
+      "additionalProperties": false,
+      "properties": {
+        "capability_overrides": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/CapabilityOverrides"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "endpoint": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Endpoint"
+        },
+        "model_id": {
+          "minLength": 1,
+          "title": "Model Id",
+          "type": "string"
+        },
+        "platform": {
+          "minLength": 1,
+          "title": "Platform",
+          "type": "string"
+        },
+        "regions": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Regions",
+          "type": "array"
+        },
+        "sources": {
+          "items": {
+            "$ref": "#/$defs/SourceReference"
+          },
+          "title": "Sources",
+          "type": "array"
+        }
+      },
+      "required": [
+        "platform",
+        "model_id"
+      ],
+      "title": "PlatformAvailability",
+      "type": "object"
+    },
+    "PricePerMillionTokens": {
+      "additionalProperties": false,
+      "properties": {
+        "amount": {
+          "anyOf": [
+            {
+              "minimum": 0.0,
+              "type": "number"
+            },
+            {
+              "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+              "type": "string"
+            }
+          ],
+          "title": "Amount"
+        },
+        "currency": {
+          "const": "USD",
+          "default": "USD",
+          "title": "Currency",
+          "type": "string"
+        },
+        "notes": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Notes"
+        },
+        "sources": {
+          "items": {
+            "$ref": "#/$defs/SourceReference"
+          },
+          "title": "Sources",
+          "type": "array"
+        },
+        "unit": {
+          "const": "per_1m_tokens",
+          "default": "per_1m_tokens",
+          "title": "Unit",
+          "type": "string"
+        },
+        "valid_from": {
+          "anyOf": [
+            {
+              "format": "date",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Valid From"
+        },
+        "valid_until": {
+          "anyOf": [
+            {
+              "format": "date",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Valid Until"
+        }
+      },
+      "required": [
+        "amount"
+      ],
+      "title": "PricePerMillionTokens",
+      "type": "object"
+    },
+    "PromptGuidance": {
+      "additionalProperties": false,
+      "properties": {
+        "delimiter_guidance": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Delimiter Guidance",
+          "type": "array"
+        },
+        "negative_instruction_guidance": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Negative Instruction Guidance",
+          "type": "array"
+        },
+        "preferred_structure": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Preferred Structure",
+          "type": "array"
+        },
+        "reasoning_guidance": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Reasoning Guidance",
+          "type": "array"
+        },
+        "sources": {
+          "items": {
+            "$ref": "#/$defs/SourceReference"
+          },
+          "title": "Sources",
+          "type": "array"
+        },
+        "structured_output_guidance": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Structured Output Guidance",
+          "type": "array"
+        },
+        "tool_use_guidance": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Tool Use Guidance",
+          "type": "array"
+        },
+        "verbosity_sensitivity": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Verbosity Sensitivity",
+          "type": "array"
+        }
+      },
+      "title": "PromptGuidance",
+      "type": "object"
+    },
+    "RegistryEvidenceConflict": {
+      "additionalProperties": false,
+      "properties": {
+        "field_path": {
+          "title": "Field Path",
+          "type": "string"
+        },
+        "notes": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Notes"
+        },
+        "source_ids": {
+          "items": {
+            "type": "string"
+          },
+          "minItems": 2,
+          "title": "Source Ids",
+          "type": "array"
+        },
+        "statements": {
+          "items": {
+            "type": "string"
+          },
+          "minItems": 2,
+          "title": "Statements",
+          "type": "array"
+        }
+      },
+      "required": [
+        "field_path",
+        "statements",
+        "source_ids"
+      ],
+      "title": "RegistryEvidenceConflict",
+      "type": "object"
+    },
+    "SourceReference": {
+      "additionalProperties": false,
+      "properties": {
+        "authority_tier": {
+          "$ref": "#/$defs/AuthorityTier"
+        },
+        "id": {
+          "minLength": 1,
+          "pattern": "^[a-z0-9][a-z0-9._-]*$",
+          "title": "Id",
+          "type": "string"
+        },
+        "notes": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Notes"
+        },
+        "published_at": {
+          "anyOf": [
+            {
+              "format": "date",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Published At"
+        },
+        "publisher": {
+          "title": "Publisher",
+          "type": "string"
+        },
+        "retrieved_at": {
+          "format": "date",
+          "title": "Retrieved At",
+          "type": "string"
+        },
+        "source_type": {
+          "$ref": "#/$defs/SourceType"
+        },
+        "supports": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Supports",
+          "type": "array"
+        },
+        "title": {
+          "title": "Title",
+          "type": "string"
+        },
+        "url": {
+          "anyOf": [
+            {
+              "format": "uri",
+              "maxLength": 2083,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Url"
+        }
+      },
+      "required": [
+        "id",
+        "title",
+        "source_type",
+        "authority_tier",
+        "publisher",
+        "retrieved_at"
+      ],
+      "title": "SourceReference",
+      "type": "object"
+    },
+    "SourceType": {
+      "enum": [
+        "official_structured",
+        "official_documentation",
+        "provider_announcement",
+        "official_repository",
+        "independent_evidence",
+        "community_report",
+        "test_fixture"
+      ],
+      "title": "SourceType",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "capabilities": {
+      "$ref": "#/$defs/ModelCapabilities"
+    },
+    "evidence_conflicts": {
+      "items": {
+        "$ref": "#/$defs/RegistryEvidenceConflict"
+      },
+      "title": "Evidence Conflicts",
+      "type": "array"
+    },
+    "fixture": {
+      "default": false,
+      "title": "Fixture",
+      "type": "boolean"
+    },
+    "freshness": {
+      "additionalProperties": {
+        "$ref": "#/$defs/FreshnessMetadata"
+      },
+      "propertyNames": {
+        "$ref": "#/$defs/FreshnessCategory"
+      },
+      "title": "Freshness",
+      "type": "object"
+    },
+    "identity": {
+      "$ref": "#/$defs/ModelIdentity"
+    },
+    "lifecycle": {
+      "$ref": "#/$defs/ModelLifecycle"
+    },
+    "parameters": {
+      "additionalProperties": {
+        "$ref": "#/$defs/ParameterSupport"
+      },
+      "title": "Parameters",
+      "type": "object"
+    },
+    "platforms": {
+      "items": {
+        "$ref": "#/$defs/PlatformAvailability"
+      },
+      "minItems": 1,
+      "title": "Platforms",
+      "type": "array"
+    },
+    "pricing": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/ModelPricing"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "prompt_guidance": {
+      "$ref": "#/$defs/PromptGuidance"
+    },
+    "schema_version": {
+      "const": "1",
+      "default": "1",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "sources": {
+      "items": {
+        "$ref": "#/$defs/SourceReference"
+      },
+      "title": "Sources",
+      "type": "array"
+    }
+  },
+  "required": [
+    "identity",
+    "platforms",
+    "lifecycle",
+    "capabilities"
+  ],
+  "title": "ModelProfile",
+  "type": "object"
+}

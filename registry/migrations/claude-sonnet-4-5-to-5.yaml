@@ -1,0 +1,44 @@
+schema_version: "1"
+id: claude-sonnet-4-5-to-5
+source_model: claude-sonnet-4-5-20250929
+target_model: claude-sonnet-5
+checked_at: 2026-08-08
+changes:
+  - field_path: migration.assistant_prefill
+    statement: Assistant message prefilling accepted by Sonnet 4.5 is rejected on Sonnet 5.
+    severity: breaking
+    recommended_action: Use structured outputs, system instructions, or output_config.format.
+    supporting_sources: [anthropic-sonnet-migration-2026-08-08]
+  - field_path: parameters.thinking
+    statement: Migrate manual extended thinking budgets to adaptive thinking and effort.
+    severity: breaking
+    recommended_action: Remove budget_tokens and configure adaptive thinking.
+    supporting_sources: [anthropic-sonnet-5-migration-2026-08-08]
+  - field_path: parameters.sampling
+    statement: Non-default temperature, top_p, or top_k values return HTTP 400 on Sonnet 5.
+    severity: breaking
+    recommended_action: Remove non-default sampling parameters.
+    supporting_sources: [anthropic-sonnet-5-migration-2026-08-08]
+  - field_path: tokenizer
+    statement: Sonnet 5 uses a new tokenizer; earlier token counts must not be reused.
+    severity: high
+    recommended_action: Recount prompts and revise token and cost budgets.
+    supporting_sources: [anthropic-sonnet-5-migration-2026-08-08]
+sources:
+  - id: anthropic-sonnet-migration-2026-08-08
+    url: https://platform.claude.com/docs/en/about-claude/models/migration-guide
+    title: Migration guide
+    source_type: official_documentation
+    authority_tier: 2
+    publisher: Anthropic
+    retrieved_at: 2026-08-08
+    supports: [migration.assistant_prefill]
+  - id: anthropic-sonnet-5-migration-2026-08-08
+    url: https://platform.claude.com/docs/en/about-claude/models/whats-new-sonnet-5
+    title: What's new in Claude Sonnet 5
+    source_type: official_documentation
+    authority_tier: 2
+    publisher: Anthropic
+    retrieved_at: 2026-08-08
+    published_at: 2026-06-30
+    supports: [parameters.thinking, parameters.sampling, tokenizer]

@@ -1,0 +1,37 @@
+schema_version: "1"
+model: claude-sonnet-4-5-20250929
+proposal_date: 2026-08-09
+changes:
+  - field_path: freshness
+    change_type: update
+    current_value:
+      checked_at: 2026-08-08
+    proposed_value:
+      checked_at: 2026-08-09
+    confidence: authoritative
+    risk: low
+    supporting_sources:
+      - anthropic-models-overview-2026-08-08
+      - anthropic-model-deprecations-2026-08-08
+      - aws-sonnet-4-5-card-2026-08-08
+    reason: Official model, lifecycle, and Bedrock documentation was rechecked.
+conflicts: []
+unknown_fields:
+  - parameters.temperature
+  - parameters.top_k
+  - parameters.top_p
+warnings:
+  - The repository has no commit history, so the pre-research registry baseline cannot be reconstructed. This proposal compares against the files currently in registry/.
+candidate_errors: []
+review:
+  status: approved
+  reviewed_at: 2026-08-15
+  decisions:
+    - field_path: freshness
+      decision: approved
+      disposition: promoted
+      rationale: The cited official sources support the candidate and the evidence refresh.
+    - field_path: parameters.temperature|parameters.top_p|parameters.top_k
+      decision: hold
+      disposition: remains_unknown
+      rationale: No authoritative cross-platform evidence was supplied for these fields.

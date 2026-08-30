@@ -1,0 +1,27 @@
+schema_version: '1'
+reviewer_id: reviewer-independent
+researcher_id: researcher-source
+research_sha256: ea5ac126837fc423fda2726768bdee0c64af6a8db1fb9afda3c6fcfc210bf0c2
+reviewed_at: '2026-08-29'
+verdicts:
+- claim_id: sonnet-5-lifecycle
+  verdict: supported
+  checked_source_ids:
+  - official-sonnet-5-model-page
+  scope:
+    provider: anthropic
+    platform: null
+  rationale: Refetched the cited official page; it states this fact.
+  warnings: []
+  blockers: []
+- claim_id: sonnet-5-price-input
+  verdict: supported
+  checked_source_ids:
+  - official-sonnet-5-model-page
+  scope:
+    provider: anthropic
+    platform: null
+  rationale: Refetched the cited official page; it states this fact.
+  warnings: []
+  blockers: []
+warnings: []

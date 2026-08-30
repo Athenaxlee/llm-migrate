@@ -1,0 +1,26 @@
+schema_version: "1"
+subject: Synthetic Alpha reasoning capability review
+canonical_model_candidate: fixture-alpha-large-v1
+research_date: 2026-08-08
+claims:
+  - id: alpha-reasoning-support
+    field_path: capabilities.reasoning
+    value: true
+    statement: The synthetic Alpha fixture supports reasoning.
+    kind: fact
+    evidence_type: direct
+    confidence: authoritative
+    sources: [synthetic-alpha-review]
+sources:
+  - id: synthetic-alpha-review
+    title: Synthetic evidence example; not a real source
+    source_type: test_fixture
+    authority_tier: 1
+    publisher: llm-migrate examples
+    retrieved_at: 2026-08-08
+    supports: [capabilities.reasoning]
+observations: []
+conflicts: []
+unresolved_questions: []
+warnings:
+  - This example contains only synthetic fixture evidence.

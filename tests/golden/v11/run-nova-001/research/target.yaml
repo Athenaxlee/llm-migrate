@@ -1,0 +1,162 @@
+schema_version: '1'
+subject: gpt-6.0-nova
+canonical_model_candidate: gpt-6.0-nova
+research_date: '2026-08-29'
+claims:
+- id: nova-identity
+  field_path: identity
+  value:
+    canonical_name: gpt-6.0-nova
+    display_name: GPT-6.0 Nova
+    provider: openai
+    model_family: gpt-6.0
+    version: nova
+    aliases:
+    - gpt 6.0 nova
+  statement: The official model page identifies GPT-6.0 Nova.
+  kind: fact
+  evidence_type: direct
+  confidence: authoritative
+  sources:
+  - official-nova-model-page
+  action: set
+  notes: null
+- id: nova-platform
+  field_path: platforms
+  value:
+  - platform: openai-api
+    endpoint: responses
+    model_id: gpt-6.0-nova
+  statement: Nova is available through the Responses API.
+  kind: fact
+  evidence_type: direct
+  confidence: authoritative
+  sources:
+  - official-nova-model-page
+  action: set
+  notes: null
+- id: nova-lifecycle
+  field_path: lifecycle.status
+  value: active
+  statement: The catalog lists Nova as a current model.
+  kind: fact
+  evidence_type: direct
+  confidence: authoritative
+  sources:
+  - official-nova-model-page
+  action: set
+  notes: null
+- id: nova-text-input
+  field_path: capabilities.text_input
+  value: true
+  statement: The official model page lists text input.
+  kind: fact
+  evidence_type: direct
+  confidence: authoritative
+  sources:
+  - official-nova-model-page
+  action: set
+  notes: null
+- id: nova-tool-use
+  field_path: capabilities.tool_use
+  value: true
+  statement: The official model page lists tool use.
+  kind: fact
+  evidence_type: direct
+  confidence: authoritative
+  sources:
+  - official-nova-model-page
+  action: set
+  notes: null
+- id: nova-structured-output
+  field_path: capabilities.structured_output
+  value: true
+  statement: The official model page lists structured outputs.
+  kind: fact
+  evidence_type: direct
+  confidence: authoritative
+  sources:
+  - official-nova-model-page
+  action: set
+  notes: null
+- id: nova-streaming
+  field_path: capabilities.streaming
+  value: true
+  statement: The official model page lists streaming.
+  kind: fact
+  evidence_type: direct
+  confidence: authoritative
+  sources:
+  - official-nova-model-page
+  action: set
+  notes: null
+- id: nova-context
+  field_path: capabilities.context_window_tokens
+  value: 2000000
+  statement: The official model page lists a 2,000,000-token context window.
+  kind: fact
+  evidence_type: direct
+  confidence: authoritative
+  sources:
+  - official-nova-model-page
+  action: set
+  notes: null
+- id: nova-output-limit
+  field_path: capabilities.maximum_output_tokens
+  value: 256000
+  statement: The official model page lists a 256,000-token output maximum.
+  kind: fact
+  evidence_type: direct
+  confidence: authoritative
+  sources:
+  - official-nova-model-page
+  action: set
+  notes: null
+- id: nova-price-input
+  field_path: pricing.input
+  value:
+    amount: '6'
+    currency: USD
+    unit: per_1m_tokens
+  statement: The official model page lists six dollars per million input tokens.
+  kind: fact
+  evidence_type: direct
+  confidence: authoritative
+  sources:
+  - official-nova-model-page
+  action: set
+  notes: null
+- id: nova-price-output
+  field_path: pricing.output
+  value:
+    amount: '24'
+    currency: USD
+    unit: per_1m_tokens
+  statement: The official model page lists 24 dollars per million output tokens.
+  kind: fact
+  evidence_type: direct
+  confidence: authoritative
+  sources:
+  - official-nova-model-page
+  action: set
+  notes: null
+sources:
+- id: official-nova-model-page
+  url: https://developers.example.com/docs/gpt-6.0-nova
+  title: gpt-6.0-nova
+  source_type: official_documentation
+  authority_tier: 2
+  publisher: Example Provider
+  retrieved_at: '2026-08-29'
+  published_at: null
+  supports:
+  - identity
+  - platforms
+  - lifecycle
+  - pricing
+  - capabilities
+  notes: null
+observations: []
+conflicts: []
+unresolved_questions: []
+warnings: []

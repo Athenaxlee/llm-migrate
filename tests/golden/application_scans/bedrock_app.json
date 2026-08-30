@@ -1,0 +1,193 @@
+{
+  "files_scanned": 1,
+  "findings": [
+    {
+      "detail": "imports boto3",
+      "kind": "provider_sdk",
+      "location": {
+        "column": 0,
+        "end_line": 3,
+        "line": 3,
+        "path": "app.py"
+      },
+      "metadata": null,
+      "platform": "amazon-bedrock",
+      "provider": null,
+      "value": "boto3"
+    },
+    {
+      "detail": "creates an Amazon Bedrock Runtime client",
+      "kind": "configuration",
+      "location": {
+        "column": 9,
+        "end_line": 5,
+        "line": 5,
+        "path": "app.py"
+      },
+      "metadata": null,
+      "platform": "amazon-bedrock",
+      "provider": "anthropic",
+      "value": "bedrock-runtime"
+    },
+    {
+      "detail": "reads LLM configuration AWS_REGION",
+      "kind": "configuration",
+      "location": {
+        "column": 53,
+        "end_line": 5,
+        "line": 5,
+        "path": "app.py"
+      },
+      "metadata": null,
+      "platform": null,
+      "provider": null,
+      "value": "AWS_REGION"
+    },
+    {
+      "detail": "calls client.converse",
+      "kind": "invocation",
+      "location": {
+        "column": 11,
+        "end_line": 41,
+        "line": 6,
+        "path": "app.py"
+      },
+      "metadata": null,
+      "platform": "amazon-bedrock",
+      "provider": null,
+      "value": "client.converse"
+    },
+    {
+      "detail": "passes a literal model identifier",
+      "kind": "model_identifier",
+      "location": {
+        "column": 12,
+        "end_line": 7,
+        "line": 7,
+        "path": "app.py"
+      },
+      "metadata": null,
+      "platform": "amazon-bedrock",
+      "provider": "anthropic",
+      "value": "anthropic.claude-sonnet-4-6"
+    },
+    {
+      "detail": "supplies prompt content through system",
+      "kind": "prompt",
+      "location": {
+        "column": 11,
+        "end_line": 8,
+        "line": 8,
+        "path": "app.py"
+      },
+      "metadata": null,
+      "platform": "amazon-bedrock",
+      "provider": "anthropic",
+      "value": "system"
+    },
+    {
+      "detail": "supplies prompt content through messages",
+      "kind": "prompt",
+      "location": {
+        "column": 13,
+        "end_line": 23,
+        "line": 9,
+        "path": "app.py"
+      },
+      "metadata": null,
+      "platform": "amazon-bedrock",
+      "provider": "anthropic",
+      "value": "messages"
+    },
+    {
+      "detail": "supplies document input",
+      "kind": "multimodal",
+      "location": {
+        "column": 16,
+        "end_line": 20,
+        "line": 14,
+        "path": "app.py"
+      },
+      "metadata": null,
+      "platform": null,
+      "provider": null,
+      "value": "document_input"
+    },
+    {
+      "detail": "configures toolConfig",
+      "kind": "tool",
+      "location": {
+        "column": 15,
+        "end_line": 40,
+        "line": 24,
+        "path": "app.py"
+      },
+      "metadata": {
+        "definition_count": 1
+      },
+      "platform": "amazon-bedrock",
+      "provider": "anthropic",
+      "value": "toolConfig"
+    }
+  ],
+  "multimodal_inputs": [
+    {
+      "location": {
+        "column": 16,
+        "end_line": 20,
+        "line": 14,
+        "path": "app.py"
+      },
+      "modality": "document_input",
+      "provider_format": "messages.content.document",
+      "source_kind": "bytes"
+    }
+  ],
+  "requirements": {
+    "minimum_context_window": null,
+    "required_capabilities": [
+      "document_input",
+      "tool_use"
+    ],
+    "required_parameters": [],
+    "source_models": [
+      "anthropic.claude-sonnet-4-6"
+    ],
+    "source_platforms": [
+      "amazon-bedrock"
+    ],
+    "source_providers": [
+      "anthropic"
+    ]
+  },
+  "root": "<fixture>",
+  "schema_version": "2",
+  "structured_outputs": [],
+  "tool_definitions": [
+    {
+      "choice": null,
+      "description": "Find an order by ID.",
+      "input_schema": {
+        "properties": {
+          "order_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "order_id"
+        ],
+        "type": "object"
+      },
+      "location": {
+        "column": 15,
+        "end_line": 40,
+        "line": 24,
+        "path": "app.py"
+      },
+      "name": "find_order",
+      "provider_format": "amazon-bedrock.toolConfig",
+      "strict": null
+    }
+  ],
+  "warnings": []
+}

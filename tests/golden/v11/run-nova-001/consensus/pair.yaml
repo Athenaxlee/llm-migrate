@@ -1,0 +1,22 @@
+schema_version: '1'
+subject: claude-sonnet-5 -> gpt-6.0-nova
+research_sha256: 7832b6aec5326f55edbd0039b207d60833882cff2ccbbf32078744a0e83370cf
+review_sha256: f28f150561381934b05efb6ff2c5ae4d7476c1ad16083102dc1ee44d92477d6b
+accepted_claim_ids:
+- pair-tool-schema
+rejected_claims: []
+unresolved_conflicts: []
+topic_coverage:
+  pricing: missing
+  lifecycle: missing
+  availability: missing
+  capabilities: missing
+  migration_behavior: covered
+trust_level: session_agent_reviewed
+suitability: suitable
+blockers: []
+warnings:
+- requested topic 'pricing' has no accepted claims
+- requested topic 'lifecycle' has no accepted claims
+- requested topic 'availability' has no accepted claims
+- requested topic 'capabilities' has no accepted claims

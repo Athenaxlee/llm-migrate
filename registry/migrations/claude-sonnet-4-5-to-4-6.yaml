@@ -1,0 +1,30 @@
+schema_version: "1"
+id: claude-sonnet-4-5-to-4-6
+source_model: claude-sonnet-4-5-20250929
+target_model: claude-sonnet-4-6
+checked_at: 2026-08-08
+changes:
+  - field_path: migration.assistant_prefill
+    statement: Assistant message prefilling is rejected with HTTP 400 on Sonnet 4.6.
+    severity: breaking
+    recommended_action: Use structured outputs, system instructions, or output_config.format.
+    supporting_sources: [anthropic-sonnet-migration-2026-08-08]
+  - field_path: parameters.output_format
+    statement: output_format is deprecated in favor of output_config.format.
+    severity: high
+    recommended_action: Move the format definition to output_config.format.
+    supporting_sources: [anthropic-sonnet-migration-2026-08-08]
+  - field_path: parameters.effort
+    statement: Sonnet 4.6 adds effort and defaults it to high; Sonnet 4.5 had no effort parameter.
+    severity: medium
+    recommended_action: Set effort explicitly and validate latency and quality.
+    supporting_sources: [anthropic-sonnet-migration-2026-08-08]
+sources:
+  - id: anthropic-sonnet-migration-2026-08-08
+    url: https://platform.claude.com/docs/en/about-claude/models/migration-guide
+    title: Migration guide
+    source_type: official_documentation
+    authority_tier: 2
+    publisher: Anthropic
+    retrieved_at: 2026-08-08
+    supports: [migration.assistant_prefill, parameters.output_format, parameters.effort]

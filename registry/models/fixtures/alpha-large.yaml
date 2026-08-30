@@ -1,0 +1,42 @@
+schema_version: "1"
+fixture: true
+identity:
+  canonical_name: fixture-alpha-large-v1
+  display_name: "TEST/FIXTURE Alpha Large v1"
+  provider: fixture-labs
+  model_family: alpha
+  version: "1"
+  aliases: ["alpha large", "alpha v1", "shared alias"]
+platforms:
+  - platform: fixture-api
+    model_id: fixture.alpha-large-v1
+    regions: [test-east, test-west]
+lifecycle:
+  status: legacy
+pricing:
+  input: {amount: "5", currency: USD, unit: per_1m_tokens}
+  output: {amount: "15", currency: USD, unit: per_1m_tokens}
+capabilities:
+  text_input: true
+  image_input: true
+  structured_output: true
+  tool_use: true
+  parallel_tool_use: true
+  streaming: true
+  context_window_tokens: 200000
+  maximum_output_tokens: 16000
+parameters:
+  temperature: {state: supported, default: 1}
+  top_k: {state: supported}
+  max_tokens: {state: required}
+prompt_guidance:
+  preferred_structure: ["TEST ONLY: put task requirements before examples."]
+  delimiter_guidance: ["TEST ONLY: use consistent explicit delimiters for long context."]
+sources:
+  - id: fixture-alpha-source
+    title: "Synthetic test fixture; not a real model"
+    source_type: test_fixture
+    authority_tier: 1
+    publisher: llm-migrate tests
+    retrieved_at: 2026-01-01
+    supports: [identity, platforms, lifecycle, pricing, capabilities, parameters]

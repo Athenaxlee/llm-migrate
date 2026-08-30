@@ -1,0 +1,547 @@
+migration:
+  schema_version: '2'
+  source:
+    model: claude-sonnet-4-5-20250929
+    provider: anthropic
+    platform: anthropic-api
+    model_id: claude-sonnet-4-5-20250929
+  target:
+    model: claude-sonnet-5
+    provider: anthropic
+    platform: anthropic-api
+    model_id: claude-sonnet-5
+  application:
+    root: .
+    files_scanned: 1
+    finding_count: 6
+    providers:
+    - anthropic
+    platforms:
+    - anthropic-api
+    invocation_count: 1
+    prompt_count: 2
+  target_selection_rationale:
+  - The caller selected claude-sonnet-5 on anthropic-api.
+  - Static analysis found no proven blocker for the detected application requirements.
+  - Review 7 unresolved compatibility item(s) before deployment.
+  model_differences:
+    source_model: claude-sonnet-4-5-20250929
+    target_model: claude-sonnet-5
+    source_platform: anthropic-api
+    target_platform: anthropic-api
+    differences:
+    - category: identity
+      field: provider
+      source_value: anthropic
+      target_value: anthropic
+      state: same
+      severity: info
+      migration_impact: No migration-relevant change.
+      recommended_action: null
+      supporting_sources: []
+      knowledge_id: null
+    - category: platform
+      field: representation
+      source_value:
+        platform: anthropic-api
+        endpoint: null
+        model_id: claude-sonnet-4-5-20250929
+      target_value:
+        platform: anthropic-api
+        endpoint: null
+        model_id: claude-sonnet-5
+      state: different
+      severity: high
+      migration_impact: Selected deployment platforms differ.
+      recommended_action: Confirm endpoint, region, authentication, and platform feature
+        support.
+      supporting_sources: []
+      knowledge_id: null
+    - category: lifecycle
+      field: status
+      source_value: active
+      target_value: active
+      state: same
+      severity: info
+      migration_impact: No migration-relevant change.
+      recommended_action: null
+      supporting_sources: []
+      knowledge_id: null
+    - category: text_input
+      field: text_input
+      source_value: true
+      target_value: true
+      state: same
+      severity: info
+      migration_impact: No migration-relevant change.
+      recommended_action: null
+      supporting_sources: []
+      knowledge_id: null
+    - category: multimodality
+      field: image_input
+      source_value: true
+      target_value: true
+      state: same
+      severity: info
+      migration_impact: No migration-relevant change.
+      recommended_action: null
+      supporting_sources: []
+      knowledge_id: null
+    - category: multimodality
+      field: document_input
+      source_value: true
+      target_value: true
+      state: same
+      severity: info
+      migration_impact: No migration-relevant change.
+      recommended_action: null
+      supporting_sources: []
+      knowledge_id: null
+    - category: structured_output
+      field: structured_output
+      source_value: true
+      target_value: true
+      state: same
+      severity: info
+      migration_impact: No migration-relevant change.
+      recommended_action: null
+      supporting_sources: []
+      knowledge_id: null
+    - category: tool_use
+      field: tool_use
+      source_value: true
+      target_value: true
+      state: same
+      severity: info
+      migration_impact: No migration-relevant change.
+      recommended_action: null
+      supporting_sources: []
+      knowledge_id: null
+    - category: parallel_tool_use
+      field: parallel_tool_use
+      source_value: null
+      target_value: null
+      state: unknown
+      severity: low
+      migration_impact: One or both values for 'parallel_tool_use' are unknown; compatibility
+        must not be assumed.
+      recommended_action: Verify both source reliance and target support before migration.
+      supporting_sources: []
+      knowledge_id: null
+    - category: reasoning
+      field: reasoning
+      source_value: true
+      target_value: true
+      state: same
+      severity: info
+      migration_impact: No migration-relevant change.
+      recommended_action: null
+      supporting_sources: []
+      knowledge_id: null
+    - category: prompt_caching
+      field: prompt_caching
+      source_value: true
+      target_value: true
+      state: same
+      severity: info
+      migration_impact: No migration-relevant change.
+      recommended_action: null
+      supporting_sources: []
+      knowledge_id: null
+    - category: streaming
+      field: streaming
+      source_value: true
+      target_value: true
+      state: same
+      severity: info
+      migration_impact: No migration-relevant change.
+      recommended_action: null
+      supporting_sources: []
+      knowledge_id: null
+    - category: batch_inference
+      field: batch_inference
+      source_value: true
+      target_value: true
+      state: same
+      severity: info
+      migration_impact: No migration-relevant change.
+      recommended_action: null
+      supporting_sources: []
+      knowledge_id: null
+    - category: context_output_limits
+      field: context_window_tokens
+      source_value: 200000
+      target_value: 1000000
+      state: different
+      severity: info
+      migration_impact: The context window limit changes.
+      recommended_action: Test workloads near the source limit.
+      supporting_sources: []
+      knowledge_id: null
+    - category: context_output_limits
+      field: maximum_output_tokens
+      source_value: 64000
+      target_value: 128000
+      state: different
+      severity: info
+      migration_impact: The maximum output limit changes.
+      recommended_action: Test workloads near the source limit.
+      supporting_sources: []
+      knowledge_id: null
+    - category: parameters
+      field: adaptive_thinking
+      source_value: null
+      target_value: supported
+      state: unknown
+      severity: low
+      migration_impact: One or both values for 'adaptive_thinking' are unknown; compatibility
+        must not be assumed.
+      recommended_action: Map, verify, or remove 'adaptive_thinking' before invoking
+        the target.
+      supporting_sources: []
+      knowledge_id: null
+    - category: parameters
+      field: effort
+      source_value: null
+      target_value: supported
+      state: unknown
+      severity: low
+      migration_impact: One or both values for 'effort' are unknown; compatibility
+        must not be assumed.
+      recommended_action: Map, verify, or remove 'effort' before invoking the target.
+      supporting_sources: []
+      knowledge_id: null
+    - category: parameters
+      field: max_tokens
+      source_value: required
+      target_value: required
+      state: same
+      severity: info
+      migration_impact: No migration-relevant change.
+      recommended_action: null
+      supporting_sources: []
+      knowledge_id: null
+    - category: parameters
+      field: temperature
+      source_value: null
+      target_value: unsupported
+      state: unknown
+      severity: low
+      migration_impact: One or both values for 'temperature' are unknown; compatibility
+        must not be assumed.
+      recommended_action: Map, verify, or remove 'temperature' before invoking the
+        target.
+      supporting_sources: []
+      knowledge_id: null
+    - category: parameters
+      field: thinking
+      source_value: supported
+      target_value: unsupported
+      state: unsupported
+      severity: breaking
+      migration_impact: Parameter 'thinking' support or semantics differ.
+      recommended_action: Map, verify, or remove 'thinking' before invoking the target.
+      supporting_sources: []
+      knowledge_id: null
+    - category: parameters
+      field: top_k
+      source_value: null
+      target_value: unsupported
+      state: unknown
+      severity: low
+      migration_impact: One or both values for 'top_k' are unknown; compatibility
+        must not be assumed.
+      recommended_action: Map, verify, or remove 'top_k' before invoking the target.
+      supporting_sources: []
+      knowledge_id: null
+    - category: parameters
+      field: top_p
+      source_value: null
+      target_value: unsupported
+      state: unknown
+      severity: low
+      migration_impact: One or both values for 'top_p' are unknown; compatibility
+        must not be assumed.
+      recommended_action: Map, verify, or remove 'top_p' before invoking the target.
+      supporting_sources: []
+      knowledge_id: null
+    - category: pricing
+      field: published_pricing
+      source_value:
+        input:
+          amount: '3'
+          currency: USD
+          unit: per_1m_tokens
+          valid_from: null
+          valid_until: null
+          notes: null
+          sources: []
+        output:
+          amount: '15'
+          currency: USD
+          unit: per_1m_tokens
+          valid_from: null
+          valid_until: null
+          notes: null
+          sources: []
+        cached_input: null
+        batch: null
+      target_value:
+        input:
+          amount: '2'
+          currency: USD
+          unit: per_1m_tokens
+          valid_from: null
+          valid_until: '2026-08-31'
+          notes: Introductory price; official standard price is $3 after this period.
+          sources: []
+        output:
+          amount: '10'
+          currency: USD
+          unit: per_1m_tokens
+          valid_from: null
+          valid_until: '2026-08-31'
+          notes: Introductory price; official standard price is $15 after this period.
+          sources: []
+        cached_input: null
+        batch: null
+      state: different
+      severity: medium
+      migration_impact: Token costs may change; workload-specific cost depends on
+        token mix.
+      recommended_action: Estimate cost with representative input, output, cache,
+        and batch usage.
+      supporting_sources: []
+      knowledge_id: null
+    - category: behavioral_prompt_guidance
+      field: prompt_guidance
+      source_value:
+        preferred_structure: []
+        delimiter_guidance: []
+        reasoning_guidance: []
+        verbosity_sensitivity: []
+        negative_instruction_guidance: []
+        structured_output_guidance: []
+        tool_use_guidance: []
+        sources: []
+      target_value:
+        preferred_structure: []
+        delimiter_guidance: []
+        reasoning_guidance:
+        - Use adaptive thinking with effort rather than manual thinking budgets.
+        verbosity_sensitivity: []
+        negative_instruction_guidance: []
+        structured_output_guidance:
+        - Use structured outputs, system instructions, or output_config.format instead
+          of assistant prefilling.
+        tool_use_guidance: []
+        sources: []
+      state: different
+      severity: medium
+      migration_impact: Evidence-backed prompting guidance differs.
+      recommended_action: Revisit registry-backed guidance and validate behavior.
+      supporting_sources: []
+      knowledge_id: null
+    - category: migration_knowledge
+      field: null
+      source_value: migration.assistant_prefill
+      target_value: Assistant message prefilling accepted by Sonnet 4.5 is rejected
+        on Sonnet 5.
+      state: different
+      severity: breaking
+      migration_impact: Assistant message prefilling accepted by Sonnet 4.5 is rejected
+        on Sonnet 5.
+      recommended_action: Use structured outputs, system instructions, or output_config.format.
+      supporting_sources:
+      - anthropic-sonnet-migration-2026-08-08
+      knowledge_id: claude-sonnet-4-5-to-5
+    - category: migration_knowledge
+      field: null
+      source_value: parameters.thinking
+      target_value: Migrate manual extended thinking budgets to adaptive thinking
+        and effort.
+      state: different
+      severity: breaking
+      migration_impact: Migrate manual extended thinking budgets to adaptive thinking
+        and effort.
+      recommended_action: Remove budget_tokens and configure adaptive thinking.
+      supporting_sources:
+      - anthropic-sonnet-5-migration-2026-08-08
+      knowledge_id: claude-sonnet-4-5-to-5
+    - category: migration_knowledge
+      field: null
+      source_value: parameters.sampling
+      target_value: Non-default temperature, top_p, or top_k values return HTTP 400
+        on Sonnet 5.
+      state: different
+      severity: breaking
+      migration_impact: Non-default temperature, top_p, or top_k values return HTTP
+        400 on Sonnet 5.
+      recommended_action: Remove non-default sampling parameters.
+      supporting_sources:
+      - anthropic-sonnet-5-migration-2026-08-08
+      knowledge_id: claude-sonnet-4-5-to-5
+    - category: migration_knowledge
+      field: null
+      source_value: tokenizer
+      target_value: Sonnet 5 uses a new tokenizer; earlier token counts must not be
+        reused.
+      state: different
+      severity: high
+      migration_impact: Sonnet 5 uses a new tokenizer; earlier token counts must not
+        be reused.
+      recommended_action: Recount prompts and revise token and cost budgets.
+      supporting_sources:
+      - anthropic-sonnet-5-migration-2026-08-08
+      knowledge_id: claude-sonnet-4-5-to-5
+    highest_severity: breaking
+    pricing_overlays: []
+  affected_files:
+  - app.py
+  required_changes:
+  - category: invocation
+    description: Replace model identifier with claude-sonnet-5 in field model.
+    files:
+    - app.py
+    locations:
+    - path: app.py
+      line: 4
+      column: 11
+      end_line: 9
+  - category: invocation
+    description: Use anthropic.Anthropic and messages.create.
+    files:
+    - app.py
+    locations:
+    - path: app.py
+      line: 4
+      column: 11
+      end_line: 9
+  optional_changes: []
+  blockers: []
+  warnings: []
+  unknowns:
+  - Inline or dynamic prompt content was detected in fields messages, system; the
+    scanner does not retain its text for semantic preparation.
+  - One or both values for 'adaptive_thinking' are unknown; compatibility must not
+    be assumed.
+  - One or both values for 'effort' are unknown; compatibility must not be assumed.
+  - One or both values for 'parallel_tool_use' are unknown; compatibility must not
+    be assumed.
+  - One or both values for 'temperature' are unknown; compatibility must not be assumed.
+  - One or both values for 'top_k' are unknown; compatibility must not be assumed.
+  - One or both values for 'top_p' are unknown; compatibility must not be assumed.
+  prompt_changes: []
+  invocation_changes:
+  - schema_version: '2'
+    source_model: claude-sonnet-4-5-20250929
+    target_model: claude-sonnet-5
+    source_analysis:
+      schema_version: '1'
+      application_root: .
+      providers:
+      - anthropic
+      platforms:
+      - anthropic-api
+      sdk_imports:
+      - anthropic
+      invocation_apis:
+      - client.messages.create
+      model_identifiers:
+      - claude-sonnet-4-5-20250929
+      prompt_fields:
+      - messages
+      - system
+      parameters:
+        max_tokens: 500
+      streaming: false
+      reasoning_controls: []
+      multimodal_inputs: []
+      multimodal_contracts: []
+      tool_fields: []
+      structured_output_fields: []
+      response_parsers: []
+      parser_assumptions: []
+      tool_definitions: []
+      structured_outputs: []
+      tool_compatibility: null
+      structured_output_compatibility: null
+      source_locations:
+      - path: app.py
+        line: 4
+        column: 11
+        end_line: 9
+      - path: app.py
+        line: 5
+        column: 10
+        end_line: 5
+      - path: app.py
+        line: 8
+        column: 15
+        end_line: 8
+      warnings: []
+    target:
+      provider: anthropic
+      platform: anthropic-api
+      sdk: anthropic
+      client: Anthropic
+      operation: messages.create
+      model_field: model
+      model_id: claude-sonnet-5
+      message_field: messages
+      system_field: system
+      parameter_container: null
+      tool_field: tools
+      structured_output_field: output_config
+      image_input_format: messages.content.image.source
+      document_input_format: messages.content.document.source
+    parameter_mappings:
+    - source_name: max_tokens
+      target_name: max_tokens
+      target_container: null
+      value: 500
+      state: directly_compatible
+      rationale: Parameter name is unchanged.
+    tool_schema_migrations: []
+    structured_output_migrations: []
+    configuration_migration:
+      source_providers:
+      - anthropic
+      source_platforms:
+      - anthropic-api
+      target_provider: anthropic
+      target_platform: anthropic-api
+      target_sdk: anthropic
+      target_client: Anthropic
+      credential_strategy: environment_variable
+      credential_environment_variables:
+      - ANTHROPIC_API_KEY
+      region_environment_variables: []
+      state: directly_compatible
+      source_locations: []
+      required_changes:
+      - Instantiate anthropic.Anthropic for anthropic-api.
+      - Reference the target credential through ANTHROPIC_API_KEY.
+      review_notes: []
+    required_changes:
+    - Replace model identifier with claude-sonnet-5 in field model.
+    - Use anthropic.Anthropic and messages.create.
+    warnings: []
+    blockers: []
+  tool_changes: []
+  output_contract_changes: []
+  configuration_changes: []
+  validation_results: []
+  required_tests:
+  - Run existing unit and integration tests against the target configuration.
+  - Review migrated prompt intent and output behavior on representative inputs.
+  - Run a representative source-versus-target evaluation before production rollout.
+  rollout_recommendations:
+  - Resolve every blocker and review every unknown before changing traffic.
+  - Apply changes as a reviewable patch; do not overwrite the application from this
+    plan.
+  - Deploy behind a reversible configuration switch and monitor behavior, errors,
+    latency, and cost.
+  - Retain the source configuration until target validation and rollback checks pass.
+  migration_complexity: high
+  overall_migration_risk: breaking

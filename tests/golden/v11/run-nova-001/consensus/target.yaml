@@ -1,0 +1,29 @@
+schema_version: '1'
+subject: gpt-6.0-nova
+research_sha256: c35ae003519d0f219445302ad6190186b5a0954f172dd6d9ff0b718a4852d891
+review_sha256: 9c9464945efd4859231d4af4055dc894a1727bd59edec4a3b70d4bfc6438889b
+accepted_claim_ids:
+- nova-context
+- nova-identity
+- nova-lifecycle
+- nova-output-limit
+- nova-platform
+- nova-price-input
+- nova-price-output
+- nova-streaming
+- nova-structured-output
+- nova-text-input
+- nova-tool-use
+rejected_claims: []
+unresolved_conflicts: []
+topic_coverage:
+  pricing: covered
+  lifecycle: covered
+  availability: covered
+  capabilities: covered
+  migration_behavior: missing
+trust_level: session_agent_reviewed
+suitability: suitable
+blockers: []
+warnings:
+- requested topic 'migration_behavior' has no accepted claims

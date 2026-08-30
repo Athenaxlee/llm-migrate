@@ -1,0 +1,35 @@
+schema_version: '1'
+run_id: run-nova-001
+source:
+  provider: anthropic
+  platform: anthropic-api
+  model: claude-sonnet-5
+  endpoint: messages
+target:
+  provider: openai
+  platform: openai-api
+  model: gpt-6.0-nova
+  endpoint: responses
+application_requirements_sha256: 70add9c1abfb2e26f83af575ef1f53fecf9c7a31f7f1e3fb5f7093feacc3d572
+topics:
+- pricing
+- lifecycle
+- availability
+- capabilities
+- migration_behavior
+scopes:
+- source
+- target
+- pair
+as_of: '2026-08-29'
+source_policy:
+  maximum_fact_authority_tier: 3
+  allow_community_observations: true
+limits:
+  max_research_agents: 3
+  max_review_agents: 3
+  max_sources_per_topic: 5
+  max_attempts_per_stage: 2
+  max_concurrency: 2
+  max_total_tokens: 500000
+  max_wall_clock_seconds: 1800

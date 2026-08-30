@@ -1,0 +1,751 @@
+migration:
+  schema_version: '2'
+  source:
+    model: gpt-5.6-sol
+    provider: openai
+    platform: openai-api
+    model_id: gpt-5.6-sol
+  target:
+    model: claude-sonnet-5
+    provider: anthropic
+    platform: anthropic-api
+    model_id: claude-sonnet-5
+  application:
+    root: .
+    files_scanned: 1
+    finding_count: 10
+    providers:
+    - openai
+    platforms:
+    - openai-api
+    invocation_count: 1
+    prompt_count: 1
+  target_selection_rationale:
+  - The caller selected claude-sonnet-5 on anthropic-api.
+  - Static analysis found no proven blocker for the detected application requirements.
+  - Review 10 unresolved compatibility item(s) before deployment.
+  model_differences:
+    source_model: gpt-5.6-sol
+    target_model: claude-sonnet-5
+    source_platform: openai-api
+    target_platform: anthropic-api
+    differences:
+    - category: identity
+      field: provider
+      source_value: openai
+      target_value: anthropic
+      state: different
+      severity: high
+      migration_impact: Provider SDK and invocation code may change.
+      recommended_action: Review authentication, SDK, request, and response mappings.
+      supporting_sources: []
+      knowledge_id: null
+    - category: platform
+      field: representation
+      source_value:
+        platform: openai-api
+        endpoint: responses
+        model_id: gpt-5.6-sol
+      target_value:
+        platform: anthropic-api
+        endpoint: null
+        model_id: claude-sonnet-5
+      state: different
+      severity: high
+      migration_impact: Selected deployment platforms differ.
+      recommended_action: Confirm endpoint, region, authentication, and platform feature
+        support.
+      supporting_sources: []
+      knowledge_id: null
+    - category: lifecycle
+      field: status
+      source_value: active
+      target_value: active
+      state: same
+      severity: info
+      migration_impact: No migration-relevant change.
+      recommended_action: null
+      supporting_sources: []
+      knowledge_id: null
+    - category: text_input
+      field: text_input
+      source_value: true
+      target_value: true
+      state: same
+      severity: info
+      migration_impact: No migration-relevant change.
+      recommended_action: null
+      supporting_sources: []
+      knowledge_id: null
+    - category: multimodality
+      field: image_input
+      source_value: true
+      target_value: true
+      state: same
+      severity: info
+      migration_impact: No migration-relevant change.
+      recommended_action: null
+      supporting_sources: []
+      knowledge_id: null
+    - category: multimodality
+      field: document_input
+      source_value: null
+      target_value: true
+      state: unknown
+      severity: low
+      migration_impact: One or both values for 'document_input' are unknown; compatibility
+        must not be assumed.
+      recommended_action: Verify both source reliance and target support before migration.
+      supporting_sources: []
+      knowledge_id: null
+    - category: structured_output
+      field: structured_output
+      source_value: true
+      target_value: true
+      state: same
+      severity: info
+      migration_impact: No migration-relevant change.
+      recommended_action: null
+      supporting_sources: []
+      knowledge_id: null
+    - category: tool_use
+      field: tool_use
+      source_value: true
+      target_value: true
+      state: same
+      severity: info
+      migration_impact: No migration-relevant change.
+      recommended_action: null
+      supporting_sources: []
+      knowledge_id: null
+    - category: parallel_tool_use
+      field: parallel_tool_use
+      source_value: null
+      target_value: null
+      state: unknown
+      severity: low
+      migration_impact: One or both values for 'parallel_tool_use' are unknown; compatibility
+        must not be assumed.
+      recommended_action: Verify both source reliance and target support before migration.
+      supporting_sources: []
+      knowledge_id: null
+    - category: reasoning
+      field: reasoning
+      source_value: true
+      target_value: true
+      state: same
+      severity: info
+      migration_impact: No migration-relevant change.
+      recommended_action: null
+      supporting_sources: []
+      knowledge_id: null
+    - category: prompt_caching
+      field: prompt_caching
+      source_value: true
+      target_value: true
+      state: same
+      severity: info
+      migration_impact: No migration-relevant change.
+      recommended_action: null
+      supporting_sources: []
+      knowledge_id: null
+    - category: streaming
+      field: streaming
+      source_value: true
+      target_value: true
+      state: same
+      severity: info
+      migration_impact: No migration-relevant change.
+      recommended_action: null
+      supporting_sources: []
+      knowledge_id: null
+    - category: batch_inference
+      field: batch_inference
+      source_value: true
+      target_value: true
+      state: same
+      severity: info
+      migration_impact: No migration-relevant change.
+      recommended_action: null
+      supporting_sources: []
+      knowledge_id: null
+    - category: context_output_limits
+      field: context_window_tokens
+      source_value: 1050000
+      target_value: 1000000
+      state: different
+      severity: high
+      migration_impact: The context window limit changes.
+      recommended_action: Test workloads near the source limit.
+      supporting_sources: []
+      knowledge_id: null
+    - category: context_output_limits
+      field: maximum_output_tokens
+      source_value: 128000
+      target_value: 128000
+      state: same
+      severity: info
+      migration_impact: No migration-relevant change.
+      recommended_action: null
+      supporting_sources: []
+      knowledge_id: null
+    - category: parameters
+      field: adaptive_thinking
+      source_value: null
+      target_value: supported
+      state: unknown
+      severity: low
+      migration_impact: One or both values for 'adaptive_thinking' are unknown; compatibility
+        must not be assumed.
+      recommended_action: Map, verify, or remove 'adaptive_thinking' before invoking
+        the target.
+      supporting_sources: []
+      knowledge_id: null
+    - category: parameters
+      field: effort
+      source_value: null
+      target_value: supported
+      state: unknown
+      severity: low
+      migration_impact: One or both values for 'effort' are unknown; compatibility
+        must not be assumed.
+      recommended_action: Map, verify, or remove 'effort' before invoking the target.
+      supporting_sources: []
+      knowledge_id: null
+    - category: parameters
+      field: max_tokens
+      source_value: supported
+      target_value: required
+      state: different
+      severity: medium
+      migration_impact: Parameter 'max_tokens' support or semantics differ.
+      recommended_action: Map, verify, or remove 'max_tokens' before invoking the
+        target.
+      supporting_sources: []
+      knowledge_id: null
+    - category: parameters
+      field: reasoning_effort
+      source_value: supported
+      target_value: null
+      state: unknown
+      severity: high
+      migration_impact: One or both values for 'reasoning_effort' are unknown; compatibility
+        must not be assumed.
+      recommended_action: Map, verify, or remove 'reasoning_effort' before invoking
+        the target.
+      supporting_sources: []
+      knowledge_id: null
+    - category: parameters
+      field: temperature
+      source_value: null
+      target_value: unsupported
+      state: unknown
+      severity: low
+      migration_impact: One or both values for 'temperature' are unknown; compatibility
+        must not be assumed.
+      recommended_action: Map, verify, or remove 'temperature' before invoking the
+        target.
+      supporting_sources: []
+      knowledge_id: null
+    - category: parameters
+      field: thinking
+      source_value: null
+      target_value: unsupported
+      state: unknown
+      severity: low
+      migration_impact: One or both values for 'thinking' are unknown; compatibility
+        must not be assumed.
+      recommended_action: Map, verify, or remove 'thinking' before invoking the target.
+      supporting_sources: []
+      knowledge_id: null
+    - category: parameters
+      field: top_k
+      source_value: null
+      target_value: unsupported
+      state: unknown
+      severity: low
+      migration_impact: One or both values for 'top_k' are unknown; compatibility
+        must not be assumed.
+      recommended_action: Map, verify, or remove 'top_k' before invoking the target.
+      supporting_sources: []
+      knowledge_id: null
+    - category: parameters
+      field: top_p
+      source_value: null
+      target_value: unsupported
+      state: unknown
+      severity: low
+      migration_impact: One or both values for 'top_p' are unknown; compatibility
+        must not be assumed.
+      recommended_action: Map, verify, or remove 'top_p' before invoking the target.
+      supporting_sources: []
+      knowledge_id: null
+    - category: pricing
+      field: published_pricing
+      source_value:
+        input:
+          amount: '4'
+          currency: USD
+          unit: per_1m_tokens
+          valid_from: null
+          valid_until: null
+          notes: null
+          sources: []
+        output:
+          amount: '20'
+          currency: USD
+          unit: per_1m_tokens
+          valid_from: null
+          valid_until: null
+          notes: null
+          sources: []
+        cached_input:
+          amount: '0.4'
+          currency: USD
+          unit: per_1m_tokens
+          valid_from: null
+          valid_until: null
+          notes: null
+          sources: []
+        batch: null
+      target_value:
+        input:
+          amount: '2'
+          currency: USD
+          unit: per_1m_tokens
+          valid_from: null
+          valid_until: '2026-08-31'
+          notes: Introductory price; official standard price is $3 after this period.
+          sources: []
+        output:
+          amount: '10'
+          currency: USD
+          unit: per_1m_tokens
+          valid_from: null
+          valid_until: '2026-08-31'
+          notes: Introductory price; official standard price is $15 after this period.
+          sources: []
+        cached_input: null
+        batch: null
+      state: different
+      severity: medium
+      migration_impact: Token costs may change; workload-specific cost depends on
+        token mix.
+      recommended_action: Estimate cost with representative input, output, cache,
+        and batch usage.
+      supporting_sources: []
+      knowledge_id: null
+    - category: behavioral_prompt_guidance
+      field: prompt_guidance
+      source_value:
+        preferred_structure: []
+        delimiter_guidance: []
+        reasoning_guidance:
+        - Set reasoning.effort intentionally for the workload.
+        verbosity_sensitivity: []
+        negative_instruction_guidance: []
+        structured_output_guidance: []
+        tool_use_guidance: []
+        sources: []
+      target_value:
+        preferred_structure: []
+        delimiter_guidance: []
+        reasoning_guidance:
+        - Use adaptive thinking with effort rather than manual thinking budgets.
+        verbosity_sensitivity: []
+        negative_instruction_guidance: []
+        structured_output_guidance:
+        - Use structured outputs, system instructions, or output_config.format instead
+          of assistant prefilling.
+        tool_use_guidance: []
+        sources: []
+      state: different
+      severity: medium
+      migration_impact: Evidence-backed prompting guidance differs.
+      recommended_action: Revisit registry-backed guidance and validate behavior.
+      supporting_sources: []
+      knowledge_id: null
+    highest_severity: high
+    pricing_overlays: []
+  affected_files:
+  - app.py
+  required_changes:
+  - category: invocation
+    description: Replace model identifier with claude-sonnet-5 in field model.
+    files:
+    - app.py
+    locations:
+    - path: app.py
+      line: 7
+      column: 11
+      end_line: 43
+  - category: invocation
+    description: Use anthropic.Anthropic and messages.create.
+    files:
+    - app.py
+    locations:
+    - path: app.py
+      line: 7
+      column: 11
+      end_line: 43
+  - category: invocation
+    description: Translate request shape to the anthropic-api message contract.
+    files:
+    - app.py
+    locations:
+    - path: app.py
+      line: 7
+      column: 11
+      end_line: 43
+  - category: invocation
+    description: Translate tool configuration to tools.
+    files:
+    - app.py
+    locations:
+    - path: app.py
+      line: 7
+      column: 11
+      end_line: 43
+  - category: invocation
+    description: Preserve the output schema and revalidate downstream parser strictness.
+    files:
+    - app.py
+    locations:
+    - path: app.py
+      line: 7
+      column: 11
+      end_line: 43
+  - category: invocation
+    description: Translate image_input payload from input.content.input_image to messages.content.image.source.
+    files:
+    - app.py
+    locations:
+    - path: app.py
+      line: 7
+      column: 11
+      end_line: 43
+  - category: invocation
+    description: Replace provider/platform authentication, configuration, and error-handling
+      assumptions.
+    files:
+    - app.py
+    locations:
+    - path: app.py
+      line: 7
+      column: 11
+      end_line: 43
+  optional_changes: []
+  blockers: []
+  warnings:
+  - Map reasoning_effort to effort; reasoning-control semantics require review.
+  unknowns:
+  - Inline or dynamic prompt content was detected in fields input; the scanner does
+    not retain its text for semantic preparation.
+  - One or both values for 'adaptive_thinking' are unknown; compatibility must not
+    be assumed.
+  - One or both values for 'document_input' are unknown; compatibility must not be
+    assumed.
+  - One or both values for 'effort' are unknown; compatibility must not be assumed.
+  - One or both values for 'parallel_tool_use' are unknown; compatibility must not
+    be assumed.
+  - One or both values for 'reasoning_effort' are unknown; compatibility must not
+    be assumed.
+  - One or both values for 'temperature' are unknown; compatibility must not be assumed.
+  - One or both values for 'thinking' are unknown; compatibility must not be assumed.
+  - One or both values for 'top_k' are unknown; compatibility must not be assumed.
+  - One or both values for 'top_p' are unknown; compatibility must not be assumed.
+  prompt_changes: []
+  invocation_changes:
+  - schema_version: '2'
+    source_model: gpt-5.6-sol
+    target_model: claude-sonnet-5
+    source_analysis:
+      schema_version: '1'
+      application_root: .
+      providers:
+      - openai
+      platforms:
+      - openai-api
+      sdk_imports:
+      - openai
+      invocation_apis:
+      - client.responses.create
+      model_identifiers:
+      - gpt-5.6-sol
+      prompt_fields:
+      - input
+      parameters:
+        max_output_tokens: 1000
+        reasoning_effort: medium
+      streaming: false
+      reasoning_controls:
+      - reasoning_effort
+      multimodal_inputs:
+      - image_input
+      multimodal_contracts:
+      - modality: image_input
+        provider_format: input.content.input_image
+        source_kind: url
+        location:
+          path: app.py
+          line: 14
+          column: 16
+          end_line: 14
+      tool_fields:
+      - tools
+      structured_output_fields:
+      - text
+      response_parsers:
+      - json.loads
+      parser_assumptions:
+      - parser: json.loads
+        expectation: Response must be syntactically valid JSON.
+        strictness: syntax
+        locations:
+        - path: app.py
+          line: 44
+          column: 10
+          end_line: 44
+      tool_definitions:
+      - name: lookup_vendor
+        description: Look up a vendor by ID.
+        input_schema:
+          type: object
+          properties:
+            vendor_id:
+              type: string
+          required:
+          - vendor_id
+        strict: null
+        provider_format: openai-api.tools
+        choice: null
+        location:
+          path: app.py
+          line: 20
+          column: 10
+          end_line: 31
+      structured_outputs:
+      - name: invoice
+        json_schema:
+          type: object
+          properties:
+            vendor_id:
+              type: string
+          required:
+          - vendor_id
+        strict: null
+        provider_format: openai-api.text
+        location:
+          path: app.py
+          line: 32
+          column: 9
+          end_line: 42
+      tool_compatibility:
+        concern: tool use
+        state: mechanically_convertible
+        rationale: Tool wrappers can be converted while preserving the resolved JSON
+          Schemas.
+        locations:
+        - path: app.py
+          line: 20
+          column: 10
+          end_line: 31
+        issues: []
+      structured_output_compatibility:
+        concern: structured output
+        state: mechanically_convertible
+        rationale: The resolved JSON Schema can be moved to the target wrapper.
+        locations:
+        - path: app.py
+          line: 32
+          column: 9
+          end_line: 42
+        issues: []
+      source_locations:
+      - path: app.py
+        line: 7
+        column: 11
+        end_line: 43
+      - path: app.py
+        line: 8
+        column: 10
+        end_line: 8
+      - path: app.py
+        line: 14
+        column: 16
+        end_line: 14
+      - path: app.py
+        line: 18
+        column: 22
+        end_line: 18
+      - path: app.py
+        line: 19
+        column: 21
+        end_line: 19
+      - path: app.py
+        line: 20
+        column: 10
+        end_line: 31
+      - path: app.py
+        line: 32
+        column: 9
+        end_line: 42
+      warnings: []
+    target:
+      provider: anthropic
+      platform: anthropic-api
+      sdk: anthropic
+      client: Anthropic
+      operation: messages.create
+      model_field: model
+      model_id: claude-sonnet-5
+      message_field: messages
+      system_field: system
+      parameter_container: null
+      tool_field: tools
+      structured_output_field: output_config
+      image_input_format: messages.content.image.source
+      document_input_format: messages.content.document.source
+    parameter_mappings:
+    - source_name: max_output_tokens
+      target_name: max_tokens
+      target_container: null
+      value: 1000
+      state: mechanically_convertible
+      rationale: Map max_output_tokens to max_tokens for anthropic-api.
+    - source_name: reasoning_effort
+      target_name: effort
+      target_container: null
+      value: medium
+      state: semantically_different
+      rationale: Map reasoning_effort to effort; reasoning-control semantics require
+        review.
+    tool_schema_migrations:
+    - name: lookup_vendor
+      source_format: openai-api.tools
+      target_platform: anthropic-api
+      target_field: tools
+      state: mechanically_convertible
+      source_location:
+        path: app.py
+        line: 20
+        column: 10
+        end_line: 31
+      target_definition:
+        name: lookup_vendor
+        description: Look up a vendor by ID.
+        input_schema:
+          type: object
+          properties:
+            vendor_id:
+              type: string
+          required:
+          - vendor_id
+      target_choice_field: null
+      target_choice: null
+      review_notes: []
+    structured_output_migrations:
+    - name: invoice
+      source_format: openai-api.text
+      target_platform: anthropic-api
+      target_field: output_config
+      state: mechanically_convertible
+      source_location:
+        path: app.py
+        line: 32
+        column: 9
+        end_line: 42
+      target_configuration:
+        format:
+          type: json_schema
+          schema:
+            type: object
+            properties:
+              vendor_id:
+                type: string
+            required:
+            - vendor_id
+      review_notes: []
+    configuration_migration:
+      source_providers:
+      - openai
+      source_platforms:
+      - openai-api
+      target_provider: anthropic
+      target_platform: anthropic-api
+      target_sdk: anthropic
+      target_client: Anthropic
+      credential_strategy: environment_variable
+      credential_environment_variables:
+      - ANTHROPIC_API_KEY
+      region_environment_variables: []
+      state: mechanically_convertible
+      source_locations: []
+      required_changes:
+      - Instantiate anthropic.Anthropic for anthropic-api.
+      - Reference the target credential through ANTHROPIC_API_KEY.
+      review_notes: []
+    required_changes:
+    - Replace model identifier with claude-sonnet-5 in field model.
+    - Use anthropic.Anthropic and messages.create.
+    - Translate request shape to the anthropic-api message contract.
+    - Translate tool configuration to tools.
+    - Preserve the output schema and revalidate downstream parser strictness.
+    - Translate image_input payload from input.content.input_image to messages.content.image.source.
+    - Replace provider/platform authentication, configuration, and error-handling
+      assumptions.
+    warnings:
+    - Map reasoning_effort to effort; reasoning-control semantics require review.
+    blockers: []
+  tool_changes:
+  - category: tool
+    description: Tool wrappers can be converted while preserving the resolved JSON
+      Schemas.
+    files:
+    - app.py
+    locations:
+    - path: app.py
+      line: 20
+      column: 10
+      end_line: 31
+  output_contract_changes:
+  - category: output_contract
+    description: The resolved JSON Schema can be moved to the target wrapper.
+    files:
+    - app.py
+    locations:
+    - path: app.py
+      line: 32
+      column: 9
+      end_line: 42
+    - path: app.py
+      line: 44
+      column: 10
+      end_line: 44
+  configuration_changes:
+  - category: configuration
+    description: Replace openai-api credentials/configuration with reviewed anthropic-api
+      configuration.
+    files: []
+    locations: []
+  validation_results:
+  - code: invocation_migration_warning
+    level: warning
+    message: Map reasoning_effort to effort; reasoning-control semantics require review.
+    source_path: null
+  required_tests:
+  - Run existing unit and integration tests against the target configuration.
+  - Review migrated prompt intent and output behavior on representative inputs.
+  - Verify every tool call and tool-result round trip.
+  - Verify structured outputs against downstream parsers and schemas.
+  - Exercise every detected image or document input path.
+  - Run a representative source-versus-target evaluation before production rollout.
+  rollout_recommendations:
+  - Resolve every blocker and review every unknown before changing traffic.
+  - Apply changes as a reviewable patch; do not overwrite the application from this
+    plan.
+  - Deploy behind a reversible configuration switch and monitor behavior, errors,
+    latency, and cost.
+  - Retain the source configuration until target validation and rollback checks pass.
+  migration_complexity: high
+  overall_migration_risk: high

@@ -1,0 +1,298 @@
+schema_version: '1'
+subject: gpt-5.6-luna
+canonical_model_candidate: gpt-5.6-luna
+research_date: '2026-08-29'
+claims:
+- id: gpt-5-6-luna-identity
+  field_path: identity
+  value:
+    canonical_name: gpt-5.6-luna
+    display_name: GPT-5.6 Luna
+    provider: openai
+    model_family: gpt-5.6
+    version: luna
+    aliases:
+    - gpt 5.6 luna
+  statement: The official model page identifies GPT-5.6 Luna and its exact model ID.
+  kind: fact
+  evidence_type: direct
+  confidence: authoritative
+  sources:
+  - openai-gpt-5-6-luna-2026-08-29
+  - openai-model-catalog-2026-08-29
+  action: set
+  notes: null
+- id: gpt-5-6-luna-platform
+  field_path: platforms
+  value:
+  - platform: openai-api
+    endpoint: responses
+    model_id: gpt-5.6-luna
+    regions: []
+    capability_overrides: null
+    sources: []
+  statement: GPT-5.6 Luna is available through the OpenAI Responses API under this
+    model ID.
+  kind: fact
+  evidence_type: direct
+  confidence: authoritative
+  sources:
+  - openai-gpt-5-6-luna-2026-08-29
+  action: set
+  notes: null
+- id: gpt-5-6-luna-lifecycle
+  field_path: lifecycle.status
+  value: active
+  statement: The current official catalog recommends GPT-5.6 Luna for cost-sensitive
+    workloads.
+  kind: fact
+  evidence_type: direct
+  confidence: authoritative
+  sources:
+  - openai-model-catalog-2026-08-29
+  action: set
+  notes: null
+- id: gpt-5-6-luna-pricing
+  field_path: pricing
+  value:
+    input:
+      amount: '0.2'
+      currency: USD
+      unit: per_1m_tokens
+      valid_from: null
+      valid_until: null
+      notes: null
+      sources: []
+    output:
+      amount: '1.2'
+      currency: USD
+      unit: per_1m_tokens
+      valid_from: null
+      valid_until: null
+      notes: null
+      sources: []
+    cached_input:
+      amount: '0.02'
+      currency: USD
+      unit: per_1m_tokens
+      valid_from: null
+      valid_until: null
+      notes: null
+      sources: []
+    batch: null
+  statement: The official model page lists Luna input, cached-input, and output prices
+    per million tokens.
+  kind: fact
+  evidence_type: direct
+  confidence: authoritative
+  sources:
+  - openai-gpt-5-6-luna-2026-08-29
+  action: set
+  notes: null
+- id: gpt-5-6-luna-pricing-conflict-resolved
+  field_path: evidence_conflicts
+  value: []
+  statement: The official Luna model page and current official catalog now agree on
+    Luna pricing.
+  kind: fact
+  evidence_type: direct
+  confidence: authoritative
+  sources:
+  - openai-gpt-5-6-luna-2026-08-29
+  - openai-model-catalog-2026-08-29
+  action: set
+  notes: null
+- id: gpt-5-6-luna-text-input
+  field_path: capabilities.text_input
+  value: true
+  statement: The official model page lists text input.
+  kind: fact
+  evidence_type: direct
+  confidence: authoritative
+  sources:
+  - openai-gpt-5-6-luna-2026-08-29
+  action: set
+  notes: null
+- id: gpt-5-6-luna-image-input
+  field_path: capabilities.image_input
+  value: true
+  statement: The official model page lists image input.
+  kind: fact
+  evidence_type: direct
+  confidence: authoritative
+  sources:
+  - openai-gpt-5-6-luna-2026-08-29
+  action: set
+  notes: null
+- id: gpt-5-6-luna-structured-output
+  field_path: capabilities.structured_output
+  value: true
+  statement: The official model page lists structured outputs.
+  kind: fact
+  evidence_type: direct
+  confidence: authoritative
+  sources:
+  - openai-gpt-5-6-luna-2026-08-29
+  action: set
+  notes: null
+- id: gpt-5-6-luna-tool-use
+  field_path: capabilities.tool_use
+  value: true
+  statement: The official model page lists function calling and Responses API tools.
+  kind: fact
+  evidence_type: direct
+  confidence: authoritative
+  sources:
+  - openai-gpt-5-6-luna-2026-08-29
+  action: set
+  notes: null
+- id: gpt-5-6-luna-reasoning
+  field_path: capabilities.reasoning
+  value: true
+  statement: The official model page lists reasoning token support.
+  kind: fact
+  evidence_type: direct
+  confidence: authoritative
+  sources:
+  - openai-gpt-5-6-luna-2026-08-29
+  action: set
+  notes: null
+- id: gpt-5-6-luna-prompt-caching
+  field_path: capabilities.prompt_caching
+  value: true
+  statement: The official model page lists prompt caching.
+  kind: fact
+  evidence_type: direct
+  confidence: authoritative
+  sources:
+  - openai-gpt-5-6-luna-2026-08-29
+  action: set
+  notes: null
+- id: gpt-5-6-luna-streaming
+  field_path: capabilities.streaming
+  value: true
+  statement: The official model page lists streaming.
+  kind: fact
+  evidence_type: direct
+  confidence: authoritative
+  sources:
+  - openai-gpt-5-6-luna-2026-08-29
+  action: set
+  notes: null
+- id: gpt-5-6-luna-batch
+  field_path: capabilities.batch_inference
+  value: true
+  statement: The official model page lists Batch endpoint support.
+  kind: fact
+  evidence_type: direct
+  confidence: authoritative
+  sources:
+  - openai-gpt-5-6-luna-2026-08-29
+  action: set
+  notes: null
+- id: gpt-5-6-luna-context
+  field_path: capabilities.context_window_tokens
+  value: 1050000
+  statement: The official model page specifies a 1,050,000-token context window.
+  kind: fact
+  evidence_type: direct
+  confidence: authoritative
+  sources:
+  - openai-gpt-5-6-luna-2026-08-29
+  action: set
+  notes: null
+- id: gpt-5-6-luna-output-limit
+  field_path: capabilities.maximum_output_tokens
+  value: 128000
+  statement: The official model page specifies a 128,000-token output maximum.
+  kind: fact
+  evidence_type: direct
+  confidence: authoritative
+  sources:
+  - openai-gpt-5-6-luna-2026-08-29
+  action: set
+  notes: null
+- id: gpt-5-6-luna-reasoning-effort-state
+  field_path: parameters.reasoning_effort.state
+  value: supported
+  statement: Official guidance documents reasoning effort for GPT-5.6.
+  kind: fact
+  evidence_type: direct
+  confidence: authoritative
+  sources:
+  - openai-latest-model-guide-2026-08-29
+  action: set
+  notes: null
+- id: gpt-5-6-luna-reasoning-effort-notes
+  field_path: parameters.reasoning_effort.notes
+  value: 'Supported values: none, low, medium, high, xhigh, max.'
+  statement: Official guidance lists the supported reasoning-effort values.
+  kind: fact
+  evidence_type: direct
+  confidence: authoritative
+  sources:
+  - openai-latest-model-guide-2026-08-29
+  action: set
+  notes: null
+- id: gpt-5-6-luna-prompt-guidance
+  field_path: prompt_guidance.reasoning_guidance
+  value:
+  - Set reasoning.effort intentionally for the workload.
+  statement: Official guidance recommends setting reasoning effort intentionally and
+    evaluating it on the workload.
+  kind: fact
+  evidence_type: direct
+  confidence: authoritative
+  sources:
+  - openai-latest-model-guide-2026-08-29
+  action: set
+  notes: null
+sources:
+- id: openai-gpt-5-6-luna-2026-08-29
+  url: https://developers.openai.com/api/docs/models/gpt-5.6-luna
+  title: GPT-5.6 Luna Model
+  source_type: official_documentation
+  authority_tier: 2
+  publisher: OpenAI
+  retrieved_at: '2026-08-29'
+  published_at: null
+  supports:
+  - identity
+  - platforms
+  - lifecycle
+  - pricing
+  - capabilities
+  - parameters
+  notes: null
+- id: openai-model-catalog-2026-08-29
+  url: https://developers.openai.com/api/docs/models
+  title: Models
+  source_type: official_documentation
+  authority_tier: 2
+  publisher: OpenAI
+  retrieved_at: '2026-08-29'
+  published_at: null
+  supports:
+  - identity
+  - lifecycle
+  - availability
+  - pricing
+  notes: null
+- id: openai-latest-model-guide-2026-08-29
+  url: https://developers.openai.com/api/docs/guides/latest-model
+  title: Using GPT-5.6
+  source_type: official_documentation
+  authority_tier: 2
+  publisher: OpenAI
+  retrieved_at: '2026-08-29'
+  published_at: null
+  supports:
+  - parameters
+  - prompt_guidance
+  notes: null
+observations: []
+conflicts: []
+unresolved_questions:
+- The registry cannot yet represent long-context price multipliers or cache-write
+  pricing.
+warnings: []

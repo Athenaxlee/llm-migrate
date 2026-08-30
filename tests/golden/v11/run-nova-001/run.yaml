@@ -1,0 +1,96 @@
+schema_version: '1'
+run_id: run-nova-001
+request_sha256: f49126d024e22e984bfcb5a88d3221de305cb2208855e7d67ca6296878173bdb
+stages:
+- name: research_source
+  status: completed
+  artifact_sha256: ea5ac126837fc423fda2726768bdee0c64af6a8db1fb9afda3c6fcfc210bf0c2
+  agent_id: researcher-source
+  attempts: 1
+  input_tokens: 900
+  output_tokens: 100
+  failure: null
+- name: research_target
+  status: completed
+  artifact_sha256: c35ae003519d0f219445302ad6190186b5a0954f172dd6d9ff0b718a4852d891
+  agent_id: researcher-target
+  attempts: 1
+  input_tokens: 900
+  output_tokens: 100
+  failure: null
+- name: research_pair
+  status: completed
+  artifact_sha256: 7832b6aec5326f55edbd0039b207d60833882cff2ccbbf32078744a0e83370cf
+  agent_id: researcher-pair
+  attempts: 1
+  input_tokens: 900
+  output_tokens: 100
+  failure: null
+- name: review_source
+  status: completed
+  artifact_sha256: 6a507bc8fccd87354f2906c83adb722c77589854a784566fbde2c882ed6d800c
+  agent_id: reviewer-independent
+  attempts: 1
+  input_tokens: 900
+  output_tokens: 100
+  failure: null
+- name: review_target
+  status: completed
+  artifact_sha256: 9c9464945efd4859231d4af4055dc894a1727bd59edec4a3b70d4bfc6438889b
+  agent_id: reviewer-independent
+  attempts: 1
+  input_tokens: 900
+  output_tokens: 100
+  failure: null
+- name: review_pair
+  status: completed
+  artifact_sha256: f28f150561381934b05efb6ff2c5ae4d7476c1ad16083102dc1ee44d92477d6b
+  agent_id: reviewer-independent
+  attempts: 1
+  input_tokens: 900
+  output_tokens: 100
+  failure: null
+- name: consensus_source
+  status: completed
+  artifact_sha256: 40273de18108631c3391a7ee76845922efc4a329816696e54c680f0f9406b4ce
+  agent_id: null
+  attempts: 0
+  input_tokens: 0
+  output_tokens: 0
+  failure: null
+- name: consensus_target
+  status: completed
+  artifact_sha256: 9dd5487f5c4b8da69c0bd99b3359f58a98b806ca87e1bccb924c9c833b998e9e
+  agent_id: null
+  attempts: 0
+  input_tokens: 0
+  output_tokens: 0
+  failure: null
+- name: consensus_pair
+  status: completed
+  artifact_sha256: 1e7424ab7a36866fec62a513401b29fb29dad31d23df38c955304ba82d12c382
+  agent_id: null
+  attempts: 0
+  input_tokens: 0
+  output_tokens: 0
+  failure: null
+- name: session_registry
+  status: completed
+  artifact_sha256: d6f1118a802776feca989ecee4d97c4f49a5996cb056d42149d24cafc6b203dd
+  agent_id: null
+  attempts: 0
+  input_tokens: 0
+  output_tokens: 0
+  failure: null
+total_input_tokens: 5400
+total_output_tokens: 600
+stopping_reason: completed
+warnings:
+- requested topic 'availability' has no accepted claims
+- requested topic 'capabilities' has no accepted claims
+- requested topic 'migration_behavior' has no accepted claims
+- requested topic 'migration_behavior' has no accepted claims
+- requested topic 'pricing' has no accepted claims
+- requested topic 'lifecycle' has no accepted claims
+- requested topic 'availability' has no accepted claims
+- requested topic 'capabilities' has no accepted claims

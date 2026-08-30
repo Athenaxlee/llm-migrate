@@ -1,0 +1,53 @@
+schema_version: "1"
+model: claude-sonnet-5
+proposal_date: 2026-08-09
+changes:
+  - field_path: freshness
+    change_type: update
+    current_value:
+      checked_at: 2026-08-08
+    proposed_value:
+      checked_at: 2026-08-09
+    confidence: authoritative
+    risk: low
+    supporting_sources:
+      - anthropic-models-overview-2026-08-08
+      - anthropic-sonnet-5-new-2026-08-08
+      - anthropic-model-deprecations-2026-08-08
+      - aws-sonnet-5-card-2026-08-08
+    reason: Official model, launch, lifecycle, and Bedrock documentation was rechecked.
+conflicts:
+  - field_path: parameters.adaptive_thinking.disable_supported
+    change_type: conflict
+    current_value: null
+    proposed_value:
+      anthropic-api: true
+      amazon-bedrock: false
+    confidence: authoritative
+    risk: high
+    supporting_sources:
+      - anthropic-sonnet-5-new-2026-08-08
+      - aws-sonnet-5-card-2026-08-08
+    reason: Anthropic documents thinking.type disabled for Sonnet 5, while the AWS model card says adaptive thinking is always on and cannot be disabled. This likely requires a platform-scoped parameter override.
+unknown_fields:
+  - platforms.amazon-bedrock.parameters.adaptive_thinking
+warnings:
+  - The repository has no commit history, so the pre-research registry baseline cannot be reconstructed. This proposal compares against the files currently in registry/.
+  - Temperature, top_p, top_k, and manual-thinking restrictions are already present in the current canonical entry and were reverified rather than represented as new changes.
+candidate_errors: []
+review:
+  status: approved_with_unresolved_conflict
+  reviewed_at: 2026-08-15
+  decisions:
+    - field_path: freshness
+      decision: approved
+      disposition: promoted
+      rationale: The cited official sources support the candidate and the evidence refresh.
+    - field_path: parameters.adaptive_thinking.disable_supported
+      decision: approved_as_conflict
+      disposition: conflict_record_promoted
+      rationale: Both statements are authoritative in their own platform scope, so neither is promoted as a universal fact.
+    - field_path: platforms.amazon-bedrock.parameters.adaptive_thinking
+      decision: hold
+      disposition: remains_unknown
+      rationale: Bedrock-specific behavior remains unresolved pending more precise official or empirical evidence.

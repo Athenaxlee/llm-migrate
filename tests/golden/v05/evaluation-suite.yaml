@@ -1,0 +1,68 @@
+schema_version: '2'
+name: v05-golden
+migration_manifest_sha256: acc67247562d2daee40119c2c66b2184c5b4982d2398e39dce5f73650e06d4cf
+source:
+  model: claude-sonnet-5
+  provider: anthropic
+  platform: anthropic-api
+  model_id: claude-sonnet-5
+target:
+  model: gpt-5.6-sol
+  provider: openai
+  platform: openai-api
+  model_id: gpt-5.6-sol
+cases:
+- id: structured-extraction
+  input: Extract Acme as JSON.
+  messages: []
+  system_prompt: null
+  expected_output:
+    answer: Acme
+  expected_tool_calls: null
+  validators:
+  - kind: json_schema
+    name: output-schema
+    pattern: null
+    schema_definition:
+      type: object
+      properties:
+        answer:
+          type: string
+      required:
+      - answer
+      additionalProperties: false
+    evaluator_name: null
+    minimum_score: 1.0
+  - kind: exact_match
+    name: golden-output
+    pattern: null
+    schema_definition: null
+    evaluator_name: null
+    minimum_score: 1.0
+  tags: []
+  metadata: {}
+- id: tool-use
+  input: Look up record one.
+  messages: []
+  system_prompt: null
+  expected_output: done
+  expected_tool_calls:
+  - name: lookup
+    arguments:
+      id: 1
+  validators:
+  - kind: exact_match
+    name: golden-output
+    pattern: null
+    schema_definition: null
+    evaluator_name: null
+    minimum_score: 1.0
+  - kind: tool_calls
+    name: expected-tool-calls
+    pattern: null
+    schema_definition: null
+    evaluator_name: null
+    minimum_score: 1.0
+  tags: []
+  metadata: {}
+warnings: []

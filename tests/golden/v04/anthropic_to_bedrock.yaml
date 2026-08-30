@@ -1,0 +1,749 @@
+migration:
+  schema_version: '2'
+  source:
+    model: claude-sonnet-5
+    provider: anthropic
+    platform: anthropic-api
+    model_id: claude-sonnet-5
+  target:
+    model: claude-sonnet-4-6
+    provider: anthropic
+    platform: amazon-bedrock
+    model_id: anthropic.claude-sonnet-4-6
+  application:
+    root: .
+    files_scanned: 1
+    finding_count: 11
+    providers:
+    - anthropic
+    platforms:
+    - anthropic-api
+    invocation_count: 1
+    prompt_count: 3
+  target_selection_rationale:
+  - The caller selected claude-sonnet-4-6 on amazon-bedrock.
+  - Static analysis found no proven blocker for the detected application requirements.
+  - Review 2 unresolved compatibility item(s) before deployment.
+  model_differences:
+    source_model: claude-sonnet-5
+    target_model: claude-sonnet-4-6
+    source_platform: anthropic-api
+    target_platform: amazon-bedrock
+    differences:
+    - category: identity
+      field: provider
+      source_value: anthropic
+      target_value: anthropic
+      state: same
+      severity: info
+      migration_impact: No migration-relevant change.
+      recommended_action: null
+      supporting_sources: []
+      knowledge_id: null
+    - category: platform
+      field: representation
+      source_value:
+        platform: anthropic-api
+        endpoint: null
+        model_id: claude-sonnet-5
+      target_value:
+        platform: amazon-bedrock
+        endpoint: bedrock-runtime
+        model_id: anthropic.claude-sonnet-4-6
+      state: different
+      severity: high
+      migration_impact: Selected deployment platforms differ.
+      recommended_action: Confirm endpoint, region, authentication, and platform feature
+        support.
+      supporting_sources: []
+      knowledge_id: null
+    - category: lifecycle
+      field: status
+      source_value: active
+      target_value: active
+      state: same
+      severity: info
+      migration_impact: No migration-relevant change.
+      recommended_action: null
+      supporting_sources: []
+      knowledge_id: null
+    - category: text_input
+      field: text_input
+      source_value: true
+      target_value: true
+      state: same
+      severity: info
+      migration_impact: No migration-relevant change.
+      recommended_action: null
+      supporting_sources: []
+      knowledge_id: null
+    - category: multimodality
+      field: image_input
+      source_value: true
+      target_value: true
+      state: same
+      severity: info
+      migration_impact: No migration-relevant change.
+      recommended_action: null
+      supporting_sources: []
+      knowledge_id: null
+    - category: multimodality
+      field: document_input
+      source_value: true
+      target_value: true
+      state: same
+      severity: info
+      migration_impact: No migration-relevant change.
+      recommended_action: null
+      supporting_sources: []
+      knowledge_id: null
+    - category: structured_output
+      field: structured_output
+      source_value: true
+      target_value: true
+      state: same
+      severity: info
+      migration_impact: No migration-relevant change.
+      recommended_action: null
+      supporting_sources: []
+      knowledge_id: null
+    - category: tool_use
+      field: tool_use
+      source_value: true
+      target_value: true
+      state: same
+      severity: info
+      migration_impact: No migration-relevant change.
+      recommended_action: null
+      supporting_sources: []
+      knowledge_id: null
+    - category: parallel_tool_use
+      field: parallel_tool_use
+      source_value: null
+      target_value: null
+      state: unknown
+      severity: low
+      migration_impact: One or both values for 'parallel_tool_use' are unknown; compatibility
+        must not be assumed.
+      recommended_action: Verify both source reliance and target support before migration.
+      supporting_sources: []
+      knowledge_id: null
+    - category: reasoning
+      field: reasoning
+      source_value: true
+      target_value: true
+      state: same
+      severity: info
+      migration_impact: No migration-relevant change.
+      recommended_action: null
+      supporting_sources: []
+      knowledge_id: null
+    - category: prompt_caching
+      field: prompt_caching
+      source_value: true
+      target_value: true
+      state: same
+      severity: info
+      migration_impact: No migration-relevant change.
+      recommended_action: null
+      supporting_sources: []
+      knowledge_id: null
+    - category: streaming
+      field: streaming
+      source_value: true
+      target_value: true
+      state: same
+      severity: info
+      migration_impact: No migration-relevant change.
+      recommended_action: null
+      supporting_sources: []
+      knowledge_id: null
+    - category: batch_inference
+      field: batch_inference
+      source_value: true
+      target_value: true
+      state: same
+      severity: info
+      migration_impact: No migration-relevant change.
+      recommended_action: null
+      supporting_sources: []
+      knowledge_id: null
+    - category: context_output_limits
+      field: context_window_tokens
+      source_value: 1000000
+      target_value: 1000000
+      state: same
+      severity: info
+      migration_impact: No migration-relevant change.
+      recommended_action: null
+      supporting_sources: []
+      knowledge_id: null
+    - category: context_output_limits
+      field: maximum_output_tokens
+      source_value: 128000
+      target_value: 128000
+      state: same
+      severity: info
+      migration_impact: No migration-relevant change.
+      recommended_action: null
+      supporting_sources: []
+      knowledge_id: null
+    - category: parameters
+      field: adaptive_thinking
+      source_value: supported
+      target_value: null
+      state: unknown
+      severity: high
+      migration_impact: One or both values for 'adaptive_thinking' are unknown; compatibility
+        must not be assumed.
+      recommended_action: Map, verify, or remove 'adaptive_thinking' before invoking
+        the target.
+      supporting_sources: []
+      knowledge_id: null
+    - category: parameters
+      field: effort
+      source_value: supported
+      target_value: supported
+      state: same
+      severity: info
+      migration_impact: No migration-relevant change.
+      recommended_action: null
+      supporting_sources: []
+      knowledge_id: null
+    - category: parameters
+      field: max_tokens
+      source_value: required
+      target_value: required
+      state: same
+      severity: info
+      migration_impact: No migration-relevant change.
+      recommended_action: null
+      supporting_sources: []
+      knowledge_id: null
+    - category: parameters
+      field: temperature
+      source_value: unsupported
+      target_value: supported
+      state: different
+      severity: medium
+      migration_impact: Parameter 'temperature' support or semantics differ.
+      recommended_action: Map, verify, or remove 'temperature' before invoking the
+        target.
+      supporting_sources: []
+      knowledge_id: null
+    - category: parameters
+      field: thinking
+      source_value: unsupported
+      target_value: deprecated
+      state: different
+      severity: medium
+      migration_impact: Parameter 'thinking' support or semantics differ.
+      recommended_action: Map, verify, or remove 'thinking' before invoking the target.
+      supporting_sources: []
+      knowledge_id: null
+    - category: parameters
+      field: top_k
+      source_value: unsupported
+      target_value: supported
+      state: different
+      severity: medium
+      migration_impact: Parameter 'top_k' support or semantics differ.
+      recommended_action: Map, verify, or remove 'top_k' before invoking the target.
+      supporting_sources: []
+      knowledge_id: null
+    - category: parameters
+      field: top_p
+      source_value: unsupported
+      target_value: supported
+      state: different
+      severity: medium
+      migration_impact: Parameter 'top_p' support or semantics differ.
+      recommended_action: Map, verify, or remove 'top_p' before invoking the target.
+      supporting_sources: []
+      knowledge_id: null
+    - category: pricing
+      field: published_pricing
+      source_value:
+        input:
+          amount: '2'
+          currency: USD
+          unit: per_1m_tokens
+          valid_from: null
+          valid_until: '2026-08-31'
+          notes: Introductory price; official standard price is $3 after this period.
+          sources: []
+        output:
+          amount: '10'
+          currency: USD
+          unit: per_1m_tokens
+          valid_from: null
+          valid_until: '2026-08-31'
+          notes: Introductory price; official standard price is $15 after this period.
+          sources: []
+        cached_input: null
+        batch: null
+      target_value:
+        input:
+          amount: '3'
+          currency: USD
+          unit: per_1m_tokens
+          valid_from: null
+          valid_until: null
+          notes: null
+          sources: []
+        output:
+          amount: '15'
+          currency: USD
+          unit: per_1m_tokens
+          valid_from: null
+          valid_until: null
+          notes: null
+          sources: []
+        cached_input: null
+        batch: null
+      state: different
+      severity: medium
+      migration_impact: Token costs may change; workload-specific cost depends on
+        token mix.
+      recommended_action: Estimate cost with representative input, output, cache,
+        and batch usage.
+      supporting_sources: []
+      knowledge_id: null
+    - category: behavioral_prompt_guidance
+      field: prompt_guidance
+      source_value:
+        preferred_structure: []
+        delimiter_guidance: []
+        reasoning_guidance:
+        - Use adaptive thinking with effort rather than manual thinking budgets.
+        verbosity_sensitivity: []
+        negative_instruction_guidance: []
+        structured_output_guidance:
+        - Use structured outputs, system instructions, or output_config.format instead
+          of assistant prefilling.
+        tool_use_guidance: []
+        sources: []
+      target_value:
+        preferred_structure: []
+        delimiter_guidance: []
+        reasoning_guidance:
+        - Set effort explicitly for workload latency and quality requirements.
+        verbosity_sensitivity: []
+        negative_instruction_guidance: []
+        structured_output_guidance:
+        - Use structured outputs or output_config.format instead of assistant prefilling.
+        tool_use_guidance: []
+        sources: []
+      state: different
+      severity: medium
+      migration_impact: Evidence-backed prompting guidance differs.
+      recommended_action: Revisit registry-backed guidance and validate behavior.
+      supporting_sources: []
+      knowledge_id: null
+    highest_severity: high
+    pricing_overlays: []
+  affected_files:
+  - app.py
+  - prompts/system.txt
+  required_changes:
+  - category: invocation
+    description: Replace model identifier with anthropic.claude-sonnet-4-6 in field
+      modelId.
+    files:
+    - app.py
+    locations:
+    - path: app.py
+      line: 9
+      column: 11
+      end_line: 27
+  - category: invocation
+    description: Use boto3.bedrock-runtime and converse.
+    files:
+    - app.py
+    locations:
+    - path: app.py
+      line: 9
+      column: 11
+      end_line: 27
+  - category: invocation
+    description: Translate request shape to the amazon-bedrock message contract.
+    files:
+    - app.py
+    locations:
+    - path: app.py
+      line: 9
+      column: 11
+      end_line: 27
+  - category: invocation
+    description: Translate tool configuration to toolConfig.
+    files:
+    - app.py
+    locations:
+    - path: app.py
+      line: 9
+      column: 11
+      end_line: 27
+  - category: invocation
+    description: Replace provider/platform authentication, configuration, and error-handling
+      assumptions.
+    files:
+    - app.py
+    locations:
+    - path: app.py
+      line: 9
+      column: 11
+      end_line: 27
+  optional_changes:
+  - category: prompt
+    description: Review the prepared prompt candidate for prompts/system.txt.
+    files:
+    - app.py
+    locations:
+    - path: app.py
+      line: 7
+      column: 0
+      end_line: 7
+    - path: app.py
+      line: 11
+      column: 11
+      end_line: 11
+    - path: app.py
+      line: 12
+      column: 13
+      end_line: 12
+  blockers: []
+  warnings: []
+  unknowns:
+  - One or both values for 'adaptive_thinking' are unknown; compatibility must not
+    be assumed.
+  - One or both values for 'parallel_tool_use' are unknown; compatibility must not
+    be assumed.
+  prompt_changes:
+  - schema_version: '3'
+    source_model: claude-sonnet-5
+    target_model: claude-sonnet-4-6
+    source_provider: anthropic
+    target_provider: anthropic
+    source_platform: anthropic-api
+    target_platform: amazon-bedrock
+    source_prompt_sha256: 9ae33a22b142035c220632a7de9578b416dafdb065d35446269c1eaa61b46043
+    source_path: prompts/system.txt
+    source_role: unknown
+    source_prompt_analysis:
+      schema_version: '2'
+      character_count: 33
+      word_count: 5
+      approximate_token_count: 9
+      markdown_headers: []
+      xml_like_tags: []
+      findings: []
+      intent:
+        objective:
+        - Return a concise weather report.
+        input_output_contracts: []
+        instructions:
+        - Return a concise weather report.
+        examples: []
+        grounding_policies: []
+        reasoning_policies: []
+        tool_policies: []
+        verbosity_policies:
+        - Return a concise weather report.
+      caveat: Static heuristics describe prompt characteristics; they do not measure
+        quality.
+    candidate_prompt: 'Return a concise weather report.
+
+      '
+    semantic_diff:
+    - state: preserved
+      concern: objective
+      before: Return a concise weather report.
+      after: Return a concise weather report.
+      rationale: The review candidate retains the detected semantic requirement.
+      basis: deterministic_fact
+    - state: preserved
+      concern: verbosity policy
+      before: Return a concise weather report.
+      after: Return a concise weather report.
+      rationale: The review candidate retains the detected semantic requirement.
+      basis: deterministic_fact
+    - state: unresolved
+      concern: source-model prompting assumption
+      before: 'Reconsider source-specific guidance: Use adaptive thinking with effort
+        rather than manual thinking budgets.'
+      after: null
+      rationale: Registry guidance differs and requires human review.
+      basis: deterministic_fact
+    - state: unresolved
+      concern: source-model prompting assumption
+      before: 'Reconsider source-specific guidance: Use structured outputs, system
+        instructions, or output_config.format instead of assistant prefilling.'
+      after: null
+      rationale: Registry guidance differs and requires human review.
+      basis: deterministic_fact
+    - state: unresolved
+      concern: target prompt structure
+      before: null
+      after: Set effort explicitly for workload latency and quality requirements.
+      rationale: Target registry guidance recommends this structure; it was not inserted
+        automatically.
+      basis: deterministic_fact
+    - state: unresolved
+      concern: target prompt structure
+      before: null
+      after: Use structured outputs or output_config.format instead of assistant prefilling.
+      rationale: Target registry guidance recommends this structure; it was not inserted
+        automatically.
+      basis: deterministic_fact
+    requirements_to_preserve: []
+    assumptions_to_reconsider:
+    - text: 'Reconsider source-specific guidance: Use adaptive thinking with effort
+        rather than manual thinking budgets.'
+      basis: deterministic_fact
+    - text: 'Reconsider source-specific guidance: Use structured outputs, system instructions,
+        or output_config.format instead of assistant prefilling.'
+      basis: deterministic_fact
+    instructions_potentially_removable: []
+    instructions_needing_strengthening:
+    - text: Set effort explicitly for workload latency and quality requirements.
+      basis: deterministic_fact
+    - text: Use structured outputs or output_config.format instead of assistant prefilling.
+      basis: deterministic_fact
+    target_features_replacing_prompt_text: []
+    reasoning_configuration:
+    - text: Set effort explicitly for workload latency and quality requirements.
+      basis: deterministic_fact
+    structured_output:
+    - text: Use structured outputs or output_config.format instead of assistant prefilling.
+      basis: deterministic_fact
+    token_efficiency_opportunities: []
+    hallucination_control:
+    - text: Retain grounding, citation, and uncertainty requirements and test them
+        explicitly.
+      basis: heuristic_recommendation
+    migration_risks: []
+    validation_recommendations:
+    - text: Compare representative task outcomes, formats, tool calls, latency, and
+        token use.
+      basis: heuristic_recommendation
+    - text: Include edge cases near context and output limits.
+      basis: heuristic_recommendation
+  invocation_changes:
+  - schema_version: '2'
+    source_model: claude-sonnet-5
+    target_model: claude-sonnet-4-6
+    source_analysis:
+      schema_version: '1'
+      application_root: .
+      providers:
+      - anthropic
+      platforms:
+      - anthropic-api
+      sdk_imports:
+      - anthropic
+      invocation_apis:
+      - client.messages.create
+      model_identifiers:
+      - claude-sonnet-5
+      prompt_fields:
+      - messages
+      - prompts/system.txt
+      - system
+      parameters:
+        max_tokens: 500
+        temperature: 0
+      streaming: true
+      reasoning_controls: []
+      multimodal_inputs: []
+      multimodal_contracts: []
+      tool_fields:
+      - tools
+      structured_output_fields: []
+      response_parsers: []
+      parser_assumptions: []
+      tool_definitions:
+      - name: get_weather
+        description: Return current weather for a city.
+        input_schema:
+          type: object
+          properties:
+            city:
+              type: string
+          required:
+          - city
+        strict: null
+        provider_format: anthropic-api.tools
+        choice: null
+        location:
+          path: app.py
+          line: 15
+          column: 10
+          end_line: 25
+      structured_outputs: []
+      tool_compatibility:
+        concern: tool use
+        state: mechanically_convertible
+        rationale: Tool wrappers can be converted while preserving the resolved JSON
+          Schemas.
+        locations:
+        - path: app.py
+          line: 15
+          column: 10
+          end_line: 25
+        issues: []
+      structured_output_compatibility: null
+      source_locations:
+      - path: app.py
+        line: 9
+        column: 11
+        end_line: 27
+      - path: app.py
+        line: 10
+        column: 10
+        end_line: 10
+      - path: app.py
+        line: 13
+        column: 15
+        end_line: 13
+      - path: app.py
+        line: 14
+        column: 16
+        end_line: 14
+      - path: app.py
+        line: 15
+        column: 10
+        end_line: 25
+      - path: app.py
+        line: 26
+        column: 11
+        end_line: 26
+      warnings: []
+    target:
+      provider: anthropic
+      platform: amazon-bedrock
+      sdk: boto3
+      client: bedrock-runtime
+      operation: converse
+      model_field: modelId
+      model_id: anthropic.claude-sonnet-4-6
+      message_field: messages
+      system_field: system
+      parameter_container: inferenceConfig
+      tool_field: toolConfig
+      structured_output_field: null
+      image_input_format: messages.content.image
+      document_input_format: messages.content.document
+    parameter_mappings:
+    - source_name: max_tokens
+      target_name: maxTokens
+      target_container: inferenceConfig
+      value: 500
+      state: mechanically_convertible
+      rationale: Map max_tokens to maxTokens for amazon-bedrock.
+    - source_name: temperature
+      target_name: temperature
+      target_container: inferenceConfig
+      value: 0
+      state: mechanically_convertible
+      rationale: Map temperature to temperature for amazon-bedrock.
+    tool_schema_migrations:
+    - name: get_weather
+      source_format: anthropic-api.tools
+      target_platform: amazon-bedrock
+      target_field: toolConfig.tools
+      state: mechanically_convertible
+      source_location:
+        path: app.py
+        line: 15
+        column: 10
+        end_line: 25
+      target_definition:
+        toolSpec:
+          name: get_weather
+          description: Return current weather for a city.
+          inputSchema:
+            json:
+              type: object
+              properties:
+                city:
+                  type: string
+              required:
+              - city
+      target_choice_field: null
+      target_choice: null
+      review_notes: []
+    structured_output_migrations: []
+    configuration_migration:
+      source_providers:
+      - anthropic
+      source_platforms:
+      - anthropic-api
+      target_provider: anthropic
+      target_platform: amazon-bedrock
+      target_sdk: boto3
+      target_client: bedrock-runtime
+      credential_strategy: aws_default_chain
+      credential_environment_variables: []
+      region_environment_variables:
+      - AWS_REGION
+      - AWS_DEFAULT_REGION
+      state: mechanically_convertible
+      source_locations:
+      - path: app.py
+        line: 6
+        column: 27
+        end_line: 6
+      required_changes:
+      - Instantiate boto3.bedrock-runtime for amazon-bedrock.
+      - Use the AWS SDK default credential chain and configure an explicit deployment
+        region.
+      review_notes:
+      - Use the normal AWS SDK credential chain; never persist AWS credential values.
+    required_changes:
+    - Replace model identifier with anthropic.claude-sonnet-4-6 in field modelId.
+    - Use boto3.bedrock-runtime and converse.
+    - Translate request shape to the amazon-bedrock message contract.
+    - Translate tool configuration to toolConfig.
+    - Replace provider/platform authentication, configuration, and error-handling
+      assumptions.
+    warnings: []
+    blockers: []
+  tool_changes:
+  - category: tool
+    description: Tool wrappers can be converted while preserving the resolved JSON
+      Schemas.
+    files:
+    - app.py
+    locations:
+    - path: app.py
+      line: 15
+      column: 10
+      end_line: 25
+  output_contract_changes: []
+  configuration_changes:
+  - category: configuration
+    description: Replace anthropic-api credentials/configuration with reviewed amazon-bedrock
+      configuration.
+    files:
+    - app.py
+    locations:
+    - path: app.py
+      line: 6
+      column: 27
+      end_line: 6
+  validation_results: []
+  required_tests:
+  - Run existing unit and integration tests against the target configuration.
+  - Review migrated prompt intent and output behavior on representative inputs.
+  - Verify every tool call and tool-result round trip.
+  - Exercise streaming completion and interruption behavior.
+  - Run a representative source-versus-target evaluation before production rollout.
+  rollout_recommendations:
+  - Resolve every blocker and review every unknown before changing traffic.
+  - Apply changes as a reviewable patch; do not overwrite the application from this
+    plan.
+  - Deploy behind a reversible configuration switch and monitor behavior, errors,
+    latency, and cost.
+  - Retain the source configuration until target validation and rollback checks pass.
+  migration_complexity: high
+  overall_migration_risk: high

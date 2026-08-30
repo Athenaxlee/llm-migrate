@@ -1,0 +1,46 @@
+schema_version: '1'
+model: alpha large
+proposal_date: '2026-08-08'
+changes:
+- field_path: parameters.new_control
+  change_type: add
+  current_value: null
+  proposed_value:
+    state: supported
+  confidence: high
+  risk: medium
+  supporting_sources:
+  - official
+  reason: high-confidence claim supported by a tier 1-2 source
+- field_path: capabilities.context_window_tokens
+  change_type: update
+  current_value: 200000
+  proposed_value: 250000
+  confidence: authoritative
+  risk: high
+  supporting_sources:
+  - official
+  reason: authoritative claim supported by a tier 1-3 source
+conflicts:
+- field_path: capabilities.reasoning
+  change_type: conflict
+  current_value: null
+  proposed_value: false
+  confidence: high
+  risk: medium
+  supporting_sources:
+  - official
+  reason: contradictory claims require human resolution
+- field_path: capabilities.reasoning
+  change_type: conflict
+  current_value: null
+  proposed_value: true
+  confidence: high
+  risk: medium
+  supporting_sources:
+  - official
+  reason: contradictory claims require human resolution
+unknown_fields:
+- capabilities.telepathy
+warnings: []
+candidate_errors: []

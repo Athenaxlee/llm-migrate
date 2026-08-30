@@ -1,0 +1,46 @@
+schema_version: "1"
+fixture: true
+identity:
+  canonical_name: fixture-beta-balanced-v2
+  display_name: "TEST/FIXTURE Beta Balanced v2"
+  provider: example-ai
+  model_family: beta
+  version: "2"
+  aliases: ["beta balanced", "beta v2", "shared alias"]
+platforms:
+  - platform: fixture-api
+    model_id: example.beta-balanced-v2
+    regions: [test-east]
+lifecycle:
+  status: active
+pricing:
+  input: {amount: "1", currency: USD, unit: per_1m_tokens}
+  output: {amount: "4", currency: USD, unit: per_1m_tokens}
+capabilities:
+  text_input: true
+  document_input: true
+  structured_output: true
+  tool_use: true
+  reasoning: true
+  prompt_caching: true
+  streaming: true
+  batch_inference: true
+  context_window_tokens: 128000
+  maximum_output_tokens: 32000
+parameters:
+  temperature: {state: supported, default: 0.7}
+  top_k: {state: unsupported}
+  max_tokens: {state: supported}
+  reasoning: {state: supported, notes: "TEST ONLY: synthetic reasoning control."}
+prompt_guidance:
+  preferred_structure: ["TEST ONLY: state the objective and output contract explicitly."]
+  reasoning_guidance: ["TEST ONLY: use the synthetic reasoning control instead of requesting hidden reasoning."]
+  structured_output_guidance: ["TEST ONLY: prefer the native structured-output fixture capability."]
+sources:
+  - id: fixture-beta-source
+    title: "Synthetic test fixture; not a real model"
+    source_type: test_fixture
+    authority_tier: 1
+    publisher: llm-migrate tests
+    retrieved_at: 2026-01-01
+    supports: [identity, platforms, lifecycle, pricing, capabilities, parameters]

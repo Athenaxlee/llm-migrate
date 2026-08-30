@@ -1,0 +1,135 @@
+schema_version: '2'
+suite_name: v05-golden
+evaluation_suite_sha256: 3fca3dfcffdcc6908b6d5fcd90b31760d3e8f51406ee56a917f6598257e1c244
+migration_manifest_sha256: acc67247562d2daee40119c2c66b2184c5b4982d2398e39dce5f73650e06d4cf
+source:
+  model: claude-sonnet-5
+  provider: anthropic
+  platform: anthropic-api
+  model_id: claude-sonnet-5
+target:
+  model: gpt-5.6-sol
+  provider: openai
+  platform: openai-api
+  model_id: gpt-5.6-sol
+summary:
+  case_count: 2
+  source_pass_rate: 1.0
+  target_pass_rate: 0.0
+  pass_rate_delta: -1.0
+  regression_count: 2
+  source_error_count: 0
+  target_error_count: 0
+  source_refusal_rate: 0.0
+  target_refusal_rate: 0.5
+comparisons:
+- schema_version: '1'
+  case_id: structured-extraction
+  source_status: passed
+  target_status: failed
+  source_score: 1.0
+  target_score: 0.0
+  score_delta: -1.0
+  outputs_equal: false
+  source_latency_ms: 100.0
+  target_latency_ms: 350.0
+  latency_delta_ms: 250.0
+  source_tokens: 15
+  target_tokens: 22
+  token_delta: 7
+  source_cost_usd: '0.00007'
+  target_cost_usd: '0.00021'
+  cost_delta_usd: '0.00014'
+  regression: true
+  signals:
+  - source_passed_target_failed
+  - task_score_decreased
+  - latency_increased_over_50_percent
+  - token_usage_increased_over_25_percent
+  - estimated_cost_increased_over_25_percent
+- schema_version: '1'
+  case_id: tool-use
+  source_status: passed
+  target_status: failed
+  source_score: 1.0
+  target_score: 0.0
+  score_delta: -1.0
+  outputs_equal: false
+  source_latency_ms: 80.0
+  target_latency_ms: 120.0
+  latency_delta_ms: 40.0
+  source_tokens: 11
+  target_tokens: 13
+  token_delta: 2
+  source_cost_usd: '0.000046'
+  target_cost_usd: '0.000099'
+  cost_delta_usd: '0.000053'
+  regression: true
+  signals:
+  - source_passed_target_failed
+  - task_score_decreased
+  - tool_calls_changed
+  - target_only_refusal
+  - estimated_cost_increased_over_25_percent
+regressions:
+- case_id: structured-extraction
+  category: format_schema_parser_incompatibility
+  severity: regression
+  summary: Target regression categorized as format_schema_parser_incompatibility.
+  evidence:
+  - source_passed_target_failed
+  - task_score_decreased
+  - latency_increased_over_50_percent
+  - token_usage_increased_over_25_percent
+  - estimated_cost_increased_over_25_percent
+  - 'Output is not valid JSON: Expecting value'
+  - Golden mismatch.
+- case_id: structured-extraction
+  category: latency_or_token_cost_regression
+  severity: regression
+  summary: Target regression categorized as latency_or_token_cost_regression.
+  evidence:
+  - source_passed_target_failed
+  - task_score_decreased
+  - latency_increased_over_50_percent
+  - token_usage_increased_over_25_percent
+  - estimated_cost_increased_over_25_percent
+  - 'Output is not valid JSON: Expecting value'
+  - Golden mismatch.
+- case_id: tool-use
+  category: latency_or_token_cost_regression
+  severity: regression
+  summary: Target regression categorized as latency_or_token_cost_regression.
+  evidence:
+  - source_passed_target_failed
+  - task_score_decreased
+  - tool_calls_changed
+  - target_only_refusal
+  - estimated_cost_increased_over_25_percent
+  - Golden mismatch.
+  - Tool calls did not match.
+- case_id: tool-use
+  category: refusal_or_safety_change
+  severity: regression
+  summary: Target regression categorized as refusal_or_safety_change.
+  evidence:
+  - source_passed_target_failed
+  - task_score_decreased
+  - tool_calls_changed
+  - target_only_refusal
+  - estimated_cost_increased_over_25_percent
+  - Golden mismatch.
+  - Tool calls did not match.
+- case_id: tool-use
+  category: tool_use_regression
+  severity: regression
+  summary: Target regression categorized as tool_use_regression.
+  evidence:
+  - source_passed_target_failed
+  - task_score_decreased
+  - tool_calls_changed
+  - target_only_refusal
+  - estimated_cost_increased_over_25_percent
+  - Golden mismatch.
+  - Tool calls did not match.
+warnings: []

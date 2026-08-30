@@ -1,0 +1,218 @@
+"""Typed, platform-aware deterministic model comparison."""
+
+from __future__ import annotations
+
+from typing import Any
+
+from llm_migrate.core.models import (
+    ComparisonSeverity,
+    ComparisonState,
+    ModelComparison,
+    ModelDifference,
+    ModelProfile,
+    ParameterState,
+    PlatformAvailability,
+)
+from llm_migrate.core.resolver import effective_capabilities
+
+_SEVERITY_ORDER = {item: index for index, item in enumerate(ComparisonSeverity)}
+
+
+def _item(
+    category: str,
+    field: str,
+    source: Any,
+    target: Any,
+    impact: str,
+    *,
+    loss_is_breaking: bool = False,
+    changed_severity: ComparisonSeverity = ComparisonSeverity.MEDIUM,
+    action: str | None = None,
+) -> ModelDifference:
+    if source is None or target is None:
+        state = ComparisonState.UNKNOWN
+        severity = (
+            ComparisonSeverity.HIGH
+            if source not in (None, False) and target is None
+            else ComparisonSeverity.LOW
+        )
+        impact = f"One or both values for {field!r} are unknown; compatibility must not be assumed."
+        action = action or "Verify both source reliance and target support before migration."
+    elif source == target:
+        state = ComparisonState.SAME
+        severity = ComparisonSeverity.INFO
+        impact = "No migration-relevant change."
+        action = None
+    elif target is False or target == ParameterState.UNSUPPORTED:
+        state = ComparisonState.UNSUPPORTED
+        severity = ComparisonSeverity.BREAKING if loss_is_breaking else ComparisonSeverity.HIGH
+    else:
+        state = ComparisonState.DIFFERENT
+        severity = changed_severity
+    return ModelDifference(
+        category=category,
+        field=field,
+        source_value=source,
+        target_value=target,
+        state=state,
+        severity=severity,
+        migration_impact=impact,
+        recommended_action=action,
+    )
+
+
+def compare_models(
+    source: ModelProfile,
+    target: ModelProfile,
+    source_platform: PlatformAvailability | None = None,
+    target_platform: PlatformAvailability | None = None,
+) -> ModelComparison:
+    """Compare the complete V0.2 migration surface, including equal and unknown facts."""
+    items: list[ModelDifference] = []
+    items.append(
+        _item(
+            "identity",
+            "provider",
+            source.identity.provider,
+            target.identity.provider,
+            "Provider SDK and invocation code may change.",
+            changed_severity=ComparisonSeverity.HIGH,
+            action="Review authentication, SDK, request, and response mappings.",
+        )
+    )
+    items.append(
+        _item(
+            "platform",
+            "representation",
+            (
+                {
+                    "platform": source_platform.platform,
+                    "endpoint": source_platform.endpoint,
+                    "model_id": source_platform.model_id,
+                }
+                if source_platform
+                else None
+            ),
+            (
+                {
+                    "platform": target_platform.platform,
+                    "endpoint": target_platform.endpoint,
+                    "model_id": target_platform.model_id,
+                }
+                if target_platform
+                else None
+            ),
+            "Selected deployment platforms differ.",
+            changed_severity=ComparisonSeverity.HIGH,
+            action="Confirm endpoint, region, authentication, and platform feature support.",
+        )
+    )
+    items.append(
+        _item(
+            "lifecycle",
+            "status",
+            source.lifecycle.status,
+            target.lifecycle.status,
+            "Operational support horizons differ.",
+        )
+    )
+
+    source_caps = effective_capabilities(source, source_platform)
+    target_caps = effective_capabilities(target, target_platform)
+    for field in (
+        "text_input",
+        "image_input",
+        "document_input",
+        "structured_output",
+        "tool_use",
+        "parallel_tool_use",
+        "reasoning",
+        "prompt_caching",
+        "streaming",
+        "batch_inference",
+    ):
+        old = getattr(source_caps, field)
+        new = getattr(target_caps, field)
+        category = "multimodality" if field in {"image_input", "document_input"} else field
+        items.append(
+            _item(
+                category,
+                field,
+                old,
+                new,
+                f"Capability {field!r} changes.",
+                loss_is_breaking=old is True,
+                changed_severity=ComparisonSeverity.INFO,
+                action=f"Remove or replace reliance on {field}." if old is True else None,
+            )
+        )
+    for field, label in (
+        ("context_window_tokens", "context window"),
+        ("maximum_output_tokens", "maximum output"),
+    ):
+        old = getattr(source_caps, field)
+        new = getattr(target_caps, field)
+        items.append(
+            _item(
+                "context_output_limits",
+                field,
+                old,
+                new,
+                f"The {label} limit changes.",
+                changed_severity=(
+                    ComparisonSeverity.HIGH
+                    if old is not None and new is not None and new < old
+                    else ComparisonSeverity.INFO
+                ),
+                action="Test workloads near the source limit.",
+            )
+        )
+    for name in sorted(source.parameters.keys() | target.parameters.keys()):
+        old = source.parameters.get(name)
+        new = target.parameters.get(name)
+        old_state = old.state if old else None
+        new_state = new.state if new else None
+        items.append(
+            _item(
+                "parameters",
+                name,
+                old_state,
+                new_state,
+                f"Parameter {name!r} support or semantics differ.",
+                loss_is_breaking=old_state in {ParameterState.SUPPORTED, ParameterState.REQUIRED},
+                action=f"Map, verify, or remove {name!r} before invoking the target.",
+            )
+        )
+    items.append(
+        _item(
+            "pricing",
+            "published_pricing",
+            source.pricing.model_dump(mode="json") if source.pricing else None,
+            target.pricing.model_dump(mode="json") if target.pricing else None,
+            "Token costs may change; workload-specific cost depends on token mix.",
+            action="Estimate cost with representative input, output, cache, and batch usage.",
+        )
+    )
+    items.append(
+        _item(
+            "behavioral_prompt_guidance",
+            "prompt_guidance",
+            source.prompt_guidance.model_dump(mode="json"),
+            target.prompt_guidance.model_dump(mode="json"),
+            "Evidence-backed prompting guidance differs.",
+            action="Revisit registry-backed guidance and validate behavior.",
+        )
+    )
+    highest = max(
+        (item.severity for item in items),
+        key=lambda severity: _SEVERITY_ORDER[severity],
+        default=ComparisonSeverity.INFO,
+    )
+    return ModelComparison(
+        source_model=source.identity.canonical_name,
+        target_model=target.identity.canonical_name,
+        source_platform=source_platform.platform if source_platform else None,
+        target_platform=target_platform.platform if target_platform else None,
+        differences=items,
+        highest_severity=highest,
+    )

@@ -1,0 +1,38 @@
+schema_version: "1"
+fixture: true
+identity:
+  canonical_name: fixture-gamma-cheap-v1
+  display_name: "TEST/FIXTURE Gamma Cheap v1"
+  provider: example-ai
+  model_family: gamma
+  version: "1"
+  aliases: ["gamma cheap"]
+platforms:
+  - platform: budget-platform
+    model_id: budget.gamma-v1
+    regions: [test-east]
+lifecycle:
+  status: active
+pricing:
+  input: {amount: "0.2", currency: USD, unit: per_1m_tokens}
+  output: {amount: "0.8", currency: USD, unit: per_1m_tokens}
+capabilities:
+  text_input: true
+  structured_output: false
+  tool_use: false
+  parallel_tool_use: false
+  streaming: true
+  context_window_tokens: 32000
+  maximum_output_tokens: 4000
+parameters:
+  temperature: {state: supported}
+  max_tokens: {state: supported}
+prompt_guidance: {}
+sources:
+  - id: fixture-gamma-source
+    title: "Synthetic test fixture; not a real model"
+    source_type: test_fixture
+    authority_tier: 1
+    publisher: llm-migrate tests
+    retrieved_at: 2026-01-01
+    supports: [identity, platforms, lifecycle, pricing, capabilities, parameters]

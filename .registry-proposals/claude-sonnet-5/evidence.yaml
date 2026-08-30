@@ -1,0 +1,114 @@
+schema_version: "1"
+subject: claude-sonnet-5
+canonical_model_candidate: claude-sonnet-5
+research_date: 2026-08-09
+claims:
+  - id: sonnet-5-context
+    field_path: capabilities.context_window_tokens
+    value: 1000000
+    statement: Anthropic and AWS specify a 1M-token context window.
+    kind: fact
+    evidence_type: direct
+    confidence: authoritative
+    sources: [anthropic-models-overview-2026-08-08, anthropic-sonnet-5-new-2026-08-08, aws-sonnet-5-card-2026-08-08]
+  - id: sonnet-5-output
+    field_path: capabilities.maximum_output_tokens
+    value: 128000
+    statement: Anthropic and AWS specify a 128K-token maximum output.
+    kind: fact
+    evidence_type: direct
+    confidence: authoritative
+    sources: [anthropic-models-overview-2026-08-08, anthropic-sonnet-5-new-2026-08-08, aws-sonnet-5-card-2026-08-08]
+  - id: sonnet-5-temperature
+    field_path: parameters.temperature.state
+    value: unsupported
+    statement: Non-default temperature values return HTTP 400.
+    kind: fact
+    evidence_type: direct
+    confidence: authoritative
+    sources: [anthropic-sonnet-5-new-2026-08-08]
+  - id: sonnet-5-top-p
+    field_path: parameters.top_p.state
+    value: unsupported
+    statement: Non-default top_p values return HTTP 400.
+    kind: fact
+    evidence_type: direct
+    confidence: authoritative
+    sources: [anthropic-sonnet-5-new-2026-08-08]
+  - id: sonnet-5-top-k
+    field_path: parameters.top_k.state
+    value: unsupported
+    statement: Non-default top_k values return HTTP 400.
+    kind: fact
+    evidence_type: direct
+    confidence: authoritative
+    sources: [anthropic-sonnet-5-new-2026-08-08]
+  - id: sonnet-5-manual-thinking
+    field_path: parameters.thinking.state
+    value: unsupported
+    statement: Manual extended thinking returns HTTP 400; adaptive thinking with effort replaces it.
+    kind: fact
+    evidence_type: direct
+    confidence: authoritative
+    sources: [anthropic-sonnet-5-new-2026-08-08]
+  - id: sonnet-5-disable-anthropic
+    field_path: parameters.adaptive_thinking.disable_supported
+    value: true
+    statement: Anthropic says thinking can be disabled with thinking.type disabled.
+    kind: fact
+    evidence_type: direct
+    confidence: authoritative
+    sources: [anthropic-sonnet-5-new-2026-08-08]
+    notes: Scoped to the Anthropic API documentation.
+  - id: sonnet-5-disable-bedrock
+    field_path: parameters.adaptive_thinking.disable_supported
+    value: false
+    statement: The AWS model card says adaptive thinking is always on and cannot be disabled.
+    kind: fact
+    evidence_type: direct
+    confidence: authoritative
+    sources: [aws-sonnet-5-card-2026-08-08]
+    notes: Scoped to Amazon Bedrock.
+sources:
+  - id: anthropic-models-overview-2026-08-08
+    url: https://platform.claude.com/docs/en/about-claude/models/overview
+    title: Models overview
+    source_type: official_documentation
+    authority_tier: 2
+    publisher: Anthropic
+    retrieved_at: 2026-08-09
+    supports: [identity, pricing, capabilities, platforms]
+  - id: anthropic-sonnet-5-new-2026-08-08
+    url: https://platform.claude.com/docs/en/about-claude/models/whats-new-sonnet-5
+    title: What's new in Claude Sonnet 5
+    source_type: official_documentation
+    authority_tier: 2
+    publisher: Anthropic
+    retrieved_at: 2026-08-09
+    published_at: 2026-06-30
+    supports: [pricing, parameters, prompt_guidance, capabilities]
+  - id: anthropic-model-deprecations-2026-08-08
+    url: https://platform.claude.com/docs/en/about-claude/model-deprecations
+    title: Model deprecations
+    source_type: official_documentation
+    authority_tier: 2
+    publisher: Anthropic
+    retrieved_at: 2026-08-09
+    supports: [lifecycle]
+  - id: aws-sonnet-5-card-2026-08-08
+    url: https://docs.aws.amazon.com/bedrock/latest/userguide/model-card-anthropic-claude-sonnet-5.html
+    title: Claude Sonnet 5 - Amazon Bedrock
+    source_type: official_documentation
+    authority_tier: 2
+    publisher: Amazon Web Services
+    retrieved_at: 2026-08-09
+    supports: [platforms, lifecycle, capabilities, parameters]
+observations: []
+conflicts:
+  - id: sonnet-5-thinking-disable-platform-conflict
+    claim_ids: [sonnet-5-disable-anthropic, sonnet-5-disable-bedrock]
+    statement: Official Anthropic and AWS sources disagree unless the behavior is platform scoped.
+    notes: Do not promote a provider-wide value until the registry can represent platform-specific parameter behavior.
+unresolved_questions:
+  - Does Amazon Bedrock reject thinking.type disabled, or is the AWS model-card wording imprecise?
+warnings: []
