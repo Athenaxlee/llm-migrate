@@ -346,4 +346,6 @@ Design references:
 
 ## License
 
-Apache-2.0. See [LICENSE](LICENSE).
+Copyright © 2026 Athena Li.
+
+Licensed under the Apache License, Version 2.0. See [LICENSE](LICENSE).
