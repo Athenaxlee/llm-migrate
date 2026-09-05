@@ -1,12 +1,15 @@
 # llm-migrate
 
-Agent-assisted planning and evaluation for LLM application migrations.
+Migrate your LLM application to a new model, provider, or platform — for
+example Anthropic Claude ↔ OpenAI GPT, or a direct API ↔ Amazon Bedrock — with
+agent-assisted research, a reviewable migration plan, and before/after
+evaluation, all before changing production code.
 
 [![CI](https://github.com/Athenaxlee/llm-migrate/actions/workflows/ci.yml/badge.svg)](https://github.com/Athenaxlee/llm-migrate/actions/workflows/ci.yml)
 
 `llm-migrate` helps a developer or coding agent inspect an existing Python
-application, research the source and target models, and produce a reviewable
-migration plan before anyone changes production code.
+application, research the source and target models, and decide exactly what a
+safe migration requires — without editing any application file itself.
 
 Use it when you are:
 
