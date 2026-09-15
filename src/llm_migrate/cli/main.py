@@ -49,12 +49,16 @@ eval_app = typer.Typer(help="Run source/target evaluations and analyze regressio
 research_app = typer.Typer(
     help="Stage operations for explicitly requested, user-scoped agent research."
 )
+run_app = typer.Typer(
+    help="Guided migration runs with a workspace, adaptation deliverables, and reports."
+)
 app.add_typer(models_app, name="models")
 app.add_typer(prompt_app, name="prompt")
 app.add_typer(invocation_app, name="invocation")
 app.add_typer(registry_app, name="registry")
 app.add_typer(eval_app, name="eval")
 app.add_typer(research_app, name="research")
+app.add_typer(run_app, name="run")
 
 
 def _default_registry() -> Path:
@@ -253,6 +257,17 @@ def resolve(
     _emit(payload)
 
 
+@models_app.command("match")
+def match(
+    identifier: str,
+    platform: Annotated[str | None, typer.Option()] = None,
+    endpoint: Annotated[str | None, typer.Option()] = None,
+    registry: Annotated[Path | None, typer.Option(help="Registry root.")] = None,
+) -> None:
+    """Match a possibly vague identifier and suggest candidates instead of failing."""
+    _emit(_service(registry).match_model(identifier, platform, endpoint))
+
+
 @models_app.command("show")
 def show(
     identifier: str,
@@ -447,6 +462,7 @@ def prompt_validate(
     path: Path,
     target: Annotated[str, typer.Option("--to")],
     target_platform: Annotated[str | None, typer.Option("--to-platform")] = None,
+    target_endpoint: Annotated[str | None, typer.Option("--to-endpoint")] = None,
     registry: Annotated[Path | None, typer.Option(help="Registry root.")] = None,
 ) -> None:
     """Statically validate prompt assumptions against a target model."""
@@ -456,6 +472,7 @@ def prompt_validate(
             _read_prompt(path),
             source_path=str(path),
             target_platform=target_platform,
+            target_endpoint=target_endpoint,
         )
     except RegistryError as exc:
         typer.echo(str(exc), err=True)
@@ -996,6 +1013,149 @@ def research_status(run_dir: Path) -> None:
         typer.echo(f"No orchestration run recorded at {run_path}.", err=True)
         raise typer.Exit(2)
     _emit(_read_typed(run_path, OrchestrationRun, "orchestration run"))
+
+
+@research_app.command("prompts")
+def research_prompts(
+    run_dir: Path,
+    registry: Annotated[Path | None, typer.Option(help="Registry root.")] = None,
+) -> None:
+    """Render scope-isolated researcher/reviewer prompts from the run's request."""
+    try:
+        _emit(_service(registry).get_research_prompts(run_dir))
+    except ValueError as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(2) from exc
+
+
+@run_app.command("start")
+def run_start(
+    application: Path,
+    source: Annotated[str, typer.Option("--from")],
+    target: Annotated[str, typer.Option("--to")],
+    source_platform: Annotated[str | None, typer.Option("--from-platform")] = None,
+    target_platform: Annotated[str | None, typer.Option("--to-platform")] = None,
+    source_endpoint: Annotated[str | None, typer.Option("--from-endpoint")] = None,
+    target_endpoint: Annotated[str | None, typer.Option("--to-endpoint")] = None,
+    run_id: Annotated[str | None, typer.Option("--run-id")] = None,
+    output_dir: Annotated[
+        Path | None,
+        typer.Option(help="Run workspace directory (default .llm-migrate/runs/<run-id>)."),
+    ] = None,
+    as_of: Annotated[str | None, typer.Option("--as-of", help="Fixed ISO date.")] = None,
+    skip_research: Annotated[
+        bool, typer.Option("--skip-research", help="Never write a research request.")
+    ] = False,
+    registry: Annotated[Path | None, typer.Option(help="Registry root.")] = None,
+) -> None:
+    """Match models registry-first, create the run workspace, and report next steps."""
+    try:
+        _emit(
+            _service(registry).start_migration_run(
+                application,
+                source,
+                target,
+                source_platform=source_platform,
+                target_platform=target_platform,
+                source_endpoint=source_endpoint,
+                target_endpoint=target_endpoint,
+                run_id=run_id,
+                output_dir=output_dir,
+                as_of=date.fromisoformat(as_of) if as_of else None,
+                research="skip" if skip_research else "auto",
+            )
+        )
+    except (RegistryError, ValueError) as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(2) from exc
+
+
+@run_app.command("tasks")
+def run_tasks(
+    run_dir: Path,
+    registry: Annotated[Path | None, typer.Option(help="Registry root.")] = None,
+) -> None:
+    """List the run's per-file prompt and file adaptation worklist."""
+    try:
+        _emit(_service(registry).list_adaptation_tasks(run_dir))
+    except (RegistryError, ValueError) as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(2) from exc
+
+
+@run_app.command("submit-prompt")
+def run_submit_prompt(
+    run_dir: Path,
+    source_path: Annotated[str, typer.Argument(help="Prompt path relative to the app root.")],
+    content: Annotated[Path, typer.Option("--content", help="File holding the adapted prompt.")],
+    rationale: Annotated[str, typer.Option("--rationale")],
+    change: Annotated[
+        list[str] | None,
+        typer.Option("--change", help="One change description; repeatable."),
+    ] = None,
+    registry: Annotated[Path | None, typer.Option(help="Registry root.")] = None,
+) -> None:
+    """Validate and store one adapted prompt beneath the run's output/prompts/."""
+    try:
+        result = _service(registry).submit_adapted_prompt(
+            run_dir,
+            source_path,
+            _read_prompt(content),
+            rationale,
+            change or [],
+        )
+    except (RegistryError, ValueError) as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(2) from exc
+    _emit(result)
+    if not result.accepted:
+        raise typer.Exit(1)
+
+
+@run_app.command("submit-file")
+def run_submit_file(
+    run_dir: Path,
+    source_path: Annotated[str, typer.Argument(help="File path relative to the app root.")],
+    content: Annotated[Path, typer.Option("--content", help="File holding the adapted content.")],
+    rationale: Annotated[str, typer.Option("--rationale")],
+    change: Annotated[
+        list[str] | None,
+        typer.Option("--change", help="One change description; repeatable."),
+    ] = None,
+    new_file: Annotated[
+        bool, typer.Option("--new-file", help="The migration introduces this file.")
+    ] = False,
+    registry: Annotated[Path | None, typer.Option(help="Registry root.")] = None,
+) -> None:
+    """Check and store one adapted application file beneath the run's output/files/."""
+    try:
+        result = _service(registry).submit_adapted_file(
+            run_dir,
+            source_path,
+            _read_prompt(content),
+            rationale,
+            change or [],
+            new_file=new_file,
+        )
+    except (RegistryError, ValueError) as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(2) from exc
+    _emit(result)
+    if not result.accepted:
+        raise typer.Exit(1)
+
+
+@run_app.command("finalize")
+def run_finalize(
+    run_dir: Path,
+    registry: Annotated[Path | None, typer.Option(help="Registry root.")] = None,
+) -> None:
+    """Write the run's manifest, report with per-file changes/rationale, and gaps."""
+    try:
+        _emit(_service(registry).finalize_migration_run(run_dir))
+    except (RegistryError, ValueError) as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(2) from exc
 
 
 if __name__ == "__main__":

@@ -44,6 +44,12 @@ def test_all_service_operations_are_exposed_as_mcp_tools() -> None:
         "build_research_consensus",
         "build_session_registry",
         "generate_session_migration_plan",
+        "start_migration",
+        "get_research_prompts",
+        "list_adaptation_tasks",
+        "submit_adapted_prompt",
+        "submit_adapted_file",
+        "finalize_migration",
     }
 
 
@@ -87,6 +93,74 @@ def test_mcp_session_research_tools_finalize_and_plan(tmp_path, project_root) ->
     assert plan["target"]["model"] == "gpt-6.0-nova"
     assert any("Session overlay run" in warning for warning in plan["warnings"])
     assert any("session_agent_reviewed" in warning for warning in plan["warnings"])
+
+
+def test_mcp_guided_run_covers_the_vague_bedrock_scenario(tmp_path, project_root) -> None:  # type: ignore[no-untyped-def]
+    """A vague Bedrock migration resolves registry-first and produces deliverables."""
+    import shutil
+
+    from llm_migrate.mcp.server import finalize_migration as mcp_finalize_migration
+    from llm_migrate.mcp.server import list_adaptation_tasks as mcp_list_adaptation_tasks
+    from llm_migrate.mcp.server import resolve_model as mcp_resolve_model
+    from llm_migrate.mcp.server import start_migration as mcp_start_migration
+    from llm_migrate.mcp.server import submit_adapted_file as mcp_submit_adapted_file
+
+    resolved = mcp_resolve_model("us.anthropic.claude-sonnet-4-6", "bedrock")
+    assert resolved["status"] == "resolved"
+    assert resolved["canonical_name"] == "claude-sonnet-4-6"
+    assert "resolution" not in resolved
+
+    app = tmp_path / "bedrock_app"
+    shutil.copytree(project_root / "tests/fixtures/applications/bedrock_app", app)
+    ambiguous = mcp_start_migration(
+        str(app),
+        "us.anthropic.claude-sonnet-4-6",
+        "us.anthropic.claude-sonnet-5",
+        source_platform="bedrock",
+        target_platform="bedrock",
+        as_of="2026-09-15",
+    )
+    assert ambiguous["status"] == "needs_confirmation"
+    assert {item["endpoint"] for item in ambiguous["target_match"]["candidates"]} == {
+        "bedrock-runtime",
+        "bedrock-mantle",
+    }
+
+    start = mcp_start_migration(
+        str(app),
+        "us.anthropic.claude-sonnet-4-6",
+        "us.anthropic.claude-sonnet-5",
+        source_platform="bedrock",
+        target_platform="bedrock",
+        target_endpoint="bedrock-runtime",
+        as_of="2026-09-15",
+    )
+    assert start["status"] == "ready"
+    assert start["research"]["level"] == "recommended"
+    run_dir = start["paths"]["run_dir"]
+    assert ".llm-migrate" in run_dir
+
+    tasks = mcp_list_adaptation_tasks(run_dir)
+    assert [task["source_path"] for task in tasks["file_tasks"]] == ["app.py"]
+
+    original = (app / "app.py").read_text(encoding="utf-8")
+    submission = mcp_submit_adapted_file(
+        run_dir,
+        "app.py",
+        original.replace("anthropic.claude-sonnet-4-6", "anthropic.claude-sonnet-5"),
+        "Sonnet 5 uses a new Bedrock model id.",
+        ["Replaced the modelId value."],
+    )
+    assert submission["accepted"] is True
+
+    final = mcp_finalize_migration(run_dir)
+    assert final["coverage_gaps"] == []
+    report = (app / ".llm-migrate/runs" / final["run_id"] / "output/migration-report.md").read_text(
+        encoding="utf-8"
+    )
+    assert "## Adaptation deliverables" in report
+    assert "Replaced the modelId value." in report
+    assert (app / "app.py").read_text(encoding="utf-8") == original
 
 
 def test_mcp_proposal_tool_accepts_structured_evidence() -> None:

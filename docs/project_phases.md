@@ -1519,6 +1519,44 @@ gated manual operation).
 
 ---
 
+# 12.1. V1.2: Guided Migration Run Workspace
+
+Motivated by observed coding-agent host behavior on real migrations: hosts
+struggled to map vague user model identifiers onto registry knowledge, invented
+their own research prompts (colliding across scopes and over-iterating), spread
+outputs across ad-hoc files, and never produced the adapted prompt/file
+deliverables users actually wanted.
+
+## Scope
+
+- Lenient, registry-first identifier matching (`match_model`): deterministic
+  normalization of regional inference-profile prefixes, version suffixes, and
+  vague platform spellings; ranked candidates for explicit user confirmation;
+  never a silent guess.
+- One guided entry point (`start_migration`) that resolves models, scans the
+  application, reports whether research is needed and why, and creates the run
+  workspace at the default `.llm-migrate/runs/<run-id>/` (user-overridable).
+- Deterministic, scope-isolated researcher/reviewer prompt rendering from the
+  typed research request (`get_research_prompts` / `research prompts`).
+- Adaptation deliverables: a per-file worklist derived from the migration plan,
+  validated submissions of complete adapted prompts (`output/prompts/`) and
+  adapted application files (`output/files/`), and a finalize step writing the
+  manifest plus a report with per-file changes and rationale.
+
+## Boundary
+
+The host agent performs all semantic rewriting; the toolkit derives worklists,
+validates submissions deterministically, stores deliverables, and reports. The
+application tree is never modified: adaptation outputs are review candidates in
+the run workspace, preserving the review-first invariant.
+
+## Current status
+
+Implemented on 2026-09-15 with unit coverage for matching, workspace
+lifecycle, fail-closed submissions, and report composition.
+
+---
+
 # 13. Cross-Phase Testing Strategy
 
 ## Unit tests
@@ -1618,6 +1656,7 @@ When working from this roadmap, Codex should:
 | V0.6 | Bounded optimization and broader coverage |
 | V1 | Stable end-to-end local-first migration toolkit |
 | V1.1 | Bounded user-side agent research with independently reviewed session registry overlays |
+| V1.2 | Guided migration run workspace: lenient matching, generated research prompts, adaptation deliverables |
 
 The critical sequencing rule is:
 

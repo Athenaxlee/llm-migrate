@@ -50,6 +50,17 @@ refused and the agent continues with the reviewed local knowledge. “Live
 research by default” therefore means **always check and research when needed**,
 not “browse even when verified facts already exist.”
 
+Since V1.2, one guided entry point drives this whole flow: `start_migration`
+matches both models registry-first (tolerating vague or platform-decorated
+identifiers, and returning candidates for user confirmation instead of
+guessing), scans the application, reports whether research would help and why,
+creates a per-run workspace at `<application>/.llm-migrate/runs/<run-id>/`,
+and returns ordered next steps. The run collects **adaptation deliverables** —
+host-authored, deterministically validated adapted prompts and complete
+adapted application files stored under the run's `output/` directory — and a
+final report explaining what changed in each file and why. The application
+tree itself is never modified.
+
 ## Agentic workflow
 
 ```mermaid
@@ -67,7 +78,8 @@ flowchart TD
     C --> O["Immutable, expiring<br/>session registry overlay"]
     O --> P
 
-    P --> E{"Run evaluation?"}
+    P --> D["Adaptation deliverables<br/>host-authored adapted prompts + files,<br/>validated and stored under output/"]
+    D --> E{"Run evaluation?"}
     E -- Yes --> X["Source + target evaluation"]
     X --> G["Regression analysis +<br/>bounded optimization"]
     G --> Q["Human review"]
@@ -96,6 +108,37 @@ evaluations. Amazon Bedrock evaluation also requires the optional `aws` extra
 and your normal local AWS configuration.
 
 ## Installation
+
+### Easiest: let your coding agent install it
+
+If your coding agent can run shell commands and edit its own MCP configuration
+(Claude Code, GitHub Copilot, Codex, Cursor, ...), paste this prompt and let it
+do the setup:
+
+```text
+Install the llm-migrate MCP server for me:
+1. git clone https://github.com/Athenaxlee/llm-migrate.git into a tools
+   directory of your choice (tell me where), or reuse an existing checkout.
+2. Inside the checkout, create a Python 3.11+ virtual environment at .venv and
+   run: python -m pip install --upgrade pip && python -m pip install .
+   (use '.[aws]' instead of '.' if I plan to run Amazon Bedrock evaluations).
+3. Verify it works: .venv/bin/llm-migrate registry validate
+   (on Windows: .venv\Scripts\llm-migrate registry validate).
+4. Register the MCP server in THIS host's own MCP configuration, pointing the
+   command at the absolute path of .venv/bin/llm-migrate-mcp
+   (Windows: .venv\Scripts\llm-migrate-mcp.exe). Do not change any other
+   configuration.
+5. Show me the config change and the verification output, and tell me to
+   restart/reload so the server is picked up.
+```
+
+For example, on Claude Code the registration step is:
+
+```bash
+claude mcp add llm-migrate -- /absolute/path/to/llm-migrate/.venv/bin/llm-migrate-mcp
+```
+
+### Manual install
 
 ```bash
 git clone https://github.com/Athenaxlee/llm-migrate.git
@@ -157,20 +200,27 @@ Open the application repository in your MCP-capable agent and give it exact
 endpoint context. A useful starting instruction is:
 
 ```text
-Use the llm-migrate MCP tools to plan this migration.
+Use the llm-migrate MCP tools to migrate this application.
 
 Application: /absolute/path/to/application
-Source: <provider> / <platform> / <model> / <endpoint>
-Target: <provider> / <platform> / <model> / <endpoint>
+Source: <platform> / <model id as you know it>
+Target: <platform> / <model id as you know it>
 
-Treat research-on-demand as the default. Check the reviewed registry first. If
-migration-critical facts are missing or stale, follow
-docs/agent-research-workflow.md, use authoritative sources, and use an
-independent reviewer that did not produce the research. Build a session overlay,
-then generate a migration plan and report. Do not edit application source files.
+Start with start_migration and follow its next_steps. If a model needs
+confirmation, ask me instead of guessing or researching it. Ask me before
+running research and before finalizing. Research uses the prompts from
+get_research_prompts with an independent reviewer that did not produce the
+research. Submit every adapted prompt and adapted file through the
+submit_adapted_* tools; never edit application source files directly.
 ```
 
-The expected outputs are:
+Model identifiers may be vague: regional Bedrock inference-profile prefixes
+(`us.anthropic...`), version suffixes (`-v1:0`), spacing/typos, and loose
+platform names ("bedrock") are matched deterministically against the registry,
+and anything uncertain comes back as ranked candidates for you to confirm.
+
+The expected outputs, collected under `<application>/.llm-migrate/runs/<run-id>/`
+(or an explicit `output_dir`), are:
 
 | Artifact | Purpose |
 | --- | --- |
@@ -178,8 +228,11 @@ The expected outputs are:
 | Research request | Exact identities, required topics, date, source policy, and execution limits |
 | Research and review artifacts | Source-backed claims plus independent claim-level verdicts |
 | Session registry | Expiring, hash-linked, visibly non-canonical knowledge for this migration |
+| Adapted prompts (`output/prompts/`) | Host-authored prompt rewrites for the target model, statically validated |
+| Adapted files (`output/files/`) | Complete post-adaptation application files behind fail-closed checks |
+| Change log (`output/changes.yaml`) | Per-file what-changed and why, with hashes and validation state |
 | Migration manifest | Required changes, blockers, warnings, unknowns, tests, and rollout guidance |
-| Migration report | Human-readable rendering for engineering review |
+| Migration report | Human-readable rendering including per-file adaptation changes, rationale, and coverage gaps |
 | Regression report | Optional observed source/target behavior differences |
 
 ## MCP tool guide
@@ -187,12 +240,27 @@ The expected outputs are:
 The tools are grouped in the order an agent normally uses them. Most users do
 not call every tool for every migration.
 
+### 0. Guided workflow (recommended)
+
+These V1.2 tools drive a complete migration through one run workspace and
+produce reviewable adaptation deliverables; the lower-level stages below remain
+available for manual or partial use.
+
+| Tool | Use it when | What it does |
+| --- | --- | --- |
+| `start_migration` | Begin any full migration | Matches both models registry-first (candidates for confirmation instead of hard failures), scans the application, reports whether research is needed and why, creates the run workspace, and returns ordered next steps |
+| `get_research_prompts` | The run recommends research and the user agrees | Renders one bounded, scope-isolated researcher and reviewer prompt pair per remaining scope from `request.yaml`, with per-scope status so completed stages are never re-run |
+| `list_adaptation_tasks` | The plan (canonical or session-backed) is ready | Derives the per-file worklist: prompts to rewrite with guidance and risks, and files to adapt with their required changes |
+| `submit_adapted_prompt` | The host has written an improved target-model prompt | Statically validates it against the target and stores it under `output/prompts/`; blockers are rejected |
+| `submit_adapted_file` | The host has written one complete adapted application file | Applies fail-closed checks (path containment, Python syntax, actually changed, model-id consistency) and stores it under `output/files/` |
+| `finalize_migration` | Submissions are done (re-runnable any time) | Writes `migration-manifest.yaml`, `changes.yaml`, and `migration-report.md` with per-file changes, rationale, and coverage gaps |
+
 ### 1. Understand the application and models
 
 | Tool | Use it when | What it does |
 | --- | --- | --- |
 | `scan_application` | Start any repository migration | Scans a local Python application into a normalized, source-located coupling inventory without executing it |
-| `resolve_model` | You have a name, alias, or platform model ID | Resolves it to one canonical model and optional platform representation; ambiguity fails visibly |
+| `resolve_model` | You have a name, alias, or platform model ID — even a vague one | Matches it registry-first, deterministically normalizing regional inference-profile prefixes, version suffixes, and loose platform names; returns `resolved`, `needs_confirmation` with ranked candidates, or `not_found` instead of failing hard |
 | `get_model_profile` | You need all reviewed facts for one known model | Returns the validated local registry profile and provenance |
 | `check_model_lifecycle` | Deprecation or end-of-life may drive the migration | Interprets reviewed lifecycle facts at a selected date without live research |
 | `compare_models` | Source and target are known | Reports `same`, `different`, `unsupported`, and `unknown` states across the migration surface |
@@ -218,8 +286,11 @@ its migration-critical facts are stale.
 
 Live discovery happens in the **agent host**, not inside these tools. Research
 agents receive the bounded request and use the host’s generative model and
-search tools. The reviewer must independently refetch cited sources. See the
-[agent-host workflow](docs/agent-research-workflow.md) for the artifact protocol.
+search tools. The reviewer must independently refetch cited sources. Do not
+hand-write the agent assignments: `get_research_prompts` renders them from the
+request, scope-isolated so agents never collide or redo completed stages. See
+the [agent-host workflow](docs/agent-research-workflow.md) for the artifact
+protocol.
 
 ### 3. Prepare the migration
 
@@ -233,10 +304,11 @@ search tools. The reviewer must independently refetch cited sources. See the
 | `generate_migration_plan` | Canonical registry knowledge is sufficient | Composes scanning, comparison, prompt/invocation preparation, validation, tests, and rollout into one application-level plan |
 | `generate_migration_report` | A person needs to review the plan | Renders the integrated migration workflow as a readable Markdown report |
 
-Prompt preparation itself does not call a generative model. If you want a more
-substantial model-authored prompt rewrite, let the agent host propose one from
-the plan and deterministic candidate, then review and evaluate it. That rewrite
-is deliberately not a hidden core operation.
+Prompt preparation itself does not call a generative model. For a substantial
+model-authored rewrite, the agent host writes it from the plan and the
+deterministic candidate, then submits it through `submit_adapted_prompt` so it
+is validated, stored under the run's `output/prompts/`, and explained in the
+final report. The rewrite is deliberately not a hidden core operation.
 
 ### 4. Evaluate and improve
 
@@ -262,7 +334,9 @@ agent host can read and write the stage YAML files but cannot call MCP directly.
 
 ```bash
 llm-migrate --help
-llm-migrate research --help
+llm-migrate run --help        # guided runs: start, tasks, submit-*, finalize
+llm-migrate models match --help
+llm-migrate research --help   # includes `research prompts`
 llm-migrate plan --help
 llm-migrate eval --help
 ```
@@ -308,8 +382,8 @@ research -> evidence -> independent review -> session overlay -> migration plan
 | --- | --- |
 | Application scanning | Python-focused |
 | Built-in registry | Intentionally small and evidence-backed; synthetic profiles are labeled `TEST/FIXTURE` |
-| Prompt generation | Deterministic candidate preparation in core; model-authored rewrites belong to the agent host |
-| Source mutation | No automatic code or prompt rewriting |
+| Prompt generation | Deterministic candidate preparation in core; model-authored rewrites belong to the agent host and are validated and stored as run deliverables |
+| Source mutation | No automatic code or prompt rewriting; adapted files are review candidates under the run's `output/` directory |
 | Dynamic inputs | Unresolved dynamic prompts or configuration remain explicit unknowns |
 | Research agents | Supplied and paid for by the user’s host |
 | Agent orchestration | Sequential today; persistent caching and orchestrated arbitration are deferred |

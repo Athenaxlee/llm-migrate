@@ -316,6 +316,46 @@ class ResolvedModel(StrictModel):
         return self.profile.sources
 
 
+class ModelMatchStatus(StrEnum):
+    RESOLVED = "resolved"
+    NEEDS_CONFIRMATION = "needs_confirmation"
+    NOT_FOUND = "not_found"
+
+
+class ModelMatchCandidate(StrictModel):
+    """One registry profile that plausibly matches a user-supplied identifier."""
+
+    canonical_name: str
+    display_name: str
+    provider: str
+    matched_identifier: str
+    platform: str | None = None
+    endpoint: str | None = None
+    similarity: float = Field(ge=0, le=1)
+    reason: str
+
+
+class ModelMatchResult(StrictModel):
+    """Registry-first identifier matching that never guesses silently.
+
+    `resolved` carries an exact or deterministically equivalent match;
+    `needs_confirmation` carries ranked candidates the user must confirm;
+    `not_found` means the identifier is genuinely absent from the registry.
+    """
+
+    schema_version: Literal["1"] = "1"
+    query: str
+    platform_query: str | None = None
+    status: ModelMatchStatus
+    canonical_name: str | None = None
+    platform: str | None = None
+    model_id: str | None = None
+    resolution: ResolvedModel | None = None
+    candidates: list[ModelMatchCandidate] = Field(default_factory=list)
+    notes: list[str] = Field(default_factory=list)
+    guidance: str
+
+
 class PricingMatchStatus(StrEnum):
     MATCHED = "matched"
     UNMAPPED = "unmapped"

@@ -882,6 +882,28 @@ resume instead of re-spending agent work. The stable V1 operations remain
 valid and continue to work offline against the canonical registry. The
 agent-host protocol is documented in `docs/agent-research-workflow.md`.
 
+### V1.2 guided-run operations
+
+V1.2 adds one guided entry point plus workspace operations, mirrored by the CLI
+(`llm-migrate models match`, `llm-migrate research prompts`, and
+`llm-migrate run …`) and MCP tools:
+
+```text
+match_model            (models match; MCP resolve_model reports match results)
+start_migration        (run start)
+get_research_prompts   (research prompts)
+list_adaptation_tasks  (run tasks)
+submit_adapted_prompt  (run submit-prompt)
+submit_adapted_file    (run submit-file)
+finalize_migration     (run finalize)
+```
+
+Matching lives in `core/resolver.py` (`match_model`), the run workspace and
+adaptation contracts in `core/workspace.py`, and research prompt rendering in
+`core/research_prompts.py`. Submissions are validated deterministically and
+stored only beneath the run's `output/` directory; the analyzed application is
+never mutated, preserving the review-first naming rationale above.
+
 ---
 
 ## 12. Key Data Flows
@@ -952,6 +974,39 @@ canonical registry update       deterministic consensus
                                       ↓
                               active migration plan
 ```
+
+### D2. Guided migration run (V1.2)
+
+One workspace per migration, defaulting to
+`<application>/.llm-migrate/runs/<run-id>/`, drives flows A–D through a single
+entry point and collects reviewable deliverables:
+
+```text
+start_migration
+ ↓ (lenient registry-first match_model; unresolved identifiers return
+    candidates for user confirmation and write nothing)
+run workspace: migration.yaml [+ bounded request.yaml when knowledge is
+missing or stale]
+ ↓
+optional research stages using deterministic, scope-isolated generated
+prompts (get_research_prompts) → session overlay
+ ↓
+list_adaptation_tasks (per-file worklist from the migration plan)
+ ↓
+host agent writes complete adapted prompts/files
+ ↓
+submit_adapted_prompt / submit_adapted_file
+ (deterministic validation; stored under output/prompts/ and output/files/)
+ ↓
+finalize_migration → output/migration-manifest.yaml,
+output/migration-report.md (per-file changes + rationale + coverage gaps),
+output/changes.yaml
+```
+
+Semantic rewriting stays with the host agent; the toolkit derives worklists,
+validates fail-closed, stores deliverables, and reports. The application tree
+is never written to — adaptation outputs are review candidates in the run
+workspace, and `.llm-migrate` is excluded from application scanning.
 
 ### E. Later: prove migration quality
 

@@ -33,7 +33,29 @@ from llm_migrate.core.orchestration import NullAgentRunner
 from llm_migrate.core.session import manifest_summary_lines
 from llm_migrate.service import MigrationService
 
-mcp = FastMCP("llm-migrate")
+_WORKFLOW_INSTRUCTIONS = """\
+llm-migrate plans LLM application migrations locally and deterministically.
+
+For a full migration, prefer the guided workflow over calling low-level tools ad hoc:
+1. start_migration(application_path, source, target, ...) — registry-first model
+   matching (asks for user confirmation when identifiers are vague), scans the
+   application, creates the run workspace (default
+   <application>/.llm-migrate/runs/<run-id>/), and reports whether research helps.
+2. If research is recommended and the user agrees: get_research_prompts(run_dir),
+   run each researcher/reviewer prompt with a separate agent, validate each
+   artifact, then build_session_registry(run_dir).
+3. list_adaptation_tasks(run_dir) — the per-file worklist.
+4. Write the adapted prompt/file contents yourself and submit each via
+   submit_adapted_prompt / submit_adapted_file; submissions are validated and
+   stored under <run>/output/, never in the application tree.
+5. finalize_migration(run_dir) — writes migration-manifest.yaml and
+   migration-report.md (including per-file changes and rationale) under output/.
+
+Never edit the user's application directly from research results; everything is a
+reviewable deliverable in the run's output/ directory.
+"""
+
+mcp = FastMCP("llm-migrate", instructions=_WORKFLOW_INSTRUCTIONS)
 
 
 def _service() -> MigrationService:
@@ -49,10 +71,20 @@ def _json(model: Any) -> dict[str, Any]:
 def resolve_model(
     identifier: str, platform: str | None = None, endpoint: str | None = None
 ) -> dict[str, Any]:
-    """Resolve a registry identifier with optional platform context."""
-    resolution = _service().resolve_model(identifier, platform, endpoint)
-    result = _json(resolution)
-    result["canonical_name"] = resolution.canonical_name
+    """Match an identifier against the local registry, tolerating vague input.
+
+    Always check here before researching a model: regional Bedrock
+    inference-profile prefixes, version suffixes, spacing, and vague platform
+    names are normalized deterministically. `status` is `resolved`,
+    `needs_confirmation` (show `candidates` to the user and ask), or
+    `not_found`.
+    """
+    match = _service().match_model(identifier, platform, endpoint)
+    result = _json(match)
+    if match.resolution is not None:
+        result["canonical_name"] = match.canonical_name
+        # The nested profile is large; fetch it explicitly via get_model_profile.
+        result.pop("resolution", None)
     return result
 
 
@@ -194,6 +226,7 @@ def validate_prompt(
     prompt: str,
     source_path: str | None = None,
     target_platform: str | None = None,
+    target_endpoint: str | None = None,
 ) -> dict[str, Any]:
     """Statically validate prompt assumptions against target registry facts."""
     return _json(
@@ -202,6 +235,7 @@ def validate_prompt(
             prompt,
             source_path=source_path,
             target_platform=target_platform,
+            target_endpoint=target_endpoint,
         )
     )
 
@@ -247,6 +281,8 @@ def generate_migration_plan(
     target: str,
     source_platform: str | None = None,
     target_platform: str | None = None,
+    source_endpoint: str | None = None,
+    target_endpoint: str | None = None,
 ) -> dict[str, Any]:
     """Generate an actionable application-level migration manifest without writing files."""
     return _json(
@@ -256,6 +292,8 @@ def generate_migration_plan(
             target,
             source_platform=source_platform,
             target_platform=target_platform,
+            source_endpoint=source_endpoint,
+            target_endpoint=target_endpoint,
         )
     )
 
@@ -267,6 +305,8 @@ def generate_migration_report(
     target: str,
     source_platform: str | None = None,
     target_platform: str | None = None,
+    source_endpoint: str | None = None,
+    target_endpoint: str | None = None,
 ) -> str:
     """Generate a human-readable report from the integrated migration workflow."""
     return _service().generate_migration_report(
@@ -275,6 +315,8 @@ def generate_migration_report(
         target,
         source_platform=source_platform,
         target_platform=target_platform,
+        source_endpoint=source_endpoint,
+        target_endpoint=target_endpoint,
     )
 
 
@@ -465,6 +507,150 @@ def generate_session_migration_plan(
     )
     plan = plan.model_copy(update={"warnings": [*plan.warnings, *manifest_summary_lines(manifest)]})
     return _json(plan)
+
+
+@mcp.tool()
+def start_migration(
+    application_path: str,
+    source: str,
+    target: str,
+    source_platform: str | None = None,
+    target_platform: str | None = None,
+    source_endpoint: str | None = None,
+    target_endpoint: str | None = None,
+    run_id: str | None = None,
+    output_dir: str | None = None,
+    as_of: str | None = None,
+    research: Literal["auto", "skip"] = "auto",
+) -> dict[str, Any]:
+    """Start a guided migration run; the preferred entry point for a full migration.
+
+    Matches both models against the local registry first (tolerating vague or
+    platform-decorated identifiers). If either identifier needs confirmation,
+    nothing is written and the result carries candidates to show the user.
+    Otherwise the run workspace is created (default
+    `<application>/.llm-migrate/runs/<run-id>/`, or `output_dir` when given), a
+    bounded research request is written only when knowledge is missing or
+    stale, and `next_steps` says exactly which tools to call next.
+    """
+    start = _service().start_migration_run(
+        Path(application_path),
+        source,
+        target,
+        source_platform=source_platform,
+        target_platform=target_platform,
+        source_endpoint=source_endpoint,
+        target_endpoint=target_endpoint,
+        run_id=run_id,
+        output_dir=Path(output_dir) if output_dir else None,
+        as_of=date.fromisoformat(as_of) if as_of else None,
+        research=research,
+    )
+    result = _json(start)
+    # The nested profiles are large; fetch one explicitly via get_model_profile.
+    for side in ("source_match", "target_match"):
+        result[side].pop("resolution", None)
+    return result
+
+
+@mcp.tool()
+def get_research_prompts(run_dir: str) -> dict[str, Any]:
+    """Ready-to-run researcher and reviewer prompts for a run's research request.
+
+    Renders one bounded, scope-isolated prompt pair per remaining scope from
+    `<run_dir>/request.yaml`. Run each prompt with a separate agent (never let
+    one agent research two scopes or review its own research), write the YAML
+    artifacts to the stated paths, validate them, then call
+    build_session_registry.
+    """
+    return _json(_service().get_research_prompts(run_dir))
+
+
+@mcp.tool()
+def list_adaptation_tasks(run_dir: str, now: str | None = None) -> dict[str, Any]:
+    """Per-file adaptation worklist for a started migration run.
+
+    Derived from the run's migration plan (using its session overlay when one
+    was built). For every prompt task, write an improved target-model prompt
+    and call submit_adapted_prompt; for every file task, write the complete
+    adapted file and call submit_adapted_file.
+    """
+    return _json(
+        _service().list_adaptation_tasks(
+            run_dir,
+            now=datetime.fromisoformat(now) if now else None,
+        )
+    )
+
+
+@mcp.tool()
+def submit_adapted_prompt(
+    run_dir: str,
+    source_path: str,
+    adapted_prompt: str,
+    rationale: str,
+    changes: list[str] | None = None,
+) -> dict[str, Any]:
+    """Validate and store one refined prompt for the target model.
+
+    The prompt is statically validated against the target model; blockers are
+    rejected. Accepted prompts are written beneath `<run>/output/prompts/`
+    mirroring the application layout, and the rationale/changes appear
+    verbatim in the final migration report.
+    """
+    return _json(
+        _service().submit_adapted_prompt(
+            run_dir,
+            source_path,
+            adapted_prompt,
+            rationale,
+            changes,
+        )
+    )
+
+
+@mcp.tool()
+def submit_adapted_file(
+    run_dir: str,
+    source_path: str,
+    adapted_content: str,
+    rationale: str,
+    changes: list[str],
+    new_file: bool = False,
+) -> dict[str, Any]:
+    """Store one finalized post-adaptation application file for review.
+
+    `adapted_content` must be the complete file, not a diff. Submissions are
+    checked deterministically (path containment, Python syntax, model-id
+    consistency) and written beneath `<run>/output/files/`; the application
+    tree itself is never modified.
+    """
+    return _json(
+        _service().submit_adapted_file(
+            run_dir,
+            source_path,
+            adapted_content,
+            rationale,
+            changes,
+            new_file=new_file,
+        )
+    )
+
+
+@mcp.tool()
+def finalize_migration(run_dir: str, now: str | None = None) -> dict[str, Any]:
+    """Write the run's manifest, report, and adaptation change log under output/.
+
+    The report includes, per adapted file, what changed and why, plus the
+    affected files that still lack an adaptation deliverable. Re-run it any
+    time; it always reflects the current submissions.
+    """
+    return _json(
+        _service().finalize_migration_run(
+            run_dir,
+            now=datetime.fromisoformat(now) if now else None,
+        )
+    )
 
 
 def main() -> None:

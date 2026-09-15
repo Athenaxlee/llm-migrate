@@ -46,7 +46,19 @@ migration, the command refuses — no research is needed.
 
 ### 2. Run research agents (host-owned)
 
-For each scope in the request, run one research agent with:
+Do not hand-write agent assignments: render them from the request instead.
+
+```bash
+llm-migrate research prompts <run-dir>
+```
+
+(or the `get_research_prompts` MCP tool). This returns, for every scope that is
+not already complete, one researcher prompt and one reviewer prompt with the
+exact identity, bounded topics and field paths, source policy, output schema,
+and output path baked in, plus per-scope status so completed stages are never
+re-run. Run each prompt with a separate agent.
+
+Equivalently, for each scope in the request, run one research agent with:
 
 - the exact provider/platform/model/endpoint identity for that scope
 - the requested topics and as-of date

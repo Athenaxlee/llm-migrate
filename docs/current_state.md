@@ -12,6 +12,12 @@ fake-agent end-to-end workflow, CLI/MCP stage operations, the agent-host
 workflow, and bounded cited-source refetching are complete and tested; see
 `docs/project_phases.md` for the milestone detail and deliberate deferrals.
 
+V1.2: Guided Migration Run Workspace — implemented on 2026-09-15 in
+direct response to observed coding-agent host friction (vague identifiers
+triggering unnecessary research, self-invented colliding research prompts,
+scattered outputs, and no adapted-prompt/file deliverables). See the V1.2
+section below and `docs/project_phases.md` §12.1.
+
 ## Released foundation
 
 - Git tag `v1.1.0` is the current stable release; `v1.0.0` and `v0.1.0` remain
@@ -355,11 +361,54 @@ source-target `MigrationKnowledge`, not only individual model profiles.
   user prerequisites, source installation, common workflows, evaluation, MCP,
   and the explicit V1.1 agent-host boundary.
 
+## V1.2 completed capabilities
+
+- Lenient, registry-first model matching (`match_model`, CLI `models match`,
+  MCP `resolve_model`): deterministic stripping of Bedrock cross-region
+  inference-profile prefixes (`us.`, `eu.`, ...) and version suffixes
+  (`-v1:0`), vague platform normalization ("bedrock" → `amazon-bedrock`), and
+  ranked similarity candidates with explicit `resolved` /
+  `needs_confirmation` / `not_found` states. Confirmation is returned to the
+  user instead of guessing or hard-failing; genuinely unknown models are
+  directed to the V1.1 research workflow.
+- Endpoint context flows through planning: `generate_migration_plan/report`
+  and `prepare_invocation_migration` accept source/target endpoints, so models
+  with several same-platform representations (e.g. `bedrock-runtime` vs
+  `bedrock-mantle`) plan deterministically. Detected in-app model IDs that are
+  ambiguous across representations no longer crash the consistency check.
+- Guided run workspace: `start_migration` (MCP) / `llm-migrate run start`
+  matches both models first (writing nothing until both resolve), scans the
+  application, decides whether research is needed and records the exact
+  reasons (missing model, stale topics, missing pair knowledge), writes
+  `migration.yaml` plus a bounded `request.yaml` when applicable, and returns
+  ordered `next_steps`. The default workspace is
+  `<application>/.llm-migrate/runs/<run-id>/` with all deliverables under
+  `output/`; an explicit `output_dir` overrides the location. The scanner
+  ignores `.llm-migrate` so run artifacts never contaminate scans.
+- Deterministic research prompts: `get_research_prompts` / `llm-migrate
+  research prompts` renders one scope-isolated researcher and reviewer prompt
+  pair per remaining scope from `request.yaml`, embedding exact identities,
+  topic/field-path bounds, the source policy, output schemas and paths, the
+  untrusted-data rule, and per-scope status so completed stages are never
+  re-run.
+- Adaptation deliverables: `list_adaptation_tasks` derives a per-file worklist
+  from the plan; `submit_adapted_prompt` statically validates and stores
+  refined prompts under `output/prompts/`; `submit_adapted_file` stores
+  complete adapted application files under `output/files/` behind fail-closed
+  checks (path containment, non-empty, actually changed, Python syntax,
+  model-id consistency warnings); `finalize_migration` writes
+  `migration-manifest.yaml`, `changes.yaml`, and `migration-report.md` with a
+  per-file "what changed and why" section plus coverage gaps. The analyzed
+  application tree is never modified.
+
 ## Next work
 
-1. Add broader scanners/model families through the existing normalized scanner,
+1. Exercise the V1.2 guided workflow with real coding-agent hosts (Claude Code,
+   Copilot) and fold observed friction back into the tool guidance.
+2. Release V1.2 as `v1.2.0`.
+3. Add broader scanners/model families through the existing normalized scanner,
    reviewed canonical registry, and V1.1 session-overlay boundaries.
-2. Optional V1.1 follow-ups: a persistent content-addressed research cache,
+4. Optional V1.1 follow-ups: a persistent content-addressed research cache,
    concurrent agent execution within recorded limits, and an orchestrated
    arbiter stage.
 

@@ -19,6 +19,7 @@ from llm_migrate.core.models import (
 
 _IGNORED_DIRECTORIES = {
     ".git",
+    ".llm-migrate",
     ".mypy_cache",
     ".pytest_cache",
     ".ruff_cache",
