@@ -1552,8 +1552,8 @@ the run workspace, preserving the review-first invariant.
 
 ## Current status
 
-Implemented on 2026-09-15 with unit coverage for matching, workspace
-lifecycle, fail-closed submissions, and report composition.
+Implemented and released as `v1.2.0` on 2026-09-15, with unit coverage for
+matching, workspace lifecycle, fail-closed submissions, and report composition.
 
 ---
 

@@ -12,7 +12,8 @@ fake-agent end-to-end workflow, CLI/MCP stage operations, the agent-host
 workflow, and bounded cited-source refetching are complete and tested; see
 `docs/project_phases.md` for the milestone detail and deliberate deferrals.
 
-V1.2: Guided Migration Run Workspace — implemented on 2026-09-15 in
+V1.2: Guided Migration Run Workspace — complete and released as `v1.2.0` on
+2026-09-15, built in
 direct response to observed coding-agent host friction (vague identifiers
 triggering unnecessary research, self-invented colliding research prompts,
 scattered outputs, and no adapted-prompt/file deliverables). See the V1.2
@@ -20,8 +21,8 @@ section below and `docs/project_phases.md` §12.1.
 
 ## Released foundation
 
-- Git tag `v1.1.0` is the current stable release; `v1.0.0` and `v0.1.0` remain
-  prior recorded release tags.
+- Git tag `v1.2.0` is the current stable release; `v1.1.0`, `v1.0.0`, and
+  `v0.1.0` remain prior recorded release tags.
 - The V0.1 reviewed registry, proposal workflow, provenance, freshness, model
   profiles, and directional Claude migration knowledge remain intact.
 - Every non-fixture provider profile has exactly one checked-in proposal
@@ -405,10 +406,9 @@ source-target `MigrationKnowledge`, not only individual model profiles.
 
 1. Exercise the V1.2 guided workflow with real coding-agent hosts (Claude Code,
    Copilot) and fold observed friction back into the tool guidance.
-2. Release V1.2 as `v1.2.0`.
-3. Add broader scanners/model families through the existing normalized scanner,
+2. Add broader scanners/model families through the existing normalized scanner,
    reviewed canonical registry, and V1.1 session-overlay boundaries.
-4. Optional V1.1 follow-ups: a persistent content-addressed research cache,
+3. Optional V1.1 follow-ups: a persistent content-addressed research cache,
    concurrent agent execution within recorded limits, and an orchestrated
    arbiter stage.
 

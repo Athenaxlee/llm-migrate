@@ -12,4 +12,4 @@ __all__ = [
     "register_evaluator",
     "unregister_evaluator",
 ]
-__version__ = "1.1.0"
+__version__ = "1.2.0"

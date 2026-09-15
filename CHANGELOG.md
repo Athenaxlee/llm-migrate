@@ -3,7 +3,7 @@
 All notable changes are documented here. The project follows semantic
 versioning.
 
-## Unreleased
+## 1.2.0 — 2026-09-15
 
 - Added the V1.2 guided migration run workspace: `start_migration` creates a
   per-run workspace (default `<application>/.llm-migrate/runs/<run-id>/`),
