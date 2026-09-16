@@ -169,6 +169,36 @@ llm-migrate registry validate
 llm-migrate models list
 ```
 
+### Updating an existing install
+
+When this repository gets new commits and the MCP server is already installed,
+update the same checkout in place. The MCP configuration keeps pointing at the
+same `.venv` executable, so no configuration change is needed:
+
+```bash
+cd /path/to/llm-migrate              # the checkout your MCP config points at
+git pull
+.venv/bin/python -m pip install .    # Windows: .venv\Scripts\python -m pip install .
+.venv/bin/pip show llm-migrate       # confirm the new version
+.venv/bin/llm-migrate registry validate
+```
+
+Then restart or reload your MCP client (or just that server entry): hosts keep
+the stdio server process running and will not pick up new code until the server
+restarts. A development install (`pip install -e '.[dev]'`) only needs the
+`git pull` and the restart.
+
+Or paste this prompt and let your coding agent do it:
+
+```text
+Update my llm-migrate MCP server: find the checkout my MCP configuration points
+at, run git pull there, reinstall it into that checkout's .venv with
+"python -m pip install .", verify with "llm-migrate registry validate", and
+show me the installed version from "pip show llm-migrate". Do not change the
+MCP configuration unless the executable path actually moved. Then tell me to
+restart/reload the MCP server so the update takes effect.
+```
+
 ## Connect the MCP server
 
 The installed stdio server is:
