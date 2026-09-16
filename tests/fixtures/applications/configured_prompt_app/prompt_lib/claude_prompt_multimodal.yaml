@@ -1,0 +1,5 @@
+sys_prompt: |
+  You are a document analysis assistant.
+
+user_prompt: |
+  Analyze the supplied document.

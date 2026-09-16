@@ -1,5 +1,5 @@
 migration:
-  schema_version: '2'
+  schema_version: '3'
   source:
     model: gpt-5.6-sol
     provider: openai
@@ -20,10 +20,18 @@ migration:
     - openai-api
     invocation_count: 1
     prompt_count: 1
+  prompt_discovery:
+    consumers: 1
+    inline_consumers: 1
+    source_backed_consumers: 0
+    dynamic_consumers: 0
+    resolved_sources: 0
+    low_confidence_sources: 0
+    coverage: resolved
   target_selection_rationale:
   - The caller selected claude-sonnet-5 on anthropic-api.
   - Static analysis found no proven blocker for the detected application requirements.
-  - Review 10 unresolved compatibility item(s) before deployment.
+  - Review 9 unresolved compatibility item(s) before deployment.
   model_differences:
     source_model: gpt-5.6-sol
     target_model: claude-sonnet-5
@@ -439,8 +447,6 @@ migration:
   warnings:
   - Map reasoning_effort to effort; reasoning-control semantics require review.
   unknowns:
-  - Inline or dynamic prompt content was detected in fields input; the scanner does
-    not retain its text for semantic preparation.
   - One or both values for 'adaptive_thinking' are unknown; compatibility must not
     be assumed.
   - One or both values for 'document_input' are unknown; compatibility must not be

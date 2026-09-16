@@ -1,5 +1,5 @@
 {
-  "files_scanned": 1,
+  "files_scanned": 2,
   "findings": [
     {
       "detail": "imports from anthropic",
@@ -80,7 +80,12 @@
         "line": 11,
         "path": "app.py"
       },
-      "metadata": null,
+      "metadata": {
+        "resolution": "source",
+        "sources": [
+          "prompts/system.txt"
+        ]
+      },
       "platform": "anthropic-api",
       "provider": "anthropic",
       "value": "system"
@@ -94,7 +99,10 @@
         "line": 12,
         "path": "app.py"
       },
-      "metadata": null,
+      "metadata": {
+        "resolution": "inline",
+        "sources": []
+      },
       "platform": "anthropic-api",
       "provider": "anthropic",
       "value": "messages"
@@ -165,6 +173,33 @@
     }
   ],
   "multimodal_inputs": [],
+  "prompt_discovery": {
+    "consumers": 2,
+    "coverage": "resolved",
+    "dynamic_consumers": 0,
+    "inline_consumers": 1,
+    "low_confidence_sources": 0,
+    "resolved_sources": 1,
+    "source_backed_consumers": 1
+  },
+  "prompt_sources": [
+    {
+      "components": [
+        {
+          "content": "Return a concise weather report.\n",
+          "key": null,
+          "role": "unknown"
+        }
+      ],
+      "confidence": "high",
+      "format": "text",
+      "origin": "discovered",
+      "path": "prompts/system.txt",
+      "provenance": [
+        "app.py loads prompts/system.txt"
+      ]
+    }
+  ],
   "requirements": {
     "minimum_context_window": null,
     "required_capabilities": [
@@ -186,7 +221,7 @@
     ]
   },
   "root": "<fixture>",
-  "schema_version": "2",
+  "schema_version": "3",
   "structured_outputs": [],
   "tool_definitions": [
     {

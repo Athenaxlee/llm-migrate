@@ -80,7 +80,10 @@
         "line": 8,
         "path": "app.py"
       },
-      "metadata": null,
+      "metadata": {
+        "resolution": "inline",
+        "sources": []
+      },
       "platform": "amazon-bedrock",
       "provider": "anthropic",
       "value": "system"
@@ -94,7 +97,10 @@
         "line": 9,
         "path": "app.py"
       },
-      "metadata": null,
+      "metadata": {
+        "resolution": "inline",
+        "sources": []
+      },
       "platform": "amazon-bedrock",
       "provider": "anthropic",
       "value": "messages"
@@ -143,6 +149,16 @@
       "source_kind": "bytes"
     }
   ],
+  "prompt_discovery": {
+    "consumers": 2,
+    "coverage": "resolved",
+    "dynamic_consumers": 0,
+    "inline_consumers": 2,
+    "low_confidence_sources": 0,
+    "resolved_sources": 0,
+    "source_backed_consumers": 0
+  },
+  "prompt_sources": [],
   "requirements": {
     "minimum_context_window": null,
     "required_capabilities": [
@@ -161,7 +177,7 @@
     ]
   },
   "root": "<fixture>",
-  "schema_version": "2",
+  "schema_version": "3",
   "structured_outputs": [],
   "tool_definitions": [
     {

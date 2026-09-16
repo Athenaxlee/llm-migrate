@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import ast
+import posixpath
+from collections.abc import Sequence
 from pathlib import Path
 from typing import Any, Literal
 
@@ -15,6 +17,22 @@ from llm_migrate.core.models import (
     SourceLocation,
     StructuredOutputContract,
     ToolDefinition,
+)
+from llm_migrate.core.prompt_documents import (
+    PROMPT_SOURCE_SUFFIXES,
+    STRUCTURED_SUFFIXES,
+    extract_prompt_components,
+    source_format,
+)
+from llm_migrate.scanners.config import (
+    ConfigDocument,
+    load_config_documents,
+    lookup,
+    resolve_reference,
+)
+from llm_migrate.scanners.provenance import (
+    assemble_prompt_sources,
+    summarize_prompt_discovery,
 )
 
 _IGNORED_DIRECTORIES = {
@@ -44,6 +62,41 @@ _PARAMETERS = {
     "seed",
 }
 _ENV_MARKERS = ("ANTHROPIC", "OPENAI", "AWS", "BEDROCK", "MODEL")
+_DOCUMENT_LOADERS = {
+    "yaml.safe_load",
+    "yaml.load",
+    "json.load",
+    "json.loads",
+    "tomllib.load",
+    "tomllib.loads",
+}
+_PATH_CONSTRUCTORS = {"Path", "pathlib.Path", "pathlib.PurePath", "pathlib.PurePosixPath"}
+_LOADER_CALL_MARKERS = ("load", "read", "open", "fetch", "get", "prompt")
+
+
+def _normalize_relative(value: str) -> str | None:
+    """Normalize a candidate relative path; None for absolute or escaping paths."""
+    if not value or value != value.strip() or "\n" in value:
+        return None
+    if value.startswith(("/", "~")) or (len(value) > 1 and value[1] == ":"):
+        return None
+    normalized = posixpath.normpath(value.replace("\\", "/"))
+    return None if normalized.startswith("..") else normalized
+
+
+def _subscript_chain(node: ast.AST) -> tuple[str, tuple[str, ...]] | None:
+    """Decompose `name["a"]["b"]` into ("name", ("a", "b")); None otherwise."""
+    keys: list[str] = []
+    current = node
+    while isinstance(current, ast.Subscript):
+        key = _literal(current.slice)
+        if not isinstance(key, str):
+            return None
+        keys.append(key)
+        current = current.value
+    if isinstance(current, ast.Name) and keys:
+        return current.id, tuple(reversed(keys))
+    return None
 
 
 def _dotted(node: ast.AST) -> str:
@@ -108,8 +161,15 @@ def _structured_value(value: Any) -> Any:
 
 
 class _Visitor(ast.NodeVisitor):
-    def __init__(self, path: str) -> None:
+    def __init__(
+        self,
+        path: str,
+        catalog: dict[str, ConfigDocument] | None = None,
+        known_files: set[str] | None = None,
+    ) -> None:
         self.path = path
+        self.catalog = catalog or {}
+        self.known_files = known_files or set()
         self.findings: list[ApplicationFinding] = []
         self.aliases: dict[str, str] = {}
         self.clients: dict[str, tuple[str | None, str | None]] = {}
@@ -118,6 +178,210 @@ class _Visitor(ast.NodeVisitor):
         self.tool_definitions: list[ToolDefinition] = []
         self.structured_outputs: list[StructuredOutputContract] = []
         self.multimodal_inputs: list[MultimodalInputContract] = []
+        # Bounded local propagation state for prompt provenance discovery.
+        self.path_values: dict[str, str] = {}
+        self.file_handles: dict[str, str] = {}
+        self.document_vars: dict[str, tuple[str, tuple[str, ...]]] = {}
+        self.prompt_document_vars: dict[str, str] = {}
+        self.prompt_text_vars: dict[str, str] = {}
+        self.prompt_source_facts: dict[str, list[str]] = {}
+        self.notes: list[str] = []
+
+    def _expand(self, node: ast.AST) -> str:
+        name = _dotted(node)
+        root = name.split(".")[0]
+        return name.replace(root, self.aliases.get(root, root), 1)
+
+    def _static_path(self, node: ast.AST | None) -> str | None:
+        """Resolve common deterministic path expressions to a relative path."""
+        if node is None:
+            return None
+        if isinstance(node, ast.Constant) and isinstance(node.value, str):
+            return _normalize_relative(node.value)
+        if isinstance(node, ast.Name):
+            if node.id == "__file__":
+                return self.path
+            if node.id in self.path_values:
+                return self.path_values[node.id]
+            value = self.constants.get(node.id)
+            return _normalize_relative(value) if isinstance(value, str) else None
+        if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Div):
+            left = self._static_path(node.left)
+            right = self._static_path(node.right)
+            if left is not None and right is not None:
+                return _normalize_relative(posixpath.join(left, right))
+            return None
+        if isinstance(node, ast.Attribute) and node.attr == "parent":
+            base = self._static_path(node.value)
+            return posixpath.dirname(base) if base is not None else None
+        if isinstance(node, ast.Call) and self._expand(node.func) in _PATH_CONSTRUCTORS:
+            parts = [self._static_path(arg) for arg in node.args]
+            if parts and all(part is not None for part in parts):
+                joined = posixpath.join(*(part for part in parts if part is not None))
+                return _normalize_relative(joined)
+        return None
+
+    def _open_path(self, call: ast.Call) -> str | None:
+        """Path opened by `open(p)` or `<path expression>.open()`, if static."""
+        if _dotted(call.func) == "open" and call.args:
+            return self._static_path(call.args[0])
+        if isinstance(call.func, ast.Attribute) and call.func.attr == "open":
+            return self._static_path(call.func.value)
+        return None
+
+    def _loaded_document_path(self, call: ast.Call) -> str | None:
+        """File behind `yaml.safe_load(...)`-style structured loads, if static."""
+        if self._expand(call.func) not in _DOCUMENT_LOADERS or not call.args:
+            return None
+        argument = call.args[0]
+        if isinstance(argument, ast.Name):
+            return self.file_handles.get(argument.id)
+        if isinstance(argument, ast.Call):
+            opened = self._open_path(argument)
+            if opened is not None:
+                return opened
+            if isinstance(argument.func, ast.Attribute) and argument.func.attr == "read_text":
+                return self._static_path(argument.func.value)
+        return None
+
+    def _register_prompt_source(
+        self, path: str, provenance: list[str], *, prompt_hint: bool
+    ) -> bool:
+        """Record a discovered prompt source when the file qualifies as one."""
+        if path in self.prompt_source_facts:
+            return True
+        if source_format(path) is None or path not in self.known_files:
+            return False
+        document = self.catalog.get(path)
+        if document is not None:
+            if not extract_prompt_components(document.data):
+                return False
+        elif "." + path.rsplit(".", 1)[-1].casefold() in STRUCTURED_SUFFIXES:
+            return False  # Structured file that failed to parse; already warned.
+        elif not prompt_hint and "prompt" not in path.casefold():
+            return False
+        self.prompt_source_facts[path] = provenance
+        return True
+
+    def _track_config_access(
+        self, node: ast.Assign, targets: list[str], chain: tuple[str, tuple[str, ...]]
+    ) -> None:
+        base_name, keys = chain
+        if base_name not in self.document_vars:
+            return
+        document_path, prefix = self.document_vars[base_name]
+        key_path = (*prefix, *keys)
+        for name in targets:
+            self.document_vars[name] = (document_path, key_path)
+        document = self.catalog.get(document_path)
+        value = lookup(document, key_path) if document is not None else None
+        if not isinstance(value, str):
+            return
+        resolved = resolve_reference(document_path, value, self.known_files)
+        if resolved is None:
+            return
+        for name in targets:
+            self.path_values[name] = resolved
+        registered = self._register_prompt_source(
+            resolved,
+            [
+                f"{self.path} loads {document_path}",
+                f"{document_path}: {'.'.join(key_path)} -> {resolved}",
+            ],
+            prompt_hint=any("prompt" in key.casefold() for key in key_path),
+        )
+        if registered:
+            self._add(
+                node,
+                CouplingKind.PROMPT,
+                "resolves a prompt file path from configuration",
+                value=resolved,
+                metadata={"config": document_path, "key_path": ".".join(key_path)},
+            )
+
+    def _track_loads(self, node: ast.Assign, targets: list[str], call: ast.Call) -> None:
+        opened = self._open_path(call)
+        if opened is not None:
+            for name in targets:
+                self.file_handles[name] = opened
+        loaded = self._loaded_document_path(call)
+        if loaded is not None and loaded in self.catalog:
+            for name in targets:
+                self.document_vars[name] = (loaded, ())
+            if self._register_prompt_source(
+                loaded, [f"{self.path} loads {loaded}"], prompt_hint=False
+            ):
+                for name in targets:
+                    self.prompt_document_vars[name] = loaded
+            return
+        if isinstance(call.func, ast.Attribute) and call.func.attr == "read_text":
+            file_path = self._static_path(call.func.value)
+            promptish = any(
+                marker in name.casefold() for name in targets for marker in ("prompt", "system")
+            )
+            if file_path is None or not (promptish or "prompt" in file_path.casefold()):
+                return
+            if self._register_prompt_source(
+                file_path, [f"{self.path} loads {file_path}"], prompt_hint=True
+            ):
+                for name in targets:
+                    self.prompt_text_vars[name] = file_path
+                self._add(
+                    node,
+                    CouplingKind.PROMPT,
+                    "loads prompt content from a file",
+                    value=file_path,
+                )
+            elif file_path not in self.known_files and promptish:
+                self.notes.append(
+                    f"{self.path}: prompt file {file_path!r} was not found in the application."
+                )
+            return
+        callee = _dotted(call.func).casefold()
+        if any(marker in callee for marker in _LOADER_CALL_MARKERS):
+            for argument in call.args:
+                argument_path = self._static_path(argument)
+                if argument_path is None:
+                    continue
+                if argument_path in self.prompt_source_facts or self._register_prompt_source(
+                    argument_path,
+                    [f"{self.path} loads {argument_path}"],
+                    prompt_hint=False,
+                ):
+                    for name in targets:
+                        self.prompt_document_vars[name] = argument_path
+                    break
+
+    def _classify_prompt_value(self, node: ast.AST) -> tuple[str, list[str]]:
+        """Classify a prompt argument as inline, source-backed, or dynamic."""
+        traced = {
+            self.prompt_text_vars.get(child.id, self.prompt_document_vars.get(child.id))
+            for child in ast.walk(node)
+            if isinstance(child, ast.Name)
+            and (child.id in self.prompt_text_vars or child.id in self.prompt_document_vars)
+        }
+        source_paths = sorted(path for path in traced if path is not None)
+        if source_paths:
+            return "source", source_paths
+        dynamic_markers = (
+            ast.Call,
+            ast.Attribute,
+            ast.Subscript,
+            ast.Starred,
+            ast.FormattedValue,
+            ast.Await,
+            ast.Lambda,
+        )
+        for child in ast.walk(node):
+            if isinstance(child, dynamic_markers):
+                return "dynamic", []
+            if (
+                isinstance(child, ast.Name)
+                and child.id not in self.constants
+                and child.id not in self.objects
+            ):
+                return "dynamic", []
+        return "inline", []
 
     def _value(self, node: ast.AST | None) -> str | bool | int | float | None:
         value = _literal(node)
@@ -205,25 +469,16 @@ class _Visitor(ast.NodeVisitor):
             for target in node.targets:
                 if isinstance(target, ast.Name):
                     self.objects[target.id] = assigned_object
-        for target in node.targets:
-            if (
-                isinstance(target, ast.Name)
-                and any(marker in target.id.casefold() for marker in ("prompt", "system"))
-                and isinstance(node.value, ast.Call)
-                and isinstance(node.value.func, ast.Attribute)
-                and _dotted(node.value.func).endswith("read_text")
-            ):
-                file_value = node.value.func.value
-                if isinstance(file_value, ast.Call) and file_value.args:
-                    prompt_path = _literal(file_value.args[0])
-                    if isinstance(prompt_path, str):
-                        self._add(
-                            node,
-                            CouplingKind.PROMPT,
-                            "loads prompt content from a file",
-                            value=prompt_path,
-                        )
+        targets = [target.id for target in node.targets if isinstance(target, ast.Name)]
+        static_path = self._static_path(node.value)
+        if static_path is not None:
+            for name in targets:
+                self.path_values[name] = static_path
+        chain = _subscript_chain(node.value)
+        if chain is not None:
+            self._track_config_access(node, targets, chain)
         if isinstance(node.value, ast.Call):
+            self._track_loads(node, targets, node.value)
             call_name = _dotted(node.value.func)
             root = call_name.split(".")[0]
             expanded = call_name.replace(root, self.aliases.get(root, root), 1).casefold()
@@ -238,6 +493,14 @@ class _Visitor(ast.NodeVisitor):
                 for target in node.targets:
                     if isinstance(target, ast.Name):
                         self.clients[target.id] = context
+        self.generic_visit(node)
+
+    def visit_With(self, node: ast.With) -> Any:
+        for item in node.items:
+            if isinstance(item.context_expr, ast.Call) and isinstance(item.optional_vars, ast.Name):
+                opened = self._open_path(item.context_expr)
+                if opened is not None:
+                    self.file_handles[item.optional_vars.id] = opened
         self.generic_visit(node)
 
     def visit_Call(self, node: ast.Call) -> Any:
@@ -375,6 +638,7 @@ class _Visitor(ast.NodeVisitor):
             )
         for name in ("system", "messages", "input", "prompt"):
             if name in keyword_map:
+                resolution, source_paths = self._classify_prompt_value(keyword_map[name])
                 self._add(
                     keyword_map[name],
                     CouplingKind.PROMPT,
@@ -382,6 +646,7 @@ class _Visitor(ast.NodeVisitor):
                     provider=provider,
                     platform=platform,
                     value=name,
+                    metadata={"resolution": resolution, "sources": source_paths},
                 )
         if any(marker in lowered for marker in ("json.loads", "model_validate_json", ".parse")):
             self._add(
@@ -647,46 +912,70 @@ def _requirements(findings: list[ApplicationFinding]) -> ApplicationRequirements
     )
 
 
-def scan_application(root: Path | str) -> ApplicationAnalysis:
+def scan_application(
+    root: Path | str, *, prompt_sources: Sequence[str] | None = None
+) -> ApplicationAnalysis:
     path = Path(root)
     if not path.exists():
         raise ValueError(f"application path does not exist: {path}")
-    files = [path] if path.is_file() else sorted(path.rglob("*.py"))
-    files = [
-        item
-        for item in files
-        if not any(
-            part in _IGNORED_DIRECTORIES
-            for part in item.relative_to(path if path.is_dir() else path.parent).parts
-        )
-    ]
+    base = path if path.is_dir() else path.parent
+    if path.is_file():
+        python_files = [path]
+        candidate_files: list[Path] = []
+    else:
+        entries = [
+            item
+            for item in sorted(path.rglob("*"))
+            if item.is_file()
+            and not any(part in _IGNORED_DIRECTORIES for part in item.relative_to(path).parts)
+        ]
+        python_files = [item for item in entries if item.suffix == ".py"]
+        candidate_files = [
+            item for item in entries if item.suffix.casefold() in PROMPT_SOURCE_SUFFIXES
+        ]
+    candidate_relative = [item.relative_to(base).as_posix() for item in candidate_files]
+    known_files = {
+        *(item.relative_to(base).as_posix() for item in python_files),
+        *candidate_relative,
+    }
+    catalog, config_warnings = load_config_documents(base, candidate_relative)
     findings: list[ApplicationFinding] = []
     tool_definitions: list[ToolDefinition] = []
     structured_outputs: list[StructuredOutputContract] = []
     multimodal_inputs: list[MultimodalInputContract] = []
     warnings: list[str] = []
-    base = path if path.is_dir() else path.parent
-    for file_path in files:
+    discovered: dict[str, list[str]] = {}
+    for file_path in python_files:
         relative = file_path.relative_to(base).as_posix()
         try:
             tree = ast.parse(file_path.read_text(encoding="utf-8"), filename=relative)
         except (OSError, UnicodeError, SyntaxError) as exc:
             warnings.append(f"{relative}: {exc}")
             continue
-        visitor = _Visitor(relative)
+        visitor = _Visitor(relative, catalog, known_files)
         visitor.visit(tree)
         findings.extend(visitor.findings)
         tool_definitions.extend(visitor.tool_definitions)
         structured_outputs.extend(visitor.structured_outputs)
         multimodal_inputs.extend(visitor.multimodal_inputs)
+        warnings.extend(visitor.notes)
+        for source_path, provenance in visitor.prompt_source_facts.items():
+            discovered.setdefault(source_path, provenance)
+    warnings.extend(config_warnings)
+    sources, source_warnings = assemble_prompt_sources(
+        base, catalog, known_files, discovered, prompt_sources
+    )
+    warnings.extend(source_warnings)
     findings.sort(
         key=lambda item: (item.location.path, item.location.line, item.kind.value, item.detail)
     )
     return ApplicationAnalysis(
         root=str(path),
-        files_scanned=len(files),
+        files_scanned=len(python_files) + len(candidate_relative),
         findings=findings,
         requirements=_requirements(findings),
+        prompt_sources=sources,
+        prompt_discovery=summarize_prompt_discovery(findings, sources),
         tool_definitions=sorted(
             tool_definitions,
             key=lambda item: (item.location.path, item.location.line, item.name or ""),

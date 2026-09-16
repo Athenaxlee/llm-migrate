@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from pathlib import Path
 from typing import Any, Literal
 
 import yaml
@@ -21,7 +20,11 @@ from llm_migrate.core.models import (
     MigrationPlan,
     ModelComparison,
     PlannedMigrationChange,
+    PromptComponent,
+    PromptDiscoveryCoverage,
     PromptMigrationSpec,
+    PromptSource,
+    PromptSourceConfidence,
     ResolvedModel,
     SourceLocation,
     ValidationIssue,
@@ -65,46 +68,25 @@ def _change(
 
 def _prompt_inputs(
     application: ApplicationAnalysis,
-) -> tuple[list[tuple[Path, str]], list[str]]:
-    root = Path(application.root)
-    base = root if root.is_dir() else root.parent
-    prompts: list[tuple[Path, str]] = []
+) -> tuple[list[tuple[PromptSource, PromptComponent]], list[str]]:
+    """Prompt components to prepare, plus unknowns for what stays unresolved."""
+    inputs: list[tuple[PromptSource, PromptComponent]] = []
     unknowns: list[str] = []
-    seen: set[Path] = set()
-    for finding in application.findings:
-        if finding.kind is not CouplingKind.PROMPT or not isinstance(finding.value, str):
-            continue
-        candidate = (base / finding.value).resolve()
-        try:
-            candidate.relative_to(base.resolve())
-        except ValueError:
+    for source in application.prompt_sources:
+        if source.confidence is PromptSourceConfidence.LOW:
             unknowns.append(
-                f"Prompt path {finding.value!r} escapes the application root and was not read."
+                f"{source.path} contains prompt-like keys but nothing references it; it was "
+                "not prepared automatically. Name it in prompt_sources to include it."
             )
             continue
-        if candidate in seen:
-            continue
-        if finding.detail == "loads prompt content from a file":
-            seen.add(candidate)
-            try:
-                prompts.append((candidate, candidate.read_text(encoding="utf-8")))
-            except (OSError, UnicodeError) as exc:
-                unknowns.append(f"Prompt file {finding.value!r} could not be read: {exc}.")
-    prompt_fields = sorted(
-        {
-            str(item.value)
-            for item in application.findings
-            if item.kind is CouplingKind.PROMPT
-            and item.detail.startswith("supplies prompt content")
-        }
-    )
-    if prompt_fields and not prompts:
+        inputs.extend((source, component) for component in source.components)
+    discovery = application.prompt_discovery
+    if discovery.dynamic_consumers:
         unknowns.append(
-            "Inline or dynamic prompt content was detected in fields "
-            + ", ".join(prompt_fields)
-            + "; the scanner does not retain its text for semantic preparation."
+            f"{discovery.dynamic_consumers} prompt consumer(s) supply dynamically built "
+            "content with no statically resolvable prompt source; review them manually."
         )
-    return prompts, unknowns
+    return inputs, unknowns
 
 
 def _schema_validation(application: ApplicationAnalysis) -> list[ValidationIssue]:
@@ -190,27 +172,34 @@ def generate_application_migration_plan(
         )
         for message in invocation.warnings
     )
-    for path, text in prompt_inputs:
-        prompt_base = (
-            Path(application.root)
-            if Path(application.root).is_dir()
-            else Path(application.root).parent
-        ).resolve()
-        relative = path.relative_to(prompt_base).as_posix()
+    if application.prompt_discovery.coverage is not PromptDiscoveryCoverage.RESOLVED:
+        validation_results.append(
+            ValidationIssue(
+                code="incomplete_prompt_coverage",
+                level=ValidationLevel.WARNING,
+                message=(
+                    "Prompt adaptation coverage is incomplete: "
+                    f"{application.prompt_discovery.dynamic_consumers} prompt consumer(s) "
+                    "have no resolved static prompt source."
+                ),
+            )
+        )
+    for prompt_source, component in prompt_inputs:
         prompt_changes.append(
             prepare_prompt_migration(
                 source,
                 target,
-                text,
-                source_path=relative,
-                source_role="unknown",
+                component.content,
+                source_path=prompt_source.path,
+                source_component=component.key,
+                source_role=component.role,
             )
         )
         validation_results.extend(
             validate_prompt(
                 target,
-                text,
-                source_path=relative,
+                component.content,
+                source_path=prompt_source.path,
                 target_platform=target_endpoint.platform,
             ).issues
         )
@@ -255,10 +244,11 @@ def generate_application_migration_plan(
     optional_changes: list[PlannedMigrationChange] = []
     for prompt in prompt_changes:
         if prompt.candidate_prompt != "":
+            suffix = f" ({prompt.source_component})" if prompt.source_component else ""
             optional_changes.append(
                 _change(
                     "prompt",
-                    f"Review the prepared prompt candidate for {prompt.source_path}.",
+                    f"Review the prepared prompt candidate for {prompt.source_path}{suffix}.",
                     _locations(application, CouplingKind.PROMPT),
                 )
             )
@@ -330,6 +320,7 @@ def generate_application_migration_plan(
     return MigrationPlan(
         source=source_endpoint,
         target=target_endpoint,
+        prompt_discovery=application.prompt_discovery,
         application=MigrationApplicationSummary(
             root=application.root,
             files_scanned=application.files_scanned,
@@ -427,22 +418,45 @@ def generate_migration_report(plan: MigrationPlan) -> str:
         ]
         or ["- No material model differences were recorded."]
     )
+    discovery = plan.prompt_discovery
+    discovery_lines = [
+        f"Prompt consumers detected: {discovery.consumers}",
+        f"Consumers backed by resolved prompt sources: {discovery.source_backed_consumers}",
+        f"Inline prompts (adapted through their file tasks): {discovery.inline_consumers}",
+        f"Dynamic prompts without a static source: {discovery.dynamic_consumers}",
+        f"Resolved prompt sources: {discovery.resolved_sources}; "
+        f"low-confidence candidates: {discovery.low_confidence_sources}",
+        f"Coverage: **{discovery.coverage.value}**",
+    ]
+    if discovery.coverage is not PromptDiscoveryCoverage.RESOLVED:
+        discovery_lines.append(
+            "Warning: prompt adaptation coverage is incomplete; review every unresolved "
+            "prompt consumer manually."
+        )
+    prompt_change_lines = [
+        f"Review `{item.source_path or '<inline>'}`"
+        + (f" (`{item.source_component}`)" if item.source_component else "")
+        + f": {len(item.semantic_diff)} semantic-diff items and "
+        f"{len(item.migration_risks)} recorded risks."
+        for item in plan.prompt_changes
+    ]
+    if not prompt_change_lines and discovery.consumers:
+        prompt_change_lines = [
+            "Prompt adaptation coverage is incomplete: no static prompt source was resolved "
+            f"for the {discovery.consumers} detected prompt consumer(s)."
+            if discovery.coverage is not PromptDiscoveryCoverage.RESOLVED
+            else "No prompt files require preparation; detected prompt content is inline "
+            "and is adapted through its file tasks."
+        ]
     sections = (
+        ("Prompt discovery", discovery_lines),
         ("Affected files", [f"`{item}`" for item in plan.affected_files]),
         ("Blockers", plan.blockers),
         ("Warnings", plan.warnings),
         ("Unresolved unknowns", plan.unknowns),
         ("Required changes", [item.description for item in plan.required_changes]),
         ("Optional changes", [item.description for item in plan.optional_changes]),
-        (
-            "Prompt changes",
-            [
-                f"Review `{item.source_path or '<inline>'}`: "
-                f"{len(item.semantic_diff)} semantic-diff items and "
-                f"{len(item.migration_risks)} recorded risks."
-                for item in plan.prompt_changes
-            ],
-        ),
+        ("Prompt changes", prompt_change_lines),
         ("Tool changes", [item.description for item in plan.tool_changes]),
         (
             "Tool schema candidates",

@@ -1,5 +1,5 @@
 migration:
-  schema_version: '2'
+  schema_version: '3'
   source:
     model: claude-sonnet-5
     provider: anthropic
@@ -12,7 +12,7 @@ migration:
     model_id: gpt-5.6-sol
   application:
     root: .
-    files_scanned: 1
+    files_scanned: 2
     finding_count: 11
     providers:
     - anthropic
@@ -20,6 +20,14 @@ migration:
     - anthropic-api
     invocation_count: 1
     prompt_count: 3
+  prompt_discovery:
+    consumers: 2
+    inline_consumers: 1
+    source_backed_consumers: 1
+    dynamic_consumers: 0
+    resolved_sources: 1
+    low_confidence_sources: 0
+    coverage: resolved
   target_selection_rationale:
   - The caller selected gpt-5.6-sol on openai-api.
   - Static analysis found no proven blocker for the detected application requirements.
@@ -453,7 +461,7 @@ migration:
   - One or both values for 'top_k' are unknown; compatibility must not be assumed.
   - One or both values for 'top_p' are unknown; compatibility must not be assumed.
   prompt_changes:
-  - schema_version: '3'
+  - schema_version: '4'
     source_model: claude-sonnet-5
     target_model: gpt-5.6-sol
     source_provider: anthropic
@@ -462,6 +470,7 @@ migration:
     target_platform: openai-api
     source_prompt_sha256: 9ae33a22b142035c220632a7de9578b416dafdb065d35446269c1eaa61b46043
     source_path: prompts/system.txt
+    source_component: null
     source_role: unknown
     source_prompt_analysis:
       schema_version: '2'

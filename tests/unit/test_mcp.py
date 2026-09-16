@@ -200,7 +200,7 @@ def test_mcp_integrated_plan_and_report_use_the_shared_workflow() -> None:
         "anthropic-api",
         "openai-api",
     )
-    assert plan["schema_version"] == "2"
+    assert plan["schema_version"] == "3"
     assert plan["affected_files"] == ["app.py", "prompts/system.txt"]
     assert (
         plan["invocation_changes"][0]["tool_schema_migrations"][0]["target_definition"]["type"]

@@ -52,7 +52,10 @@
         "line": 9,
         "path": "app.py"
       },
-      "metadata": null,
+      "metadata": {
+        "resolution": "inline",
+        "sources": []
+      },
       "platform": "openai-api",
       "provider": "openai",
       "value": "input"
@@ -165,6 +168,16 @@
       "source_kind": "url"
     }
   ],
+  "prompt_discovery": {
+    "consumers": 1,
+    "coverage": "resolved",
+    "dynamic_consumers": 0,
+    "inline_consumers": 1,
+    "low_confidence_sources": 0,
+    "resolved_sources": 0,
+    "source_backed_consumers": 0
+  },
+  "prompt_sources": [],
   "requirements": {
     "minimum_context_window": null,
     "required_capabilities": [
@@ -187,7 +200,7 @@
     ]
   },
   "root": "<fixture>",
-  "schema_version": "2",
+  "schema_version": "3",
   "structured_outputs": [
     {
       "json_schema": {

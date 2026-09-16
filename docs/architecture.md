@@ -220,6 +220,40 @@ application and preserves normalized tool definitions, input JSON Schemas,
 structured-output contracts, strictness, and multimodal payload format/source
 kind. Unresolved dynamic definitions remain explicit unknowns.
 
+V1.3 advances `ApplicationAnalysis` to schema version 3 and adds prompt
+provenance discovery. The application scanner is now three cooperating parts
+behind the same entry point:
+
+```text
+scan_application
+├── Python scanner (scanners/python.py)
+│     LLM invocation sites, prompt consumers, loader calls,
+│     bounded static path/config propagation
+├── Config scanner (scanners/config.py)
+│     YAML/JSON/TOML documents parsed structurally; prompt-scoped
+│     path references discovered without executing anything
+└── Provenance assembly (scanners/provenance.py)
+      PromptSource records (path, format, components, provenance chain,
+      confidence, origin) plus a PromptDiscoverySummary coverage report
+```
+
+Structured prompt documents (`core/prompt_documents.py`) stay structured: only
+recognized prompt component keys (`system_prompt`, `sys_prompt`, `user_prompt`,
+`messages[*].content`, ...) become `PromptComponent`s; every other value is
+preserved verbatim through candidate reconstruction and fail-closed adaptation
+submission checks. Confidence is evidence-based — `high` when scanned code
+provably loads the file (directly or through a configuration value it reads) or
+the user names it in a `prompt_sources` override, `medium` for prompt-scoped
+config references without proven loading code, `low` for merely prompt-like
+files, which are reported but never become migration tasks. Every prompt
+consumer is classified `inline`, `source`, or `dynamic`, and planning surfaces
+a `resolved`/`partial`/`unresolved` coverage state instead of silently
+reporting "no prompt changes" when consumers exist. The bounds are deliberate:
+no application code execution, no interprocedural data-flow analysis — only
+deterministic local propagation of common idioms (`open`, `Path` joins,
+`__file__`-relative paths, `yaml.safe_load`/`json.load`/`tomllib.load`, nested
+config subscripts, loader-style helper calls).
+
 ---
 
 ## 5. Model Intelligence Architecture

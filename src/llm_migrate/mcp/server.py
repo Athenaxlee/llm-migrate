@@ -162,9 +162,14 @@ def recommend_models(
 
 
 @mcp.tool()
-def scan_application(path: str) -> dict[str, Any]:
-    """Scan a local Python application into a normalized coupling inventory."""
-    return _json(_service().scan_application(path))
+def scan_application(path: str, prompt_sources: list[str] | None = None) -> dict[str, Any]:
+    """Scan a local Python application into a normalized coupling inventory.
+
+    `prompt_sources` optionally names prompt files (relative to the application
+    root) that automatic discovery missed; they become explicit high-confidence
+    prompt sources.
+    """
+    return _json(_service().scan_application(path, prompt_sources=prompt_sources))
 
 
 @mcp.tool()
@@ -283,6 +288,7 @@ def generate_migration_plan(
     target_platform: str | None = None,
     source_endpoint: str | None = None,
     target_endpoint: str | None = None,
+    prompt_sources: list[str] | None = None,
 ) -> dict[str, Any]:
     """Generate an actionable application-level migration manifest without writing files."""
     return _json(
@@ -294,6 +300,7 @@ def generate_migration_plan(
             target_platform=target_platform,
             source_endpoint=source_endpoint,
             target_endpoint=target_endpoint,
+            prompt_sources=prompt_sources,
         )
     )
 
@@ -307,6 +314,7 @@ def generate_migration_report(
     target_platform: str | None = None,
     source_endpoint: str | None = None,
     target_endpoint: str | None = None,
+    prompt_sources: list[str] | None = None,
 ) -> str:
     """Generate a human-readable report from the integrated migration workflow."""
     return _service().generate_migration_report(
@@ -317,6 +325,7 @@ def generate_migration_report(
         target_platform=target_platform,
         source_endpoint=source_endpoint,
         target_endpoint=target_endpoint,
+        prompt_sources=prompt_sources,
     )
 
 
@@ -522,6 +531,7 @@ def start_migration(
     output_dir: str | None = None,
     as_of: str | None = None,
     research: Literal["auto", "skip"] = "auto",
+    prompt_sources: list[str] | None = None,
 ) -> dict[str, Any]:
     """Start a guided migration run; the preferred entry point for a full migration.
 
@@ -545,6 +555,7 @@ def start_migration(
         output_dir=Path(output_dir) if output_dir else None,
         as_of=date.fromisoformat(as_of) if as_of else None,
         research=research,
+        prompt_sources=prompt_sources,
     )
     result = _json(start)
     # The nested profiles are large; fetch one explicitly via get_model_profile.

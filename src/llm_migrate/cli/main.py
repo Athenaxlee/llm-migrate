@@ -376,11 +376,18 @@ def recommend(
 @app.command("scan-application")
 def scan_application_command(
     path: Path,
+    prompt_source: Annotated[
+        list[str] | None,
+        typer.Option(
+            "--prompt-source",
+            help="Explicit prompt source file (relative to the application root); repeatable.",
+        ),
+    ] = None,
     registry: Annotated[Path | None, typer.Option(help="Registry root.")] = None,
 ) -> None:
     """Scan a Python application into a provider-neutral coupling inventory."""
     try:
-        _emit(_service(registry).scan_application(path))
+        _emit(_service(registry).scan_application(path, prompt_sources=prompt_source))
     except ValueError as exc:
         typer.echo(str(exc), err=True)
         raise typer.Exit(2) from exc
@@ -542,6 +549,13 @@ def plan(
             help="Fixed ISO timestamp for session-overlay expiry checks.",
         ),
     ] = None,
+    prompt_source: Annotated[
+        list[str] | None,
+        typer.Option(
+            "--prompt-source",
+            help="Explicit prompt source file (relative to the application root); repeatable.",
+        ),
+    ] = None,
     as_json: Annotated[bool, typer.Option("--json", help="Emit JSON instead of YAML.")] = False,
     output: Annotated[
         Path | None,
@@ -559,6 +573,7 @@ def plan(
             target,
             source_platform=source_platform,
             target_platform=target_platform,
+            prompt_sources=prompt_source,
         )
         if session_lines:
             result = result.model_copy(update={"warnings": [*result.warnings, *session_lines]})
@@ -601,6 +616,13 @@ def report(
             help="Fixed ISO timestamp for session-overlay expiry checks.",
         ),
     ] = None,
+    prompt_source: Annotated[
+        list[str] | None,
+        typer.Option(
+            "--prompt-source",
+            help="Explicit prompt source file (relative to the application root); repeatable.",
+        ),
+    ] = None,
     output: Annotated[
         Path | None,
         typer.Option(help="Write the Markdown report to this explicit path."),
@@ -617,6 +639,7 @@ def report(
             target,
             source_platform=source_platform,
             target_platform=target_platform,
+            prompt_sources=prompt_source,
         )
         if session_lines:
             plan = plan.model_copy(update={"warnings": [*plan.warnings, *session_lines]})
@@ -1043,6 +1066,13 @@ def run_start(
         typer.Option(help="Run workspace directory (default .llm-migrate/runs/<run-id>)."),
     ] = None,
     as_of: Annotated[str | None, typer.Option("--as-of", help="Fixed ISO date.")] = None,
+    prompt_source: Annotated[
+        list[str] | None,
+        typer.Option(
+            "--prompt-source",
+            help="Explicit prompt source file (relative to the application root); repeatable.",
+        ),
+    ] = None,
     skip_research: Annotated[
         bool, typer.Option("--skip-research", help="Never write a research request.")
     ] = False,
@@ -1063,6 +1093,7 @@ def run_start(
                 output_dir=output_dir,
                 as_of=date.fromisoformat(as_of) if as_of else None,
                 research="skip" if skip_research else "auto",
+                prompt_sources=prompt_source,
             )
         )
     except (RegistryError, ValueError) as exc:

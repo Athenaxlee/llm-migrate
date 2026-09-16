@@ -1,0 +1,10 @@
+temperature: 0.2
+
+sys_prompt: |
+  You are a single-document summarizer.
+
+user_prompt: |
+  Summarize the supplied document.
+
+metadata:
+  owner: team-a

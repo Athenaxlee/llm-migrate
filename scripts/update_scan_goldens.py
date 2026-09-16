@@ -13,7 +13,7 @@ def main() -> None:
     fixtures = root / "tests" / "fixtures" / "applications"
     output = root / "tests" / "golden" / "application_scans"
     output.mkdir(parents=True, exist_ok=True)
-    for application in ("anthropic_app", "openai_app", "bedrock_app"):
+    for application in ("anthropic_app", "openai_app", "bedrock_app", "configured_prompt_app"):
         result = scan_application(fixtures / application).model_dump(mode="json")
         result["root"] = "<fixture>"
         (output / f"{application}.json").write_text(

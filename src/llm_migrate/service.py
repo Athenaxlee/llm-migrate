@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Mapping, Sequence
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from typing import Any, Literal
@@ -345,8 +345,13 @@ class MigrationService:
             result = result.model_copy(update={"pricing_overlays": overlays})
         return result
 
-    def scan_application(self, root: Path | str) -> ApplicationAnalysis:
-        return scan_application(root)
+    def scan_application(
+        self,
+        root: Path | str,
+        *,
+        prompt_sources: Sequence[str] | None = None,
+    ) -> ApplicationAnalysis:
+        return scan_application(root, prompt_sources=prompt_sources)
 
     def query_live_pricing(
         self,
@@ -527,11 +532,12 @@ class MigrationService:
         target_platform: str | None = None,
         source_endpoint: str | None = None,
         target_endpoint: str | None = None,
+        prompt_sources: Sequence[str] | None = None,
     ) -> MigrationPlan:
         analysis = (
             application
             if isinstance(application, ApplicationAnalysis)
-            else self.scan_application(application)
+            else self.scan_application(application, prompt_sources=prompt_sources)
         )
         source_resolution = self.resolve_model(source, source_platform, source_endpoint)
         target_resolution = self.resolve_model(target, target_platform, target_endpoint)
@@ -588,6 +594,7 @@ class MigrationService:
         target_platform: str | None = None,
         source_endpoint: str | None = None,
         target_endpoint: str | None = None,
+        prompt_sources: Sequence[str] | None = None,
     ) -> str:
         plan = self.generate_migration_plan(
             application,
@@ -597,6 +604,7 @@ class MigrationService:
             target_platform=target_platform,
             source_endpoint=source_endpoint,
             target_endpoint=target_endpoint,
+            prompt_sources=prompt_sources,
         )
         return self.migration_report(plan)
 
@@ -1006,6 +1014,7 @@ class MigrationService:
         output_dir: Path | str | None = None,
         as_of: date | None = None,
         research: Literal["auto", "skip"] = "auto",
+        prompt_sources: Sequence[str] | None = None,
     ) -> MigrationRunStart:
         """Resolve both models registry-first and prepare one run workspace.
 
@@ -1064,7 +1073,7 @@ class MigrationService:
             model=target_resolution.canonical_name,
             endpoint=target_resolution.platform.endpoint,
         )
-        analysis = self.scan_application(application_path)
+        analysis = self.scan_application(application_path, prompt_sources=prompt_sources)
         need = self._research_need(
             analysis,
             run_dir,
@@ -1082,6 +1091,7 @@ class MigrationService:
             source_model_id=source_resolution.platform.model_id,
             target_model_id=target_resolution.platform.model_id,
             created_on=as_of,
+            prompt_sources=list(prompt_sources or []),
         )
         write_run_config(run_dir, config)
         next_steps: list[str] = []
@@ -1145,6 +1155,7 @@ class MigrationService:
             target_platform=config.target.platform,
             source_endpoint=config.source.endpoint,
             target_endpoint=config.target.endpoint,
+            prompt_sources=config.prompt_sources or None,
         )
         if session_lines:
             plan = plan.model_copy(update={"warnings": [*plan.warnings, *session_lines]})

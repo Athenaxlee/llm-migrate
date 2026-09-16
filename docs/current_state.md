@@ -19,6 +19,13 @@ triggering unnecessary research, self-invented colliding research prompts,
 scattered outputs, and no adapted-prompt/file deliverables). See the V1.2
 section below and `docs/project_phases.md` §12.1.
 
+V1.3: Prompt Provenance Discovery — implemented on 2026-09-16 in response to a
+real V1.2 migration run where configuration-driven prompt loading
+(`model_profiles.yaml` → prompt-path values → `yaml.safe_load` →
+`sys_prompt`/`user_prompt`) was invisible to the scanner and the report showed
+"Prompt changes: None" despite real prompt migration work. See the V1.3 section
+below and `docs/project_phases.md` §12.2.
+
 ## Released foundation
 
 - Git tag `v1.2.0` is the current stable release; `v1.1.0`, `v1.0.0`, and
@@ -401,6 +408,39 @@ source-target `MigrationKnowledge`, not only individual model profiles.
   `migration-manifest.yaml`, `changes.yaml`, and `migration-report.md` with a
   per-file "what changed and why" section plus coverage gaps. The analyzed
   application tree is never modified.
+
+## V1.3 completed capabilities
+
+- Prompt provenance discovery: `scan_application` now scans YAML/JSON/TOML
+  configuration structurally alongside Python and reports `PromptSource`
+  records (path, format, structured `PromptComponent`s, provenance chain,
+  evidence-based `high`/`medium`/`low` confidence, discovered/override origin)
+  plus a `PromptDiscoverySummary`. `ApplicationAnalysis` is schema version 3;
+  `MigrationPlan` is schema version 3 and carries the discovery summary.
+- Bounded Python loader/path recognition without executing or importing the
+  application: `open(...)`, `Path(...).open()`, `read_text()`,
+  `yaml.safe_load`/`yaml.load`/`json.load(s)`/`tomllib.load(s)`, `Path` joins,
+  `Path(__file__).parent` composition, simple constants, nested config
+  subscripts (`profile["prompts"]["multi"]` resolved against the parsed config
+  document), and loader-style helper calls. Every prompt consumer is
+  classified `inline`, `source`, or `dynamic`.
+- Structured prompt documents stay structured: only recognized prompt keys
+  become components, per-component `PromptMigrationSpec`s carry
+  `source_component` and real roles, workspace prompt tasks group components
+  per file with a reconstructed full-document candidate, and adapted-prompt
+  submissions fail closed on syntax errors or changes to non-prompt values.
+- Coverage is explicit: plans and reports state
+  `resolved`/`partial`/`unresolved` prompt coverage, warn when coverage is
+  incomplete, and never render dynamic prompt consumers as "no prompt
+  changes". Low-confidence prompt-like files are reported but never become
+  tasks; dynamic chat-history prompts are warnings, not blockers.
+- Explicit `prompt_sources` overrides on `scan_application`,
+  `generate_migration_plan/report`, and `start_migration` across service, CLI
+  (`--prompt-source`), and MCP, persisted in the run's `migration.yaml` so
+  every later run stage sees them.
+- Regression fixture `configured_prompt_app` (config-driven Bedrock prompt
+  loading) with a golden scan, plus discovery/coverage/override/format-
+  preservation unit tests.
 
 ## Next work
 

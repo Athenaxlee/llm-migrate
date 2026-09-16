@@ -128,7 +128,7 @@ def test_supported_end_to_end_routes_produce_actionable_manifests(
     )
     after = {path: path.read_bytes() for path in root.rglob("*") if path.is_file()}
     assert before == after
-    assert plan.schema_version == "2"
+    assert plan.schema_version == "3"
     assert plan.source.platform == source_platform
     assert plan.target.platform == target_platform
     assert plan.affected_files
@@ -145,7 +145,7 @@ def test_supported_end_to_end_routes_produce_actionable_manifests(
     )
 
 
-def test_file_backed_prompt_is_prepared_and_inline_prompt_is_an_unknown(
+def test_file_backed_prompt_is_prepared_and_inline_prompt_is_reported(
     service: MigrationService, project_root: Path
 ) -> None:
     file_backed = service.generate_migration_plan(
@@ -163,7 +163,10 @@ def test_file_backed_prompt_is_prepared_and_inline_prompt_is_an_unknown(
         target_platform="anthropic-api",
     )
     assert [item.source_path for item in file_backed.prompt_changes] == ["prompts/system.txt"]
-    assert any("Inline or dynamic prompt content" in item for item in inline.unknowns)
+    assert file_backed.prompt_discovery.source_backed_consumers == 1
+    assert inline.prompt_changes == []
+    assert inline.prompt_discovery.inline_consumers == 2
+    assert inline.prompt_discovery.coverage.value == "resolved"
 
 
 def test_invalid_schema_and_context_regression_are_cross_concern_blockers(

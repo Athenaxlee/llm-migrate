@@ -1,5 +1,5 @@
 migration:
-  schema_version: '2'
+  schema_version: '3'
   source:
     model: claude-sonnet-4-5-20250929
     provider: anthropic
@@ -20,10 +20,18 @@ migration:
     - anthropic-api
     invocation_count: 1
     prompt_count: 2
+  prompt_discovery:
+    consumers: 2
+    inline_consumers: 2
+    source_backed_consumers: 0
+    dynamic_consumers: 0
+    resolved_sources: 0
+    low_confidence_sources: 0
+    coverage: resolved
   target_selection_rationale:
   - The caller selected claude-sonnet-5 on anthropic-api.
   - Static analysis found no proven blocker for the detected application requirements.
-  - Review 7 unresolved compatibility item(s) before deployment.
+  - Review 6 unresolved compatibility item(s) before deployment.
   model_differences:
     source_model: claude-sonnet-4-5-20250929
     target_model: claude-sonnet-5
@@ -421,8 +429,6 @@ migration:
   blockers: []
   warnings: []
   unknowns:
-  - Inline or dynamic prompt content was detected in fields messages, system; the
-    scanner does not retain its text for semantic preparation.
   - One or both values for 'adaptive_thinking' are unknown; compatibility must not
     be assumed.
   - One or both values for 'effort' are unknown; compatibility must not be assumed.

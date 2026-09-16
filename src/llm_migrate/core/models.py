@@ -494,6 +494,64 @@ class SourceLocation(StrictModel):
     end_line: int | None = Field(default=None, ge=1)
 
 
+class PromptSourceFormat(StrEnum):
+    YAML = "yaml"
+    JSON = "json"
+    TOML = "toml"
+    TEXT = "text"
+    MARKDOWN = "markdown"
+
+
+class PromptSourceConfidence(StrEnum):
+    """How strongly the evidence ties a file to actual LLM prompt consumption."""
+
+    HIGH = "high"
+    MEDIUM = "medium"
+    LOW = "low"
+
+
+class PromptSourceOrigin(StrEnum):
+    DISCOVERED = "discovered"
+    OVERRIDE = "override"
+
+
+class PromptComponent(StrictModel):
+    """One addressable prompt inside a prompt source document."""
+
+    role: Literal["system", "user", "developer", "unknown"] = "unknown"
+    key: str | None = None
+    content: str
+
+
+class PromptSource(StrictModel):
+    """A prompt-bearing file plus the evidence chain that classified it."""
+
+    path: str
+    format: PromptSourceFormat
+    components: list[PromptComponent] = Field(default_factory=list)
+    provenance: list[str] = Field(default_factory=list)
+    confidence: PromptSourceConfidence
+    origin: PromptSourceOrigin = PromptSourceOrigin.DISCOVERED
+
+
+class PromptDiscoveryCoverage(StrEnum):
+    RESOLVED = "resolved"
+    PARTIAL = "partial"
+    UNRESOLVED = "unresolved"
+
+
+class PromptDiscoverySummary(StrictModel):
+    """How completely detected prompt consumers map to static prompt content."""
+
+    consumers: int = Field(default=0, ge=0)
+    inline_consumers: int = Field(default=0, ge=0)
+    source_backed_consumers: int = Field(default=0, ge=0)
+    dynamic_consumers: int = Field(default=0, ge=0)
+    resolved_sources: int = Field(default=0, ge=0)
+    low_confidence_sources: int = Field(default=0, ge=0)
+    coverage: PromptDiscoveryCoverage = PromptDiscoveryCoverage.RESOLVED
+
+
 class CouplingKind(StrEnum):
     PROVIDER_SDK = "provider_sdk"
     MODEL_IDENTIFIER = "model_identifier"
@@ -545,7 +603,7 @@ class MultimodalInputContract(StrictModel):
 
 
 class ApplicationAnalysis(StrictModel):
-    schema_version: Literal["2"] = "2"
+    schema_version: Literal["3"] = "3"
     root: str
     files_scanned: int
     findings: list[ApplicationFinding]
@@ -553,6 +611,8 @@ class ApplicationAnalysis(StrictModel):
     tool_definitions: list[ToolDefinition] = Field(default_factory=list)
     structured_outputs: list[StructuredOutputContract] = Field(default_factory=list)
     multimodal_inputs: list[MultimodalInputContract] = Field(default_factory=list)
+    prompt_sources: list[PromptSource] = Field(default_factory=list)
+    prompt_discovery: PromptDiscoverySummary = Field(default_factory=PromptDiscoverySummary)
     warnings: list[str] = Field(default_factory=list)
 
 
@@ -622,7 +682,7 @@ class PromptSemanticChange(StrictModel):
 
 
 class PromptMigrationSpec(StrictModel):
-    schema_version: Literal["3"] = "3"
+    schema_version: Literal["4"] = "4"
     source_model: str
     target_model: str
     source_provider: str
@@ -631,6 +691,7 @@ class PromptMigrationSpec(StrictModel):
     target_platform: str | None = None
     source_prompt_sha256: str
     source_path: str | None = None
+    source_component: str | None = None
     source_role: Literal["system", "user", "developer", "unknown"] = "unknown"
     source_prompt_analysis: PromptAnalysis
     candidate_prompt: str
@@ -809,10 +870,11 @@ class InvocationMigrationSpec(StrictModel):
 class MigrationPlan(StrictModel):
     """Canonical application-level V0.4 migration manifest."""
 
-    schema_version: Literal["2"] = "2"
+    schema_version: Literal["3"] = "3"
     source: MigrationEndpoint
     target: MigrationEndpoint
     application: MigrationApplicationSummary
+    prompt_discovery: PromptDiscoverySummary = Field(default_factory=PromptDiscoverySummary)
     target_selection_rationale: list[str]
     model_differences: ModelComparison
     affected_files: list[str]

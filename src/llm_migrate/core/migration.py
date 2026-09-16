@@ -39,6 +39,7 @@ def prepare_prompt_migration(
     prompt: str,
     *,
     source_path: str | None = None,
+    source_component: str | None = None,
     source_role: Literal["system", "user", "developer", "unknown"] = "unknown",
 ) -> PromptMigrationSpec:
     source_profile = source.profile if isinstance(source, ResolvedModel) else source
@@ -295,6 +296,7 @@ def prepare_prompt_migration(
         target_platform=target_platform,
         source_prompt_sha256=hashlib.sha256(prompt.encode("utf-8")).hexdigest(),
         source_path=source_path,
+        source_component=source_component,
         source_role=source_role,
         source_prompt_analysis=analysis,
         candidate_prompt=candidate,

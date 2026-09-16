@@ -9,7 +9,9 @@ from llm_migrate.core.models import CouplingKind, RecommendationConstraints
 from llm_migrate.service import MigrationService
 
 
-@pytest.mark.parametrize("application", ["anthropic_app", "openai_app", "bedrock_app"])
+@pytest.mark.parametrize(
+    "application", ["anthropic_app", "openai_app", "bedrock_app", "configured_prompt_app"]
+)
 def test_scans_match_golden_outputs(
     service: MigrationService, project_root: Path, application: str
 ) -> None:

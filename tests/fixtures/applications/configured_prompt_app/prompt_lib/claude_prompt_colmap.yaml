@@ -1,0 +1,5 @@
+sys_prompt: |
+  You are a column-mapping assistant.
+
+user_prompt: |
+  Map the supplied columns to the target schema.

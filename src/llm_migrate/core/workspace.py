@@ -24,9 +24,15 @@ from llm_migrate.core.models import (
     MigrationAdvice,
     MigrationPlan,
     ModelMatchResult,
+    PromptMigrationSpec,
     PromptValidationResult,
     StrictModel,
     ValidationLevel,
+)
+from llm_migrate.core.prompt_documents import (
+    STRUCTURED_SUFFIXES,
+    build_candidate_document,
+    structured_submission_problems,
 )
 
 RUN_CONFIG_FILENAME = "migration.yaml"
@@ -49,6 +55,7 @@ class MigrationRunConfig(StrictModel):
     source_model_id: str
     target_model_id: str
     created_on: date
+    prompt_sources: list[str] = Field(default_factory=list)
 
 
 class MigrationRunPaths(StrictModel):
@@ -120,6 +127,7 @@ class PromptAdaptationTask(StrictModel):
     output_path: str
     status: Literal["pending", "submitted"]
     deterministic_candidate: str
+    components: list[str] = Field(default_factory=list)
     guidance: list[str] = Field(default_factory=list)
     risks: list[str] = Field(default_factory=list)
 
@@ -289,6 +297,39 @@ def _advice_texts(items: list[MigrationAdvice]) -> list[str]:
     return [item.text for item in items]
 
 
+def _spec_guidance(spec: PromptMigrationSpec) -> list[str]:
+    return [
+        *_advice_texts(spec.requirements_to_preserve),
+        *_advice_texts(spec.assumptions_to_reconsider),
+        *_advice_texts(spec.instructions_needing_strengthening),
+        *_advice_texts(spec.target_features_replacing_prompt_text),
+        *_advice_texts(spec.reasoning_configuration),
+        *_advice_texts(spec.structured_output),
+    ]
+
+
+def _structured_candidate(
+    config: MigrationRunConfig, source_path: str, specs: list[PromptMigrationSpec]
+) -> str:
+    """Deterministic full-document candidate for a structured prompt source."""
+    original_path = _application_base(config) / source_path
+    format = STRUCTURED_SUFFIXES.get(Path(source_path).suffix.casefold())
+    try:
+        original = original_path.read_text(encoding="utf-8")
+    except (OSError, UnicodeError):
+        return "\n\n".join(spec.candidate_prompt for spec in specs)
+    if format is None:
+        return original
+    replacements = {
+        spec.source_component: spec.candidate_prompt for spec in specs if spec.source_component
+    }
+    try:
+        rebuilt = build_candidate_document(original, format, replacements)
+    except ValueError:
+        rebuilt = None
+    return rebuilt if rebuilt is not None else original
+
+
 def derive_adaptation_tasks(
     config: MigrationRunConfig,
     plan: MigrationPlan,
@@ -299,24 +340,47 @@ def derive_adaptation_tasks(
     submitted = {(entry.kind, entry.source_path) for entry in log.entries}
     prompt_tasks: list[PromptAdaptationTask] = []
     prompt_paths: set[str] = set()
+    specs_by_path: dict[str, list[PromptMigrationSpec]] = {}
     for spec in plan.prompt_changes:
-        source_path = spec.source_path or "<inline>"
+        specs_by_path.setdefault(spec.source_path or "<inline>", []).append(spec)
+    for source_path, specs in sorted(specs_by_path.items()):
         prompt_paths.add(source_path)
+        components = [spec.source_component for spec in specs if spec.source_component]
+        structured = bool(components)
+        guidance: list[str] = []
+        risks: list[str] = []
+        if structured:
+            guidance.append(
+                "This is a structured prompt document. Adapt only the prompt component "
+                f"value(s) {', '.join(components)}; preserve every other key and value "
+                "exactly, and submit the complete rebuilt document."
+            )
+        for spec in specs:
+            prefix = (
+                f"[{spec.source_component}] " if spec.source_component and len(specs) > 1 else ""
+            )
+            for text in _spec_guidance(spec):
+                line = prefix + text
+                if line not in guidance:
+                    guidance.append(line)
+            for text in _advice_texts(spec.migration_risks):
+                line = prefix + text
+                if line not in risks:
+                    risks.append(line)
+        candidate = (
+            _structured_candidate(config, source_path, specs)
+            if structured
+            else specs[0].candidate_prompt
+        )
         prompt_tasks.append(
             PromptAdaptationTask(
                 source_path=source_path,
                 output_path=str(Path("output") / "prompts" / source_path),
                 status=("submitted" if ("prompt", source_path) in submitted else "pending"),
-                deterministic_candidate=spec.candidate_prompt,
-                guidance=[
-                    *_advice_texts(spec.requirements_to_preserve),
-                    *_advice_texts(spec.assumptions_to_reconsider),
-                    *_advice_texts(spec.instructions_needing_strengthening),
-                    *_advice_texts(spec.target_features_replacing_prompt_text),
-                    *_advice_texts(spec.reasoning_configuration),
-                    *_advice_texts(spec.structured_output),
-                ],
-                risks=_advice_texts(spec.migration_risks),
+                deterministic_candidate=candidate,
+                components=components,
+                guidance=guidance,
+                risks=risks,
             )
         )
     changes_by_file: dict[str, list[str]] = {}
@@ -393,6 +457,11 @@ def submit_adapted_prompt(
     ]
     if not adapted_prompt.strip():
         blockers.append("the adapted prompt is empty")
+    original = _application_base(config) / relative
+    original_text = original.read_text(encoding="utf-8") if original.is_file() else None
+    format = STRUCTURED_SUFFIXES.get(relative.suffix.casefold())
+    if original_text is not None and format is not None:
+        blockers.extend(structured_submission_problems(original_text, adapted_prompt, format))
     if blockers:
         return PromptSubmissionResult(
             accepted=False,
@@ -400,8 +469,7 @@ def submit_adapted_prompt(
             validation=validation,
             message="Rejected: " + "; ".join(blockers),
         )
-    original = _application_base(config) / relative
-    source_sha = _sha256(original.read_text(encoding="utf-8")) if original.is_file() else None
+    source_sha = _sha256(original_text) if original_text is not None else None
     output_path = Path(run_dir) / "output" / "prompts" / relative
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_text(adapted_prompt, encoding="utf-8")

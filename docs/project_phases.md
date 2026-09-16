@@ -1557,6 +1557,59 @@ matching, workspace lifecycle, fail-closed submissions, and report composition.
 
 ---
 
+# 12.2. V1.3: Prompt Provenance Discovery
+
+Motivated by a real V1.2 migration run: the application loaded its prompts
+through a configuration file (`model_profiles.yaml` → prompt-path values →
+loader helper → `yaml.safe_load` → `sys_prompt`/`user_prompt` keys), the
+scanner saw the LLM consumers but resolved no prompt file, and the report's
+"Prompt changes: None" hid real prompt migration work.
+
+## Scope
+
+- Structured prompt source models: `PromptSource` (path, format, components,
+  provenance chain, confidence, origin) and `PromptComponent` (role, key,
+  content), carried on `ApplicationAnalysis` (schema version 3) with a
+  `PromptDiscoverySummary` coverage report.
+- A config scanner for YAML/JSON/TOML that parses documents structurally and
+  finds prompt-scoped path references; `.txt`/`.md` remain whole-file prompt
+  sources.
+- Bounded Python loader/path recognition: `open(...)`, `Path(...).open()`,
+  `read_text()`, `yaml.safe_load`/`yaml.load`/`json.load(s)`/`tomllib.load(s)`,
+  `Path` joins, `Path(__file__).parent` composition, simple constants, nested
+  config subscripts (`profile["prompts"]["multi"]`), and loader-style helper
+  calls — never execution, imports, or interprocedural analysis.
+- Evidence-based confidence (`high`/`medium`/`low`); low-confidence prompt-like
+  files are reported but never become migration tasks.
+- Explicit `prompt_sources` overrides (scan/plan/report/run start across
+  service, CLI, MCP; persisted in the run's `migration.yaml`) as the escape
+  hatch when discovery is incomplete.
+- Per-component prompt preparation (`PromptMigrationSpec.source_component`,
+  real roles) with structured documents kept structured: candidate
+  reconstruction preserves non-prompt values, and adapted-prompt submissions
+  fail closed on syntax errors or non-prompt value drift.
+- Coverage reporting: every prompt consumer classified `inline`/`source`/
+  `dynamic`; migration plans (schema version 3) and reports carry a
+  `resolved`/`partial`/`unresolved` coverage state and warn when coverage is
+  incomplete instead of implying no prompt work exists. Dynamic prompt content
+  (e.g. a built chat history) is a warning-level unknown, not a blocker.
+
+## Boundary
+
+Deterministic static analysis only: the analyzed application is never executed
+or imported, and there is no general data-flow engine. Unsupported dynamic
+patterns deliberately stay `dynamic`/unresolved and are reported as such.
+
+## Current status
+
+Implemented on 2026-09-16: scanner/config/provenance modules, per-component
+planning and workspace adaptation, overrides across all surfaces, the
+`configured_prompt_app` regression fixture with golden scan output, and unit
+coverage for discovery, coverage states, false-positive protection, overrides,
+and format-preserving submissions.
+
+---
+
 # 13. Cross-Phase Testing Strategy
 
 ## Unit tests
@@ -1657,6 +1710,7 @@ When working from this roadmap, Codex should:
 | V1 | Stable end-to-end local-first migration toolkit |
 | V1.1 | Bounded user-side agent research with independently reviewed session registry overlays |
 | V1.2 | Guided migration run workspace: lenient matching, generated research prompts, adaptation deliverables |
+| V1.3 | Prompt provenance discovery: config-driven prompt sources, structured prompt documents, coverage reporting |
 
 The critical sequencing rule is:
 

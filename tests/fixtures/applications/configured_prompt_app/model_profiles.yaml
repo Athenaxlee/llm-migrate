@@ -1,0 +1,7 @@
+models:
+  claude:
+    model_id: anthropic.claude-sonnet-4-6
+    prompts:
+      multi: prompt_lib/claude_prompt_multimodal.yaml
+      single: prompt_lib/claude_prompt.yaml
+      colmap: prompt_lib/claude_prompt_colmap.yaml
