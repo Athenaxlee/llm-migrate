@@ -380,6 +380,13 @@ class LivePricingResult(StrictModel):
     error: str | None = None
 
 
+class SourceLocation(StrictModel):
+    path: str
+    line: int = Field(ge=1)
+    column: int = Field(ge=0)
+    end_line: int | None = Field(default=None, ge=1)
+
+
 class ComparisonSeverity(StrEnum):
     INFO = "info"
     LOW = "low"
@@ -406,6 +413,7 @@ class ModelDifference(StrictModel):
     recommended_action: str | None = None
     supporting_sources: list[str] = Field(default_factory=list)
     knowledge_id: str | None = None
+    locations: list[SourceLocation] = Field(default_factory=list)
 
 
 class ModelComparison(StrictModel):
@@ -485,13 +493,6 @@ class RecommendationResult(StrictModel):
     recommendations: list[ModelRecommendation]
     excluded_candidates: list[ExcludedCandidate] = Field(default_factory=list)
     pricing_overlays: list[LivePricingResult] = Field(default_factory=list)
-
-
-class SourceLocation(StrictModel):
-    path: str
-    line: int = Field(ge=1)
-    column: int = Field(ge=0)
-    end_line: int | None = Field(default=None, ge=1)
 
 
 class PromptSourceFormat(StrEnum):

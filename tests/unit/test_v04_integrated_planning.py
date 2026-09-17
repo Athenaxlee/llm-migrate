@@ -145,6 +145,34 @@ def test_supported_end_to_end_routes_produce_actionable_manifests(
     )
 
 
+def test_report_renders_model_differences_as_a_located_table(
+    service: MigrationService, project_root: Path
+) -> None:
+    plan = service.generate_migration_plan(
+        _fixture(project_root, "anthropic_app"),
+        "claude-sonnet-5",
+        "gpt-5.6-sol",
+        source_platform="anthropic-api",
+        target_platform="openai-api",
+    )
+    temperature = next(
+        item
+        for item in plan.model_differences.differences
+        if item.category == "parameters" and item.field == "temperature"
+    )
+    assert [item.path for item in temperature.locations] == ["app.py"]
+    report = service.migration_report(plan)
+    assert (
+        "| Type | Priority | claude-sonnet-5 (source) | gpt-5.6-sol (target) "
+        "| Recommended action | Changed files |" in report
+    )
+    line = next(row for row in report.splitlines() if row.startswith("| parameters (temperature) "))
+    assert "| high |" in line
+    assert "[app.py:14](app.py#L14)" in line
+    assert "Map, verify, or remove 'temperature'" in line
+    assert "informational difference(s)" in report
+
+
 def test_file_backed_prompt_is_prepared_and_inline_prompt_is_reported(
     service: MigrationService, project_root: Path
 ) -> None:

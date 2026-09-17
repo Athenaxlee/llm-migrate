@@ -48,6 +48,11 @@ migration:
       recommended_action: Review authentication, SDK, request, and response mappings.
       supporting_sources: []
       knowledge_id: null
+      locations:
+      - path: app.py
+        line: 3
+        column: 0
+        end_line: 3
     - category: platform
       field: representation
       source_value:
@@ -65,6 +70,11 @@ migration:
         support.
       supporting_sources: []
       knowledge_id: null
+      locations:
+      - path: app.py
+        line: 8
+        column: 10
+        end_line: 8
     - category: lifecycle
       field: status
       source_value: active
@@ -75,6 +85,11 @@ migration:
       recommended_action: null
       supporting_sources: []
       knowledge_id: null
+      locations:
+      - path: app.py
+        line: 8
+        column: 10
+        end_line: 8
     - category: text_input
       field: text_input
       source_value: true
@@ -85,6 +100,11 @@ migration:
       recommended_action: null
       supporting_sources: []
       knowledge_id: null
+      locations:
+      - path: app.py
+        line: 7
+        column: 11
+        end_line: 43
     - category: multimodality
       field: image_input
       source_value: true
@@ -95,6 +115,11 @@ migration:
       recommended_action: null
       supporting_sources: []
       knowledge_id: null
+      locations:
+      - path: app.py
+        line: 14
+        column: 16
+        end_line: 14
     - category: multimodality
       field: document_input
       source_value: null
@@ -106,6 +131,7 @@ migration:
       recommended_action: Verify both source reliance and target support before migration.
       supporting_sources: []
       knowledge_id: null
+      locations: []
     - category: structured_output
       field: structured_output
       source_value: true
@@ -116,6 +142,15 @@ migration:
       recommended_action: null
       supporting_sources: []
       knowledge_id: null
+      locations:
+      - path: app.py
+        line: 32
+        column: 9
+        end_line: 42
+      - path: app.py
+        line: 44
+        column: 10
+        end_line: 44
     - category: tool_use
       field: tool_use
       source_value: true
@@ -126,6 +161,11 @@ migration:
       recommended_action: null
       supporting_sources: []
       knowledge_id: null
+      locations:
+      - path: app.py
+        line: 20
+        column: 10
+        end_line: 31
     - category: parallel_tool_use
       field: parallel_tool_use
       source_value: null
@@ -137,6 +177,11 @@ migration:
       recommended_action: Verify both source reliance and target support before migration.
       supporting_sources: []
       knowledge_id: null
+      locations:
+      - path: app.py
+        line: 20
+        column: 10
+        end_line: 31
     - category: reasoning
       field: reasoning
       source_value: true
@@ -147,6 +192,11 @@ migration:
       recommended_action: null
       supporting_sources: []
       knowledge_id: null
+      locations:
+      - path: app.py
+        line: 19
+        column: 21
+        end_line: 19
     - category: prompt_caching
       field: prompt_caching
       source_value: true
@@ -157,6 +207,11 @@ migration:
       recommended_action: null
       supporting_sources: []
       knowledge_id: null
+      locations:
+      - path: app.py
+        line: 7
+        column: 11
+        end_line: 43
     - category: streaming
       field: streaming
       source_value: true
@@ -167,6 +222,7 @@ migration:
       recommended_action: null
       supporting_sources: []
       knowledge_id: null
+      locations: []
     - category: batch_inference
       field: batch_inference
       source_value: true
@@ -177,6 +233,11 @@ migration:
       recommended_action: null
       supporting_sources: []
       knowledge_id: null
+      locations:
+      - path: app.py
+        line: 7
+        column: 11
+        end_line: 43
     - category: context_output_limits
       field: context_window_tokens
       source_value: 1050000
@@ -187,6 +248,11 @@ migration:
       recommended_action: Test workloads near the source limit.
       supporting_sources: []
       knowledge_id: null
+      locations:
+      - path: app.py
+        line: 9
+        column: 10
+        end_line: 17
     - category: context_output_limits
       field: maximum_output_tokens
       source_value: 128000
@@ -197,6 +263,11 @@ migration:
       recommended_action: null
       supporting_sources: []
       knowledge_id: null
+      locations:
+      - path: app.py
+        line: 18
+        column: 22
+        end_line: 18
     - category: parameters
       field: adaptive_thinking
       source_value: null
@@ -209,6 +280,7 @@ migration:
         the target.
       supporting_sources: []
       knowledge_id: null
+      locations: []
     - category: parameters
       field: effort
       source_value: null
@@ -220,6 +292,7 @@ migration:
       recommended_action: Map, verify, or remove 'effort' before invoking the target.
       supporting_sources: []
       knowledge_id: null
+      locations: []
     - category: parameters
       field: max_tokens
       source_value: supported
@@ -231,6 +304,7 @@ migration:
         target.
       supporting_sources: []
       knowledge_id: null
+      locations: []
     - category: parameters
       field: reasoning_effort
       source_value: supported
@@ -243,6 +317,11 @@ migration:
         the target.
       supporting_sources: []
       knowledge_id: null
+      locations:
+      - path: app.py
+        line: 19
+        column: 21
+        end_line: 19
     - category: parameters
       field: temperature
       source_value: null
@@ -255,6 +334,7 @@ migration:
         target.
       supporting_sources: []
       knowledge_id: null
+      locations: []
     - category: parameters
       field: thinking
       source_value: null
@@ -266,6 +346,7 @@ migration:
       recommended_action: Map, verify, or remove 'thinking' before invoking the target.
       supporting_sources: []
       knowledge_id: null
+      locations: []
     - category: parameters
       field: top_k
       source_value: null
@@ -277,6 +358,7 @@ migration:
       recommended_action: Map, verify, or remove 'top_k' before invoking the target.
       supporting_sources: []
       knowledge_id: null
+      locations: []
     - category: parameters
       field: top_p
       source_value: null
@@ -288,6 +370,7 @@ migration:
       recommended_action: Map, verify, or remove 'top_p' before invoking the target.
       supporting_sources: []
       knowledge_id: null
+      locations: []
     - category: pricing
       field: published_pricing
       source_value:
@@ -343,6 +426,7 @@ migration:
         and batch usage.
       supporting_sources: []
       knowledge_id: null
+      locations: []
     - category: behavioral_prompt_guidance
       field: prompt_guidance
       source_value:
@@ -373,6 +457,11 @@ migration:
       recommended_action: Revisit registry-backed guidance and validate behavior.
       supporting_sources: []
       knowledge_id: null
+      locations:
+      - path: app.py
+        line: 9
+        column: 10
+        end_line: 17
     highest_severity: high
     pricing_overlays: []
   affected_files:

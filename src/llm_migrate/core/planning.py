@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from typing import Any, Literal
 
 import yaml
@@ -19,6 +20,7 @@ from llm_migrate.core.models import (
     MigrationEndpoint,
     MigrationPlan,
     ModelComparison,
+    ModelDifference,
     PlannedMigrationChange,
     PromptComponent,
     PromptDiscoveryCoverage,
@@ -51,6 +53,70 @@ def _locations(application: ApplicationAnalysis, *kinds: CouplingKind) -> list[S
         {item.location for item in application.findings if item.kind in accepted},
         key=lambda item: (item.path, item.line, item.column),
     )
+
+
+def _parameter_locations(application: ApplicationAnalysis, names: set[str]) -> list[SourceLocation]:
+    return sorted(
+        {
+            item.location
+            for item in application.findings
+            if item.kind is CouplingKind.PARAMETER and (item.metadata or {}).get("name") in names
+        },
+        key=lambda item: (item.path, item.line, item.column),
+    )
+
+
+_CATEGORY_LOCATION_KINDS: dict[str, tuple[CouplingKind, ...]] = {
+    "identity": (CouplingKind.PROVIDER_SDK, CouplingKind.CONFIGURATION),
+    "platform": (CouplingKind.MODEL_IDENTIFIER, CouplingKind.CONFIGURATION),
+    "lifecycle": (CouplingKind.MODEL_IDENTIFIER,),
+    "tool_use": (CouplingKind.TOOL,),
+    "parallel_tool_use": (CouplingKind.TOOL,),
+    "structured_output": (CouplingKind.STRUCTURED_OUTPUT, CouplingKind.RESPONSE_PARSER),
+    "streaming": (CouplingKind.STREAMING,),
+    "behavioral_prompt_guidance": (CouplingKind.PROMPT,),
+    "text_input": (CouplingKind.INVOCATION,),
+    "prompt_caching": (CouplingKind.INVOCATION,),
+    "batch_inference": (CouplingKind.INVOCATION,),
+}
+_REASONING_PARAMETERS = {"thinking", "reasoning_effort", "effort"}
+_OUTPUT_LIMIT_PARAMETERS = {"max_tokens", "max_output_tokens"}
+
+
+def _difference_locations(
+    application: ApplicationAnalysis, difference: ModelDifference
+) -> list[SourceLocation]:
+    """Best-effort mapping from a model difference to the code it affects."""
+    category, field = difference.category, difference.field or ""
+    if category == "migration_knowledge":
+        field_path = str(difference.source_value or "")
+        if field_path.startswith("parameters."):
+            category, field = "parameters", field_path.split(".", 1)[1]
+        elif field_path.startswith("capabilities."):
+            category, field = field_path.split(".", 1)[1], ""
+        elif field_path.startswith("prompt_guidance"):
+            return _locations(application, CouplingKind.PROMPT)
+        else:
+            return _locations(application, CouplingKind.INVOCATION)
+    if category == "parameters":
+        return _parameter_locations(application, {field})
+    if category == "reasoning":
+        return _parameter_locations(application, _REASONING_PARAMETERS)
+    if category == "multimodality":
+        return sorted(
+            {
+                item.location
+                for item in application.findings
+                if item.kind is CouplingKind.MULTIMODAL and item.value == field
+            },
+            key=lambda item: (item.path, item.line, item.column),
+        )
+    if category == "context_output_limits":
+        if field == "maximum_output_tokens":
+            return _parameter_locations(application, _OUTPUT_LIMIT_PARAMETERS)
+        return _locations(application, CouplingKind.PROMPT)
+    kinds = _CATEGORY_LOCATION_KINDS.get(category)
+    return _locations(application, *kinds) if kinds else []
 
 
 def _change(
@@ -153,6 +219,18 @@ def generate_application_migration_plan(
     """Compose scan, registry, preparation, and validation into one manifest."""
     source_endpoint = _endpoint(source)
     target_endpoint = _endpoint(target)
+    comparison = comparison.model_copy(
+        update={
+            "differences": [
+                (
+                    difference.model_copy(update={"locations": locations})
+                    if (locations := _difference_locations(application, difference))
+                    else difference
+                )
+                for difference in comparison.differences
+            ]
+        }
+    )
     prompt_inputs, unknowns = _prompt_inputs(application)
     prompt_changes: list[PromptMigrationSpec] = []
     validation_results = _schema_validation(application)
@@ -382,6 +460,58 @@ def _candidate_presence(candidate: Any | None) -> str:
     return "candidate emitted" if candidate is not None else "no safe candidate"
 
 
+def _table_text(text: str, limit: int = 100) -> str:
+    """Make text safe inside one Markdown table cell."""
+    flattened = " ".join(text.split())
+    if len(flattened) > limit:
+        flattened = flattened[: limit - 1] + "…"
+    return flattened.replace("|", "\\|")
+
+
+def _difference_type(difference: ModelDifference) -> str:
+    category = difference.category.replace("_", " ")
+    field = (difference.field or "").replace("_", " ")
+    if field and field != category:
+        return f"{category} ({field})"
+    return category
+
+
+def _difference_value(value: Any) -> str:
+    """Compact, table-safe rendering of one side of a model difference."""
+    if value is None:
+        return "unknown"
+    if isinstance(value, bool):
+        return "yes" if value else "no"
+    if isinstance(value, (int, float)):
+        return str(value)
+    if isinstance(value, str):
+        return _table_text(value)
+    if isinstance(value, dict):
+        if {"platform", "model_id"} <= value.keys():
+            endpoint = f" ({value['endpoint']})" if value.get("endpoint") else ""
+            return _table_text(f"`{value['model_id']}` on {value['platform']}{endpoint}")
+        if value and set(value) <= {"input", "output", "cached_input", "batch"}:
+            parts = [
+                f"{name.replace('_', ' ')} ${component['amount']}/M tokens"
+                for name, component in value.items()
+                if isinstance(component, dict) and component.get("amount") is not None
+            ]
+            return _table_text(", ".join(parts)) if parts else "unknown"
+        if value and all(isinstance(item, list) for item in value.values()):
+            count = sum(len(item) for item in value.values())
+            return f"{count} guidance item(s)"
+    return _table_text(json.dumps(value, default=str, sort_keys=True))
+
+
+def _difference_files(difference: ModelDifference, limit: int = 3) -> str:
+    """Hyperlinked file:line locations, relative to the application root."""
+    unique = sorted({(item.path, item.line) for item in difference.locations})
+    links = [f"[{path}:{line}]({path}#L{line})" for path, line in unique[:limit]]
+    if len(unique) > limit:
+        links.append(f"+{len(unique) - limit} more")
+    return "<br>".join(links) if links else "—"
+
+
 def generate_migration_report(plan: MigrationPlan) -> str:
     """Render a concise human review report from the canonical manifest."""
     lines = [
@@ -406,18 +536,43 @@ def generate_migration_report(plan: MigrationPlan) -> str:
         "## Important model differences",
         "",
     ]
-    material = [
-        item
-        for item in plan.model_differences.differences
-        if item.severity is not ComparisonSeverity.INFO
-    ]
-    lines.extend(
-        [
-            f"- **{item.category}** ({item.severity.value}): {item.migration_impact}"
-            for item in material
-        ]
-        or ["- No material model differences were recorded."]
+    severity_rank = {severity: index for index, severity in enumerate(ComparisonSeverity)}
+    material = sorted(
+        (
+            item
+            for item in plan.model_differences.differences
+            if item.severity is not ComparisonSeverity.INFO
+        ),
+        key=lambda item: (-severity_rank[item.severity], item.category, item.field or ""),
     )
+    if material:
+        lines.extend(
+            (
+                f"| Type | Priority | {plan.source.model} (source) | "
+                f"{plan.target.model} (target) | Recommended action | Changed files |",
+                "|---|---|---|---|---|---|",
+            )
+        )
+        lines.extend(
+            f"| {_table_text(_difference_type(item))} "
+            f"| {item.severity.value} "
+            f"| {_difference_value(item.source_value)} "
+            f"| {_difference_value(item.target_value)} "
+            f"| {_table_text(item.recommended_action or item.migration_impact, limit=160)} "
+            f"| {_difference_files(item)} |"
+            for item in material
+        )
+    else:
+        lines.append("- No material model differences were recorded.")
+    informational = len(plan.model_differences.differences) - len(material)
+    if informational:
+        lines.extend(
+            (
+                "",
+                f"{informational} informational difference(s) (unchanged or "
+                "migration-neutral facts) are recorded in the manifest.",
+            )
+        )
     discovery = plan.prompt_discovery
     discovery_lines = [
         f"Prompt consumers detected: {discovery.consumers}",
