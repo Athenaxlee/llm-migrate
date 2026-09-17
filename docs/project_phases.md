@@ -1593,6 +1593,15 @@ scanner saw the LLM consumers but resolved no prompt file, and the report's
   `resolved`/`partial`/`unresolved` coverage state and warn when coverage is
   incomplete instead of implying no prompt work exists. Dynamic prompt content
   (e.g. a built chat history) is a warning-level unknown, not a blocker.
+- Evidence-linked claims: model differences carry per-side registry source
+  URLs and the report's differences table hyperlinks every claim; migration
+  advice carries evidence URLs.
+- Minimal, evidence-based prompt adaptation: the deterministic candidate is
+  the source prompt verbatim; recommended changes are advice, never applied
+  automatically. Prompt tasks list protected structural sections and the
+  evidenced migration-knowledge differences; submissions that drop XML-like
+  sections or components fail closed unless `allow_restructure` is set with a
+  recorded justification ("no evidence, no rewrite").
 
 ## Boundary
 

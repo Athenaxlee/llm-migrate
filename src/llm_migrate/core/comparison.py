@@ -12,10 +12,27 @@ from llm_migrate.core.models import (
     ModelProfile,
     ParameterState,
     PlatformAvailability,
+    SourceReference,
 )
 from llm_migrate.core.resolver import effective_capabilities
 
 _SEVERITY_ORDER = {item: index for index, item in enumerate(ComparisonSeverity)}
+
+
+def _evidence_url(
+    profile: ModelProfile,
+    section_sources: list[SourceReference],
+    topic: str,
+) -> str | None:
+    """URL backing one side of a claim: field-level sources first, then the
+    profile source that declares support for the claim's topic."""
+    for source in section_sources:
+        if source.url is not None:
+            return str(source.url)
+    for source in profile.sources:
+        if topic in source.supports and source.url is not None:
+            return str(source.url)
+    return None
 
 
 def _item(
@@ -28,6 +45,8 @@ def _item(
     loss_is_breaking: bool = False,
     changed_severity: ComparisonSeverity = ComparisonSeverity.MEDIUM,
     action: str | None = None,
+    source_evidence_url: str | None = None,
+    target_evidence_url: str | None = None,
 ) -> ModelDifference:
     if source is None or target is None:
         state = ComparisonState.UNKNOWN
@@ -58,7 +77,21 @@ def _item(
         severity=severity,
         migration_impact=impact,
         recommended_action=action,
+        source_evidence_url=source_evidence_url,
+        target_evidence_url=target_evidence_url,
     )
+
+
+def _pricing_sources(profile: ModelProfile) -> list[SourceReference]:
+    if profile.pricing is None:
+        return []
+    components = (
+        profile.pricing.input,
+        profile.pricing.output,
+        profile.pricing.cached_input,
+        profile.pricing.batch,
+    )
+    return [source for component in components if component for source in component.sources]
 
 
 def compare_models(
@@ -78,6 +111,8 @@ def compare_models(
             "Provider SDK and invocation code may change.",
             changed_severity=ComparisonSeverity.HIGH,
             action="Review authentication, SDK, request, and response mappings.",
+            source_evidence_url=_evidence_url(source, [], "identity"),
+            target_evidence_url=_evidence_url(target, [], "identity"),
         )
     )
     items.append(
@@ -105,6 +140,12 @@ def compare_models(
             "Selected deployment platforms differ.",
             changed_severity=ComparisonSeverity.HIGH,
             action="Confirm endpoint, region, authentication, and platform feature support.",
+            source_evidence_url=_evidence_url(
+                source, source_platform.sources if source_platform else [], "platforms"
+            ),
+            target_evidence_url=_evidence_url(
+                target, target_platform.sources if target_platform else [], "platforms"
+            ),
         )
     )
     items.append(
@@ -114,11 +155,15 @@ def compare_models(
             source.lifecycle.status,
             target.lifecycle.status,
             "Operational support horizons differ.",
+            source_evidence_url=_evidence_url(source, source.lifecycle.sources, "lifecycle"),
+            target_evidence_url=_evidence_url(target, target.lifecycle.sources, "lifecycle"),
         )
     )
 
     source_caps = effective_capabilities(source, source_platform)
     target_caps = effective_capabilities(target, target_platform)
+    source_caps_url = _evidence_url(source, source_caps.sources, "capabilities")
+    target_caps_url = _evidence_url(target, target_caps.sources, "capabilities")
     for field in (
         "text_input",
         "image_input",
@@ -144,6 +189,8 @@ def compare_models(
                 loss_is_breaking=old is True,
                 changed_severity=ComparisonSeverity.INFO,
                 action=f"Remove or replace reliance on {field}." if old is True else None,
+                source_evidence_url=source_caps_url,
+                target_evidence_url=target_caps_url,
             )
         )
     for field, label in (
@@ -165,6 +212,8 @@ def compare_models(
                     else ComparisonSeverity.INFO
                 ),
                 action="Test workloads near the source limit.",
+                source_evidence_url=source_caps_url,
+                target_evidence_url=target_caps_url,
             )
         )
     for name in sorted(source.parameters.keys() | target.parameters.keys()):
@@ -181,6 +230,8 @@ def compare_models(
                 f"Parameter {name!r} support or semantics differ.",
                 loss_is_breaking=old_state in {ParameterState.SUPPORTED, ParameterState.REQUIRED},
                 action=f"Map, verify, or remove {name!r} before invoking the target.",
+                source_evidence_url=_evidence_url(source, old.sources if old else [], "parameters"),
+                target_evidence_url=_evidence_url(target, new.sources if new else [], "parameters"),
             )
         )
     items.append(
@@ -191,6 +242,8 @@ def compare_models(
             target.pricing.model_dump(mode="json") if target.pricing else None,
             "Token costs may change; workload-specific cost depends on token mix.",
             action="Estimate cost with representative input, output, cache, and batch usage.",
+            source_evidence_url=_evidence_url(source, _pricing_sources(source), "pricing"),
+            target_evidence_url=_evidence_url(target, _pricing_sources(target), "pricing"),
         )
     )
     items.append(
@@ -201,6 +254,12 @@ def compare_models(
             target.prompt_guidance.model_dump(mode="json"),
             "Evidence-backed prompting guidance differs.",
             action="Revisit registry-backed guidance and validate behavior.",
+            source_evidence_url=_evidence_url(
+                source, source.prompt_guidance.sources, "prompt_guidance"
+            ),
+            target_evidence_url=_evidence_url(
+                target, target.prompt_guidance.sources, "prompt_guidance"
+            ),
         )
     )
     highest = max(

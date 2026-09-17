@@ -53,6 +53,8 @@ migration:
         line: 3
         column: 0
         end_line: 3
+      source_evidence_url: https://developers.openai.com/api/docs/models/gpt-5.6-sol
+      target_evidence_url: https://platform.claude.com/docs/en/about-claude/models/overview
     - category: platform
       field: representation
       source_value:
@@ -75,6 +77,8 @@ migration:
         line: 8
         column: 10
         end_line: 8
+      source_evidence_url: https://developers.openai.com/api/docs/models/gpt-5.6-sol
+      target_evidence_url: https://platform.claude.com/docs/en/about-claude/models/overview
     - category: lifecycle
       field: status
       source_value: active
@@ -90,6 +94,8 @@ migration:
         line: 8
         column: 10
         end_line: 8
+      source_evidence_url: https://developers.openai.com/api/docs/models/gpt-5.6-sol
+      target_evidence_url: https://platform.claude.com/docs/en/about-claude/model-deprecations
     - category: text_input
       field: text_input
       source_value: true
@@ -105,6 +111,8 @@ migration:
         line: 7
         column: 11
         end_line: 43
+      source_evidence_url: https://developers.openai.com/api/docs/models/gpt-5.6-sol
+      target_evidence_url: https://platform.claude.com/docs/en/about-claude/models/overview
     - category: multimodality
       field: image_input
       source_value: true
@@ -120,6 +128,8 @@ migration:
         line: 14
         column: 16
         end_line: 14
+      source_evidence_url: https://developers.openai.com/api/docs/models/gpt-5.6-sol
+      target_evidence_url: https://platform.claude.com/docs/en/about-claude/models/overview
     - category: multimodality
       field: document_input
       source_value: null
@@ -132,6 +142,8 @@ migration:
       supporting_sources: []
       knowledge_id: null
       locations: []
+      source_evidence_url: https://developers.openai.com/api/docs/models/gpt-5.6-sol
+      target_evidence_url: https://platform.claude.com/docs/en/about-claude/models/overview
     - category: structured_output
       field: structured_output
       source_value: true
@@ -151,6 +163,8 @@ migration:
         line: 44
         column: 10
         end_line: 44
+      source_evidence_url: https://developers.openai.com/api/docs/models/gpt-5.6-sol
+      target_evidence_url: https://platform.claude.com/docs/en/about-claude/models/overview
     - category: tool_use
       field: tool_use
       source_value: true
@@ -166,6 +180,8 @@ migration:
         line: 20
         column: 10
         end_line: 31
+      source_evidence_url: https://developers.openai.com/api/docs/models/gpt-5.6-sol
+      target_evidence_url: https://platform.claude.com/docs/en/about-claude/models/overview
     - category: parallel_tool_use
       field: parallel_tool_use
       source_value: null
@@ -182,6 +198,8 @@ migration:
         line: 20
         column: 10
         end_line: 31
+      source_evidence_url: https://developers.openai.com/api/docs/models/gpt-5.6-sol
+      target_evidence_url: https://platform.claude.com/docs/en/about-claude/models/overview
     - category: reasoning
       field: reasoning
       source_value: true
@@ -197,6 +215,8 @@ migration:
         line: 19
         column: 21
         end_line: 19
+      source_evidence_url: https://developers.openai.com/api/docs/models/gpt-5.6-sol
+      target_evidence_url: https://platform.claude.com/docs/en/about-claude/models/overview
     - category: prompt_caching
       field: prompt_caching
       source_value: true
@@ -212,6 +232,8 @@ migration:
         line: 7
         column: 11
         end_line: 43
+      source_evidence_url: https://developers.openai.com/api/docs/models/gpt-5.6-sol
+      target_evidence_url: https://platform.claude.com/docs/en/about-claude/models/overview
     - category: streaming
       field: streaming
       source_value: true
@@ -223,6 +245,8 @@ migration:
       supporting_sources: []
       knowledge_id: null
       locations: []
+      source_evidence_url: https://developers.openai.com/api/docs/models/gpt-5.6-sol
+      target_evidence_url: https://platform.claude.com/docs/en/about-claude/models/overview
     - category: batch_inference
       field: batch_inference
       source_value: true
@@ -238,6 +262,8 @@ migration:
         line: 7
         column: 11
         end_line: 43
+      source_evidence_url: https://developers.openai.com/api/docs/models/gpt-5.6-sol
+      target_evidence_url: https://platform.claude.com/docs/en/about-claude/models/overview
     - category: context_output_limits
       field: context_window_tokens
       source_value: 1050000
@@ -253,6 +279,8 @@ migration:
         line: 9
         column: 10
         end_line: 17
+      source_evidence_url: https://developers.openai.com/api/docs/models/gpt-5.6-sol
+      target_evidence_url: https://platform.claude.com/docs/en/about-claude/models/overview
     - category: context_output_limits
       field: maximum_output_tokens
       source_value: 128000
@@ -268,6 +296,8 @@ migration:
         line: 18
         column: 22
         end_line: 18
+      source_evidence_url: https://developers.openai.com/api/docs/models/gpt-5.6-sol
+      target_evidence_url: https://platform.claude.com/docs/en/about-claude/models/overview
     - category: parameters
       field: adaptive_thinking
       source_value: null
@@ -281,6 +311,8 @@ migration:
       supporting_sources: []
       knowledge_id: null
       locations: []
+      source_evidence_url: https://developers.openai.com/api/docs/models/gpt-5.6-sol
+      target_evidence_url: https://platform.claude.com/docs/en/about-claude/models/whats-new-sonnet-5
     - category: parameters
       field: effort
       source_value: null
@@ -293,6 +325,8 @@ migration:
       supporting_sources: []
       knowledge_id: null
       locations: []
+      source_evidence_url: https://developers.openai.com/api/docs/models/gpt-5.6-sol
+      target_evidence_url: https://platform.claude.com/docs/en/about-claude/models/whats-new-sonnet-5
     - category: parameters
       field: max_tokens
       source_value: supported
@@ -305,6 +339,8 @@ migration:
       supporting_sources: []
       knowledge_id: null
       locations: []
+      source_evidence_url: https://developers.openai.com/api/docs/models/gpt-5.6-sol
+      target_evidence_url: https://platform.claude.com/docs/en/about-claude/models/whats-new-sonnet-5
     - category: parameters
       field: reasoning_effort
       source_value: supported
@@ -322,6 +358,8 @@ migration:
         line: 19
         column: 21
         end_line: 19
+      source_evidence_url: https://developers.openai.com/api/docs/models/gpt-5.6-sol
+      target_evidence_url: https://platform.claude.com/docs/en/about-claude/models/whats-new-sonnet-5
     - category: parameters
       field: temperature
       source_value: null
@@ -335,6 +373,8 @@ migration:
       supporting_sources: []
       knowledge_id: null
       locations: []
+      source_evidence_url: https://developers.openai.com/api/docs/models/gpt-5.6-sol
+      target_evidence_url: https://platform.claude.com/docs/en/about-claude/models/whats-new-sonnet-5
     - category: parameters
       field: thinking
       source_value: null
@@ -347,6 +387,8 @@ migration:
       supporting_sources: []
       knowledge_id: null
       locations: []
+      source_evidence_url: https://developers.openai.com/api/docs/models/gpt-5.6-sol
+      target_evidence_url: https://platform.claude.com/docs/en/about-claude/models/whats-new-sonnet-5
     - category: parameters
       field: top_k
       source_value: null
@@ -359,6 +401,8 @@ migration:
       supporting_sources: []
       knowledge_id: null
       locations: []
+      source_evidence_url: https://developers.openai.com/api/docs/models/gpt-5.6-sol
+      target_evidence_url: https://platform.claude.com/docs/en/about-claude/models/whats-new-sonnet-5
     - category: parameters
       field: top_p
       source_value: null
@@ -371,6 +415,8 @@ migration:
       supporting_sources: []
       knowledge_id: null
       locations: []
+      source_evidence_url: https://developers.openai.com/api/docs/models/gpt-5.6-sol
+      target_evidence_url: https://platform.claude.com/docs/en/about-claude/models/whats-new-sonnet-5
     - category: pricing
       field: published_pricing
       source_value:
@@ -427,6 +473,8 @@ migration:
       supporting_sources: []
       knowledge_id: null
       locations: []
+      source_evidence_url: https://developers.openai.com/api/docs/models/gpt-5.6-sol
+      target_evidence_url: https://platform.claude.com/docs/en/about-claude/models/overview
     - category: behavioral_prompt_guidance
       field: prompt_guidance
       source_value:
@@ -462,6 +510,8 @@ migration:
         line: 9
         column: 10
         end_line: 17
+      source_evidence_url: https://developers.openai.com/api/docs/guides/latest-model
+      target_evidence_url: https://platform.claude.com/docs/en/about-claude/models/whats-new-sonnet-5
     highest_severity: high
     pricing_overlays: []
   affected_files:

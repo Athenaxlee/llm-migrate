@@ -601,13 +601,19 @@ def submit_adapted_prompt(
     adapted_prompt: str,
     rationale: str,
     changes: list[str] | None = None,
+    allow_restructure: bool = False,
 ) -> dict[str, Any]:
     """Validate and store one refined prompt for the target model.
 
-    The prompt is statically validated against the target model; blockers are
-    rejected. Accepted prompts are written beneath `<run>/output/prompts/`
-    mirroring the application layout, and the rationale/changes appear
-    verbatim in the final migration report.
+    Adapt minimally: keep the original wording and structure except where a
+    listed model difference or evidence-linked guidance item requires a
+    change, and cite that evidence in `changes`. The prompt is statically
+    validated against the target model; blockers are rejected, and a
+    submission that drops the original's structural sections (XML-like tags
+    or prompt components) is rejected unless `allow_restructure` is true and
+    the justification is recorded in `changes`. Accepted prompts are written
+    beneath `<run>/output/prompts/` mirroring the application layout, and the
+    rationale/changes appear verbatim in the final migration report.
     """
     return _json(
         _service().submit_adapted_prompt(
@@ -616,6 +622,7 @@ def submit_adapted_prompt(
             adapted_prompt,
             rationale,
             changes,
+            allow_restructure=allow_restructure,
         )
     )
 

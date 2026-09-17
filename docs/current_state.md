@@ -441,6 +441,20 @@ source-target `MigrationKnowledge`, not only individual model profiles.
 - Regression fixture `configured_prompt_app` (config-driven Bedrock prompt
   loading) with a golden scan, plus discovery/coverage/override/format-
   preservation unit tests.
+- Evidence-linked model differences: every comparison claim carries the
+  registry source URL that backs it (`ModelDifference.source_evidence_url` /
+  `target_evidence_url`, resolved field-level sources first, then the profile
+  source whose `supports` covers the topic; migration-knowledge rows cite
+  their supporting source). The report's differences table hyperlinks each
+  claim so it is verifiable in one click.
+- Evidence-based prompt adaptation: the deterministic candidate is the source
+  prompt verbatim (the unevidenced chain-of-thought auto-rewrite was removed);
+  guidance advice carries `evidence_urls`; prompt adaptation tasks list the
+  prompt's protected structural sections and inject the plan's
+  migration-knowledge differences with their evidence links; and submissions
+  that drop XML-like sections or prompt components are rejected unless
+  `allow_restructure` is set (CLI `--allow-restructure`, MCP parameter) with
+  the justification recorded in `changes.yaml` and the final report.
 
 ## Next work
 

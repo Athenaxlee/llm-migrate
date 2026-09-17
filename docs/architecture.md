@@ -248,7 +248,17 @@ config references without proven loading code, `low` for merely prompt-like
 files, which are reported but never become migration tasks. Every prompt
 consumer is classified `inline`, `source`, or `dynamic`, and planning surfaces
 a `resolved`/`partial`/`unresolved` coverage state instead of silently
-reporting "no prompt changes" when consumers exist. The bounds are deliberate:
+reporting "no prompt changes" when consumers exist.
+
+Prompt adaptation follows "no evidence, no rewrite": the deterministic
+candidate is always the source prompt verbatim, every recommended change is
+evidence-linked advice (registry prompt guidance and migration knowledge with
+their source URLs), and adapted-prompt submissions fail closed when they drop
+the original's XML-like sections or prompt components unless the submitter
+explicitly sets `allow_restructure` and records the justification, which is
+preserved in the run's change log and final report. Model-difference claims
+carry per-side registry source URLs so every reported fact is verifiable.
+The bounds are deliberate:
 no application code execution, no interprocedural data-flow analysis — only
 deterministic local propagation of common idioms (`open`, `Path` joins,
 `__file__`-relative paths, `yaml.safe_load`/`json.load`/`tomllib.load`, nested

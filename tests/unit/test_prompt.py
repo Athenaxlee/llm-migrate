@@ -49,13 +49,14 @@ def test_prompt_migration_spec_preserves_contract_without_rewriting(
     assert result.source_prompt_analysis.character_count == len(PROMPT)
     assert any("output shape" in item.text for item in result.requirements_to_preserve)
     assert any(item.basis is AdviceBasis.DETERMINISTIC for item in result.reasoning_configuration)
-    assert result.candidate_prompt != PROMPT
+    # Minimal adaptation: the deterministic candidate is the source prompt
+    # verbatim; recommended changes are carried as advice, never auto-applied.
+    assert result.candidate_prompt == PROMPT
     assert result.source_prompt_sha256
     assert result.source_path == "prompts/system.txt"
     assert result.source_role == "system"
-    assert any(item.state is SemanticDiffState.REPLACED for item in result.semantic_diff)
-    serialized = result.model_dump_json()
-    assert PROMPT not in serialized
+    assert all(item.state is not SemanticDiffState.REPLACED for item in result.semantic_diff)
+    assert any("chain-of-thought" in item.text for item in result.reasoning_configuration)
 
 
 def test_prompt_validation_reports_target_blockers(service: MigrationService) -> None:

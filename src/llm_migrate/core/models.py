@@ -414,6 +414,8 @@ class ModelDifference(StrictModel):
     supporting_sources: list[str] = Field(default_factory=list)
     knowledge_id: str | None = None
     locations: list[SourceLocation] = Field(default_factory=list)
+    source_evidence_url: str | None = None
+    target_evidence_url: str | None = None
 
 
 class ModelComparison(StrictModel):
@@ -662,6 +664,7 @@ class AdviceBasis(StrEnum):
 class MigrationAdvice(StrictModel):
     text: str
     basis: AdviceBasis
+    evidence_urls: list[str] = Field(default_factory=list)
 
 
 class SemanticDiffState(StrEnum):

@@ -1124,6 +1124,13 @@ def run_submit_prompt(
         list[str] | None,
         typer.Option("--change", help="One change description; repeatable."),
     ] = None,
+    allow_restructure: Annotated[
+        bool,
+        typer.Option(
+            "--allow-restructure",
+            help="Accept an intentional, justified restructure of the prompt's sections.",
+        ),
+    ] = False,
     registry: Annotated[Path | None, typer.Option(help="Registry root.")] = None,
 ) -> None:
     """Validate and store one adapted prompt beneath the run's output/prompts/."""
@@ -1134,6 +1141,7 @@ def run_submit_prompt(
             _read_prompt(content),
             rationale,
             change or [],
+            allow_restructure=allow_restructure,
         )
     except (RegistryError, ValueError) as exc:
         typer.echo(str(exc), err=True)

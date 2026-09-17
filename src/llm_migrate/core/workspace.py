@@ -19,19 +19,25 @@ from typing import Literal
 import yaml
 from pydantic import Field, ValidationError
 
+from llm_migrate.analyzers.prompt import analyze_prompt
 from llm_migrate.core.agent_research import RUN_ID_PATTERN, ModelEndpointIdentity
 from llm_migrate.core.models import (
+    ComparisonSeverity,
     MigrationAdvice,
     MigrationPlan,
     ModelMatchResult,
     PromptMigrationSpec,
+    PromptSourceFormat,
     PromptValidationResult,
     StrictModel,
     ValidationLevel,
 )
 from llm_migrate.core.prompt_documents import (
     STRUCTURED_SUFFIXES,
+    PromptDocumentError,
     build_candidate_document,
+    extract_prompt_components,
+    parse_structured_document,
     structured_submission_problems,
 )
 
@@ -294,7 +300,53 @@ def _safe_relative_path(config: MigrationRunConfig, source_path: str) -> Path:
 
 
 def _advice_texts(items: list[MigrationAdvice]) -> list[str]:
-    return [item.text for item in items]
+    return [
+        item.text + (f" (evidence: {item.evidence_urls[0]})" if item.evidence_urls else "")
+        for item in items
+    ]
+
+
+def _missing_tags(original: str, adapted: str) -> list[str]:
+    original_tags = set(analyze_prompt(original).xml_like_tags)
+    return sorted(original_tags - set(analyze_prompt(adapted).xml_like_tags))
+
+
+def _structural_drops(
+    original_text: str, adapted_text: str, format: PromptSourceFormat | None
+) -> list[str]:
+    """Structure the adapted prompt lost relative to the original.
+
+    XML-like sections are deliberate prompt architecture; dropping or merging
+    them is a restructure, not an adaptation, and needs explicit justification.
+    """
+    if format is not None:
+        try:
+            original_components = extract_prompt_components(
+                parse_structured_document(original_text, format)
+            )
+            adapted_components = extract_prompt_components(
+                parse_structured_document(adapted_text, format)
+            )
+        except PromptDocumentError:
+            return []  # Syntax problems are reported by the document checks.
+        adapted_by_key = {component.key: component for component in adapted_components}
+        drops: list[str] = []
+        for component in original_components:
+            adapted = adapted_by_key.get(component.key)
+            if adapted is None:
+                drops.append(f"prompt component {component.key!r} was removed")
+                continue
+            missing = _missing_tags(component.content, adapted.content)
+            if missing:
+                drops.append(
+                    f"{component.key!r} drops structural section(s) "
+                    + ", ".join(f"<{tag}>" for tag in missing)
+                )
+        return drops
+    missing = _missing_tags(original_text, adapted_text)
+    if missing:
+        return ["drops structural section(s) " + ", ".join(f"<{tag}>" for tag in missing)]
+    return []
 
 
 def _spec_guidance(spec: PromptMigrationSpec) -> list[str]:
@@ -343,6 +395,13 @@ def derive_adaptation_tasks(
     specs_by_path: dict[str, list[PromptMigrationSpec]] = {}
     for spec in plan.prompt_changes:
         specs_by_path.setdefault(spec.source_path or "<inline>", []).append(spec)
+    difference_guidance = [
+        f"Model difference ({item.severity.value}): {item.migration_impact}"
+        + (f" Action: {item.recommended_action}" if item.recommended_action else "")
+        + (f" (evidence: {item.target_evidence_url})" if item.target_evidence_url else "")
+        for item in plan.model_differences.differences
+        if item.category == "migration_knowledge" and item.severity is not ComparisonSeverity.INFO
+    ]
     for source_path, specs in sorted(specs_by_path.items()):
         prompt_paths.add(source_path)
         components = [spec.source_component for spec in specs if spec.source_component]
@@ -355,6 +414,17 @@ def derive_adaptation_tasks(
                 f"value(s) {', '.join(components)}; preserve every other key and value "
                 "exactly, and submit the complete rebuilt document."
             )
+        for spec in specs:
+            tags = spec.source_prompt_analysis.xml_like_tags
+            if tags:
+                label = f"[{spec.source_component}] " if spec.source_component else ""
+                guidance.append(
+                    f"{label}Preserve the structural section(s) "
+                    + ", ".join(f"<{tag}>" for tag in tags)
+                    + "; submissions that drop them are rejected unless allow_restructure "
+                    "is set with recorded evidence."
+                )
+        guidance.extend(difference_guidance)
         for spec in specs:
             prefix = (
                 f"[{spec.source_component}] " if spec.source_component and len(specs) > 1 else ""
@@ -431,6 +501,12 @@ def derive_adaptation_tasks(
             "Read each source file from the application, produce the complete adapted "
             "version, and submit it with submit_adapted_file; submit rewritten prompts "
             "with submit_adapted_prompt.",
+            "Adapt prompts minimally and only with evidence: keep the original wording "
+            "and structure except where a listed model difference or evidence-linked "
+            "guidance item requires a change, and say in `changes` which evidence "
+            "motivated each edit. Structural drops (removed XML-like sections or "
+            "components) are rejected unless the submission sets allow_restructure and "
+            "records the justification.",
             "Every submission must be the full finalized file content, not a diff.",
             "State in `changes` what was changed and in `rationale` why the target model "
             "needs it; both appear verbatim in the final report.",
@@ -449,6 +525,7 @@ def submit_adapted_prompt(
     changes: list[str],
     validation: PromptValidationResult,
     submitted_on: date,
+    allow_restructure: bool = False,
 ) -> PromptSubmissionResult:
     """Persist one validated adapted prompt beneath output/prompts/."""
     relative = _safe_relative_path(config, source_path)
@@ -460,8 +537,20 @@ def submit_adapted_prompt(
     original = _application_base(config) / relative
     original_text = original.read_text(encoding="utf-8") if original.is_file() else None
     format = STRUCTURED_SUFFIXES.get(relative.suffix.casefold())
-    if original_text is not None and format is not None:
-        blockers.extend(structured_submission_problems(original_text, adapted_prompt, format))
+    structure_warnings: list[str] = []
+    if original_text is not None:
+        if format is not None:
+            blockers.extend(structured_submission_problems(original_text, adapted_prompt, format))
+        drops = _structural_drops(original_text, adapted_prompt, format)
+        if drops and allow_restructure:
+            structure_warnings = [f"restructure accepted: {drop}" for drop in drops]
+        elif drops:
+            blockers.append(
+                "the adapted prompt restructures the original without justification: "
+                + "; ".join(drops)
+                + ". Adapt minimally and preserve the original sections, or resubmit with "
+                "allow_restructure=true and record the evidence for the restructure in `changes`"
+            )
     if blockers:
         return PromptSubmissionResult(
             accepted=False,
@@ -480,7 +569,12 @@ def submit_adapted_prompt(
         rationale=rationale,
         changes=changes,
         warnings=[
-            issue.message for issue in validation.issues if issue.level is ValidationLevel.WARNING
+            *(
+                issue.message
+                for issue in validation.issues
+                if issue.level is ValidationLevel.WARNING
+            ),
+            *structure_warnings,
         ],
         source_sha256=source_sha,
         adapted_sha256=_sha256(adapted_prompt),

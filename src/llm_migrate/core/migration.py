@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import hashlib
-import re
 from typing import Literal
 
 from llm_migrate.analyzers.prompt import analyze_prompt
@@ -21,16 +20,24 @@ from llm_migrate.core.models import (
 )
 
 
-def _advice(text: str, basis: AdviceBasis = AdviceBasis.HEURISTIC) -> MigrationAdvice:
-    return MigrationAdvice(text=text, basis=basis)
+def _advice(
+    text: str,
+    basis: AdviceBasis = AdviceBasis.HEURISTIC,
+    evidence_urls: list[str] | None = None,
+) -> MigrationAdvice:
+    return MigrationAdvice(text=text, basis=basis, evidence_urls=evidence_urls or [])
 
 
-def _rewrite_reasoning_instruction(text: str) -> str:
-    return re.sub(
-        r"(?i)\b(?:think step by step|show your reasoning|show chain[- ]of[- ]thought)\b",
-        "Provide a concise justification",
-        text,
-    )
+def _guidance_evidence(profile: ModelProfile) -> list[str]:
+    """URLs backing a profile's prompt guidance: field sources, then topic sources."""
+    urls = [str(source.url) for source in profile.prompt_guidance.sources if source.url]
+    if not urls:
+        urls = [
+            str(source.url)
+            for source in profile.sources
+            if "prompt_guidance" in source.supports and source.url
+        ]
+    return urls[:1]
 
 
 def prepare_prompt_migration(
@@ -95,8 +102,14 @@ def prepare_prompt_migration(
     target_structure = [
         item for field in guidance_fields for item in getattr(target_profile.prompt_guidance, field)
     ]
+    source_evidence = _guidance_evidence(source_profile)
+    target_evidence = _guidance_evidence(target_profile)
     assumptions = [
-        _advice(f"Reconsider source-specific guidance: {item}", AdviceBasis.DETERMINISTIC)
+        _advice(
+            f"Reconsider source-specific guidance: {item}",
+            AdviceBasis.DETERMINISTIC,
+            source_evidence,
+        )
         for item in source_structure
         if item not in target_structure
     ]
@@ -113,7 +126,9 @@ def prepare_prompt_migration(
                 AdviceBasis.DETERMINISTIC,
             )
         )
-    strengthening = [_advice(item, AdviceBasis.DETERMINISTIC) for item in target_structure]
+    strengthening = [
+        _advice(item, AdviceBasis.DETERMINISTIC, target_evidence) for item in target_structure
+    ]
     target_features: list[MigrationAdvice] = []
     if target_capabilities.structured_output and "structured_output" in categories:
         target_features.append(
@@ -130,7 +145,7 @@ def prepare_prompt_migration(
             )
         )
     reasoning = [
-        _advice(item, AdviceBasis.DETERMINISTIC)
+        _advice(item, AdviceBasis.DETERMINISTIC, target_evidence)
         for item in target_profile.prompt_guidance.reasoning_guidance
     ]
     if "explicit_chain_of_thought" in categories:
@@ -141,7 +156,7 @@ def prepare_prompt_migration(
             )
         )
     structured = [
-        _advice(item, AdviceBasis.DETERMINISTIC)
+        _advice(item, AdviceBasis.DETERMINISTIC, target_evidence)
         for item in target_profile.prompt_guidance.structured_output_guidance
     ]
     risks: list[MigrationAdvice] = []
@@ -164,12 +179,11 @@ def prepare_prompt_migration(
                 AdviceBasis.DETERMINISTIC,
             )
         )
+    # Minimal adaptation by default: the deterministic candidate is the source
+    # prompt verbatim. Every recommended change is carried as evidence-linked
+    # advice for the reviewer or host agent to apply deliberately; the toolkit
+    # never rewrites prompt text on style grounds.
     candidate = prompt
-    reasoning_revised = False
-    if "explicit_chain_of_thought" in categories and target_capabilities.reasoning:
-        revised = _rewrite_reasoning_instruction(candidate)
-        reasoning_revised = revised != candidate
-        candidate = revised
     semantic_diff: list[PromptSemanticChange] = []
     for concern, values in (
         ("objective", analysis.intent.objective),
@@ -181,33 +195,16 @@ def prepare_prompt_migration(
     ):
         if values:
             before_text = "\n".join(values)
-            after_text = (
-                _rewrite_reasoning_instruction(before_text) if reasoning_revised else before_text
-            )
             semantic_diff.append(
                 PromptSemanticChange(
                     state=SemanticDiffState.PRESERVED,
                     concern=concern,
                     before=before_text,
-                    after=after_text,
+                    after=before_text,
                     rationale="The review candidate retains the detected semantic requirement.",
                     basis=AdviceBasis.DETERMINISTIC,
                 )
             )
-    if reasoning_revised:
-        semantic_diff.append(
-            PromptSemanticChange(
-                state=SemanticDiffState.REPLACED,
-                concern="reasoning policy",
-                before="Explicit reasoning-process request",
-                after="Provide a concise justification",
-                rationale=(
-                    "Use an outcome-focused instruction and configure target reasoning "
-                    "through supported invocation controls."
-                ),
-                basis=AdviceBasis.HEURISTIC,
-            )
-        )
     if "assistant_prefill" in categories:
         semantic_diff.append(
             PromptSemanticChange(

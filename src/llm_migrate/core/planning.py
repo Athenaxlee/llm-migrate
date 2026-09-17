@@ -503,6 +503,14 @@ def _difference_value(value: Any) -> str:
     return _table_text(json.dumps(value, default=str, sort_keys=True))
 
 
+def _difference_claim(value: Any, evidence_url: str | None) -> str:
+    """A claim cell, hyperlinked to the registry source that backs it."""
+    cell = _difference_value(value)
+    if evidence_url is not None and value is not None:
+        return f"[{cell}]({evidence_url})"
+    return cell
+
+
 def _difference_files(difference: ModelDifference, limit: int = 3) -> str:
     """Hyperlinked file:line locations, relative to the application root."""
     unique = sorted({(item.path, item.line) for item in difference.locations})
@@ -556,8 +564,8 @@ def generate_migration_report(plan: MigrationPlan) -> str:
         lines.extend(
             f"| {_table_text(_difference_type(item))} "
             f"| {item.severity.value} "
-            f"| {_difference_value(item.source_value)} "
-            f"| {_difference_value(item.target_value)} "
+            f"| {_difference_claim(item.source_value, item.source_evidence_url)} "
+            f"| {_difference_claim(item.target_value, item.target_evidence_url)} "
             f"| {_table_text(item.recommended_action or item.migration_impact, limit=160)} "
             f"| {_difference_files(item)} |"
             for item in material

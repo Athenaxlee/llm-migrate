@@ -263,6 +263,14 @@ class MigrationService:
                 recommended_action=change.recommended_action,
                 supporting_sources=change.supporting_sources,
                 knowledge_id=knowledge.id,
+                target_evidence_url=next(
+                    (
+                        str(source.url)
+                        for source in knowledge.sources
+                        if source.id in change.supporting_sources and source.url is not None
+                    ),
+                    None,
+                ),
             )
             for knowledge in self.registry.migrations_for(
                 source_profile.identity.canonical_name,
@@ -1181,6 +1189,7 @@ class MigrationService:
         rationale: str,
         changes: list[str] | None = None,
         *,
+        allow_restructure: bool = False,
         submitted_on: date | None = None,
     ) -> PromptSubmissionResult:
         """Validate and persist one adapted prompt beneath the run's output/prompts/."""
@@ -1202,6 +1211,7 @@ class MigrationService:
             changes or [],
             validation,
             submitted_on or date.today(),
+            allow_restructure=allow_restructure,
         )
 
     def submit_adapted_file(

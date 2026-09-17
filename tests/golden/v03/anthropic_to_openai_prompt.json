@@ -6,7 +6,7 @@
   "source_platform": "anthropic-api",
   "target_platform": "openai-api",
   "source_role": "system",
-  "candidate_prompt": "# Task\nProvide a concise justification and return JSON.\nNever invent facts. Do not omit fields. Avoid prose. You must not add keys.\nUse the weather tool when needed.\nExample 1:\nInput: Seattle\nOutput: {\"city\": \"Seattle\"}\nUse the weather tool when needed.\n<context>Grounded data</context>\n",
+  "candidate_prompt": "# Task\nThink step by step and return JSON.\nNever invent facts. Do not omit fields. Avoid prose. You must not add keys.\nUse the weather tool when needed.\nExample 1:\nInput: Seattle\nOutput: {\"city\": \"Seattle\"}\nUse the weather tool when needed.\n<context>Grounded data</context>\n",
   "semantic_diff": [
     {
       "state": "preserved",
@@ -18,7 +18,7 @@
       "state": "preserved",
       "concern": "input/output contract",
       "before": "Think step by step and return JSON.",
-      "after": "Provide a concise justification and return JSON."
+      "after": "Think step by step and return JSON."
     },
     {
       "state": "preserved",
@@ -43,12 +43,6 @@
       "concern": "verbosity policy",
       "before": "Never invent facts. Do not omit fields. Avoid prose. You must not add keys.",
       "after": "Never invent facts. Do not omit fields. Avoid prose. You must not add keys."
-    },
-    {
-      "state": "replaced",
-      "concern": "reasoning policy",
-      "before": "Explicit reasoning-process request",
-      "after": "Provide a concise justification"
     },
     {
       "state": "replaced",
