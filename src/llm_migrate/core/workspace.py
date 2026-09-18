@@ -157,6 +157,7 @@ class AdaptationTaskList(StrictModel):
     file_tasks: list[FileAdaptationTask] = Field(default_factory=list)
     blockers: list[str] = Field(default_factory=list)
     guidance: list[str] = Field(default_factory=list)
+    shared_prompt_guidance: list[str] = Field(default_factory=list)
 
 
 class PromptSubmissionResult(StrictModel):
@@ -387,7 +388,6 @@ def derive_adaptation_tasks(
                 line = prefix + text
                 if line not in risks:
                     risks.append(line)
-        guidance.extend(difference_guidance)
         candidate = (
             _structured_candidate(config, source_path, specs)
             if structured
@@ -440,6 +440,24 @@ def derive_adaptation_tasks(
             )
         )
     file_tasks.sort(key=lambda task: task.source_path)
+    # Hoist guidance shared by every prompt task into one shared list, so the
+    # task payload the host agent reads does not repeat it per task.
+    shared_prompt_guidance = list(difference_guidance)
+    if len(prompt_tasks) > 1:
+        shared = [
+            line
+            for line in prompt_tasks[0].guidance
+            if all(line in task.guidance for task in prompt_tasks[1:])
+        ]
+        if shared:
+            shared_set = set(shared)
+            prompt_tasks = [
+                task.model_copy(
+                    update={"guidance": [line for line in task.guidance if line not in shared_set]}
+                )
+                for task in prompt_tasks
+            ]
+            shared_prompt_guidance = [*shared, *shared_prompt_guidance]
     return AdaptationTaskList(
         run_id=config.run_id,
         source_model=config.source.model,
@@ -455,15 +473,26 @@ def derive_adaptation_tasks(
             "Adapt prompts minimally and only with evidence: keep the original wording "
             "and structure except where a listed model difference or evidence-linked "
             "guidance item requires a change, and say in `changes` which evidence "
-            "motivated each edit. Structural drops (removed XML-like sections or "
-            "components) are rejected unless the submission sets allow_restructure and "
-            "records the justification.",
+            "motivated each edit. `shared_prompt_guidance` applies to every prompt "
+            "task. Structural drops (removed XML-like sections or components) are "
+            "rejected unless the submission sets allow_restructure and records the "
+            "justification.",
+            "If a file task genuinely needs no change for the target model, submit it "
+            "with submit_adapted_file(..., unchanged=true) instead of inventing an "
+            "edit or leaving a coverage gap.",
+            "Call this worklist once and work through it; each submission result "
+            "already confirms acceptance, and finalize_migration reports any "
+            "remaining gaps, so there is no need to re-list between submissions.",
+            "If `blockers` is non-empty, surface them to the user before finalizing "
+            "instead of retrying submissions; blockers come from the plan, not from "
+            "your submissions, and only user decisions resolve them.",
             "Every submission must be the full finalized file content, not a diff.",
             "State in `changes` what was changed and in `rationale` why the target model "
             "needs it; both appear verbatim in the final report.",
             "Never edit the application tree directly; deliverables are written only "
             "beneath the run's output/ directory.",
         ],
+        shared_prompt_guidance=shared_prompt_guidance,
     )
 
 
@@ -565,8 +594,15 @@ def submit_adapted_file(
     changes: list[str],
     submitted_on: date,
     new_file: bool = False,
+    unchanged: bool = False,
 ) -> FileSubmissionResult:
-    """Persist one adapted application file beneath output/files/, fail closed."""
+    """Persist one adapted application file beneath output/files/, fail closed.
+
+    `unchanged=True` records that the file was reviewed and needs no change
+    for the target model: the original content is copied as the deliverable
+    (any `adapted_content` is ignored), closing the coverage gap without
+    forcing an invented edit.
+    """
     relative = _safe_relative_path(config, source_path)
     original_path = _application_base(config) / relative
     problems: list[str] = []
@@ -579,10 +615,27 @@ def submit_adapted_file(
             f"{relative.as_posix()} does not exist in the application; pass new_file=true "
             "only when the migration genuinely introduces a new file"
         )
+    if unchanged:
+        if original is None:
+            problems.append("unchanged=true requires the file to exist in the application")
+        elif (
+            config.source_model_id != config.target_model_id and config.source_model_id in original
+        ):
+            problems.append(
+                f"the file references the source model id {config.source_model_id!r}; "
+                "it cannot be recorded as unchanged"
+            )
+        else:
+            adapted_content = original
+            if not changes:
+                changes = ["Reviewed for the target model; no change required."]
     if not adapted_content.strip():
         problems.append("the adapted file content is empty")
-    if original is not None and original == adapted_content:
-        problems.append("the adapted content is identical to the source file")
+    if not unchanged and original is not None and original == adapted_content:
+        problems.append(
+            "the adapted content is identical to the source file; pass unchanged=true "
+            "if this file genuinely needs no change"
+        )
     prompt_format = source_format(relative.as_posix())
     if (
         original is not None
@@ -594,7 +647,7 @@ def submit_adapted_file(
             "submit_adapted_prompt so target-model validation and structural "
             "checks apply"
         )
-    if relative.suffix == ".py":
+    if relative.suffix == ".py" and not unchanged:
         try:
             ast.parse(adapted_content)
         except SyntaxError as exc:

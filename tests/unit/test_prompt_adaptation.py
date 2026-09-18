@@ -98,11 +98,12 @@ def test_prompt_tasks_carry_structure_and_evidence_guidance(
         "<correction_rules>" in line and "<validation_before_response>" in line
         for line in task.guidance
     )
-    knowledge_lines = [line for line in task.guidance if line.startswith("Model difference (")]
-    assert knowledge_lines, "migration-knowledge differences must reach the prompt task"
+    knowledge_lines = [
+        line for line in tasks.shared_prompt_guidance if line.startswith("Model difference (")
+    ]
+    assert knowledge_lines, "migration-knowledge differences must reach the prompt tasks"
     assert any("(evidence: https://" in line for line in knowledge_lines)
-    advice_lines = [line for line in task.guidance if not line.startswith("Model difference (")]
-    assert any("(evidence: https://" in line for line in advice_lines)
+    assert any("(evidence: https://" in line for line in task.guidance)
     assert any("Adapt prompts minimally" in line for line in tasks.guidance)
 
 
@@ -380,3 +381,49 @@ def test_override_derived_claims_are_not_linked_to_contradicting_docs(
     )
     assert structured.target_value is False  # bedrock capability override
     assert structured.target_evidence_url is None
+
+
+def test_unchanged_file_submission_closes_coverage_without_an_invented_edit(
+    service: MigrationService, xml_prompt_app: Path
+) -> None:
+    (xml_prompt_app / "helpers.py").write_text(
+        'def retry_delays():\n    return [1, 2, 4]\n\n\nTIMEOUT = "ANTHROPIC_TIMEOUT"\n',
+        encoding="utf-8",
+    )
+    start = _start(service, xml_prompt_app)
+    assert start.paths is not None
+    run_dir = start.paths.run_dir
+
+    identical = service.submit_adapted_file(
+        run_dir,
+        "helpers.py",
+        (xml_prompt_app / "helpers.py").read_text(encoding="utf-8"),
+        "No change needed.",
+        ["Nothing to change."],
+        submitted_on=AS_OF,
+    )
+    assert not identical.accepted
+    assert "unchanged=true" in identical.message
+
+    unchanged = service.submit_adapted_file(
+        run_dir,
+        "helpers.py",
+        "",
+        "Retry helpers are provider-neutral; no target-model change needed.",
+        [],
+        unchanged=True,
+        submitted_on=AS_OF,
+    )
+    assert unchanged.accepted, unchanged.message
+
+    lazy = service.submit_adapted_file(
+        run_dir,
+        "app.py",  # references the source model id
+        "",
+        "Looks fine.",
+        [],
+        unchanged=True,
+        submitted_on=AS_OF,
+    )
+    assert not lazy.accepted
+    assert "source model id" in lazy.message

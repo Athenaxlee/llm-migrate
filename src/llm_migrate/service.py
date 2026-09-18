@@ -1116,13 +1116,17 @@ class MigrationService:
             )
         next_steps.extend(
             (
-                "Call list_adaptation_tasks(run_dir) to get the per-file adaptation "
-                "worklist for this application.",
-                "For every prompt task, write the improved target-model prompt and call "
-                "submit_adapted_prompt; for every file task, write the complete adapted "
-                "file and call submit_adapted_file.",
+                "Call list_adaptation_tasks(run_dir) ONCE to get the per-file adaptation "
+                "worklist; its shared_prompt_guidance applies to every prompt task, and "
+                "there is no need to re-list between submissions.",
+                "For every prompt task, adapt the prompt minimally using its "
+                "evidence-linked guidance and call submit_adapted_prompt; for every "
+                "file task, write the complete adapted file and call "
+                "submit_adapted_file, or pass unchanged=true when the file needs no "
+                "change for the target model.",
                 "Call finalize_migration(run_dir) to write migration-manifest.yaml, "
-                "migration-report.md, and the adaptation change log under output/.",
+                "migration-report.md, and the adaptation change log under output/; it "
+                "reports any remaining coverage gaps.",
                 "Review everything under output/ with the user before applying any "
                 "change to the application.",
             )
@@ -1223,6 +1227,7 @@ class MigrationService:
         changes: list[str],
         *,
         new_file: bool = False,
+        unchanged: bool = False,
         submitted_on: date | None = None,
     ) -> FileSubmissionResult:
         """Check and persist one adapted application file beneath output/files/."""
@@ -1236,6 +1241,7 @@ class MigrationService:
             changes,
             submitted_on or date.today(),
             new_file=new_file,
+            unchanged=unchanged,
         )
 
     def finalize_migration_run(

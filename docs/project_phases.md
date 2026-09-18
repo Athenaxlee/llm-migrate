@@ -1602,6 +1602,11 @@ scanner saw the LLM consumers but resolved no prompt file, and the report's
   evidenced migration-knowledge differences; submissions that drop XML-like
   sections or components fail closed unless `allow_restructure` is set with a
   recorded justification ("no evidence, no rewrite").
+- Host-agent efficiency: shared prompt guidance is hoisted once per worklist
+  (`shared_prompt_guidance`), the guided flow instructs one `list` call with
+  no re-listing between submissions, and reviewed no-change files are recorded
+  with `submit_adapted_file(unchanged=true)` (content not resent; refused when
+  the file still references the source model id) so coverage always converges.
 
 ## Boundary
 

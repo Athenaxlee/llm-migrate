@@ -273,7 +273,12 @@ def test_run_workspace_groups_structured_prompt_tasks(
     }
     task = by_path["prompt_lib/claude_prompt.yaml"]
     assert task.components == ["sys_prompt", "user_prompt"]
-    assert any("structured prompt document" in item.casefold() for item in task.guidance)
+    all_guidance = [*task.guidance, *tasks.shared_prompt_guidance]
+    assert any("structured prompt document" in item.casefold() for item in all_guidance)
+    # Guidance shared by every prompt task is hoisted once instead of repeated.
+    shared = set(tasks.shared_prompt_guidance)
+    assert shared
+    assert all(not shared & set(item.guidance) for item in tasks.prompt_tasks)
     candidate = yaml.safe_load(task.deterministic_candidate)
     assert candidate["temperature"] == 0.2
     assert candidate["metadata"] == {"owner": "team-a"}

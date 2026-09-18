@@ -438,6 +438,16 @@ source-target `MigrationKnowledge`, not only individual model profiles.
   `generate_migration_plan/report`, and `start_migration` across service, CLI
   (`--prompt-source`), and MCP, persisted in the run's `migration.yaml` so
   every later run stage sees them.
+- Host-agent token efficiency: guidance shared by every prompt task is hoisted
+  once into `AdaptationTaskList.shared_prompt_guidance` instead of repeating
+  per task (roughly halving the worklist payload on multi-prompt apps), the
+  workflow instructions say to list tasks once and never re-list between
+  submissions, and `submit_adapted_file(..., unchanged=true)` records a
+  reviewed no-change file without resending its content — closing the
+  coverage-gap loop where identical content was otherwise rejected. An
+  unchanged claim is refused when the file still references the source model
+  id, and task guidance says to surface plan blockers to the user rather than
+  retry submissions.
 - Regression fixture `configured_prompt_app` (config-driven Bedrock prompt
   loading) with a golden scan, plus discovery/coverage/override/format-
   preservation unit tests.

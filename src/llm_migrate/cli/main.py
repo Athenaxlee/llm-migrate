@@ -1155,8 +1155,11 @@ def run_submit_prompt(
 def run_submit_file(
     run_dir: Path,
     source_path: Annotated[str, typer.Argument(help="File path relative to the app root.")],
-    content: Annotated[Path, typer.Option("--content", help="File holding the adapted content.")],
     rationale: Annotated[str, typer.Option("--rationale")],
+    content: Annotated[
+        Path | None,
+        typer.Option("--content", help="File holding the adapted content."),
+    ] = None,
     change: Annotated[
         list[str] | None,
         typer.Option("--change", help="One change description; repeatable."),
@@ -1164,17 +1167,28 @@ def run_submit_file(
     new_file: Annotated[
         bool, typer.Option("--new-file", help="The migration introduces this file.")
     ] = False,
+    unchanged: Annotated[
+        bool,
+        typer.Option(
+            "--unchanged",
+            help="Record that the file was reviewed and needs no change (no --content).",
+        ),
+    ] = False,
     registry: Annotated[Path | None, typer.Option(help="Registry root.")] = None,
 ) -> None:
     """Check and store one adapted application file beneath the run's output/files/."""
+    if content is None and not unchanged:
+        typer.echo("--content is required unless --unchanged is set", err=True)
+        raise typer.Exit(2)
     try:
         result = _service(registry).submit_adapted_file(
             run_dir,
             source_path,
-            _read_prompt(content),
+            _read_prompt(content) if content is not None else "",
             rationale,
             change or [],
             new_file=new_file,
+            unchanged=unchanged,
         )
     except (RegistryError, ValueError) as exc:
         typer.echo(str(exc), err=True)

@@ -44,12 +44,18 @@ For a full migration, prefer the guided workflow over calling low-level tools ad
 2. If research is recommended and the user agrees: get_research_prompts(run_dir),
    run each researcher/reviewer prompt with a separate agent, validate each
    artifact, then build_session_registry(run_dir).
-3. list_adaptation_tasks(run_dir) — the per-file worklist.
-4. Write the adapted prompt/file contents yourself and submit each via
-   submit_adapted_prompt / submit_adapted_file; submissions are validated and
-   stored under <run>/output/, never in the application tree.
+3. list_adaptation_tasks(run_dir) — call it ONCE: the per-file worklist, with
+   `shared_prompt_guidance` that applies to every prompt task. Do not re-list
+   between submissions; each submission result confirms acceptance.
+4. Work through the tasks: adapt prompts minimally (keep wording and structure
+   except where a listed model difference or evidence-linked guidance line
+   requires a change) and submit via submit_adapted_prompt; write complete
+   adapted files and submit via submit_adapted_file, or pass unchanged=true
+   for files that need no change. Submissions are validated and stored under
+   <run>/output/, never in the application tree.
 5. finalize_migration(run_dir) — writes migration-manifest.yaml and
-   migration-report.md (including per-file changes and rationale) under output/.
+   migration-report.md (including per-file changes and rationale) under
+   output/ and reports any remaining coverage gaps.
 
 Never edit the user's application directly from research results; everything is a
 reviewable deliverable in the run's output/ directory.
@@ -579,12 +585,15 @@ def get_research_prompts(run_dir: str) -> dict[str, Any]:
 
 @mcp.tool()
 def list_adaptation_tasks(run_dir: str, now: str | None = None) -> dict[str, Any]:
-    """Per-file adaptation worklist for a started migration run.
+    """Per-file adaptation worklist for a started migration run. Call it once.
 
     Derived from the run's migration plan (using its session overlay when one
-    was built). For every prompt task, write an improved target-model prompt
-    and call submit_adapted_prompt; for every file task, write the complete
-    adapted file and call submit_adapted_file.
+    was built). `shared_prompt_guidance` applies to every prompt task; each
+    task carries only its own guidance. Adapt each prompt minimally per that
+    guidance and call submit_adapted_prompt; write each complete adapted file
+    and call submit_adapted_file (or pass unchanged=true when no change is
+    needed). Submission results confirm acceptance, so re-listing between
+    submissions is unnecessary; finalize_migration reports remaining gaps.
     """
     return _json(
         _service().list_adaptation_tasks(
@@ -635,13 +644,18 @@ def submit_adapted_file(
     rationale: str,
     changes: list[str],
     new_file: bool = False,
+    unchanged: bool = False,
 ) -> dict[str, Any]:
     """Store one finalized post-adaptation application file for review.
 
     `adapted_content` must be the complete file, not a diff. Submissions are
     checked deterministically (path containment, Python syntax, model-id
     consistency) and written beneath `<run>/output/files/`; the application
-    tree itself is never modified.
+    tree itself is never modified. If the file genuinely needs no change for
+    the target model, pass `unchanged=true` with an empty `adapted_content`:
+    the original is copied as the deliverable and the coverage gap closes
+    without resending the file. Prompt source files are rejected here; submit
+    them with submit_adapted_prompt instead.
     """
     return _json(
         _service().submit_adapted_file(
@@ -651,6 +665,7 @@ def submit_adapted_file(
             rationale,
             changes,
             new_file=new_file,
+            unchanged=unchanged,
         )
     )
 
