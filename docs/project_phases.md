@@ -1631,6 +1631,64 @@ and format-preserving submissions.
 
 ---
 
+# 12.3. V1.4: Interactive Blocker Resolution
+
+Motivated by V1.3's honest-but-dead-end blocked runs: the tool correctly
+detected migration blockers (e.g. native structured output configured while
+the Bedrock target declares it unsupported), labeled the plan `blocked`, and
+stopped — with no guided path from `blocked` to a shippable state.
+
+## Scope
+
+- Structured blockers: `MigrationBlocker` (stable deterministic id, code,
+  category, message, registry evidence URLs, source locations, machine-readable
+  data) replaces `plan.blockers: list[str]`; `MigrationPlan` is schema
+  version 4 and `InvocationMigrationSpec` schema version 3, with a rendered
+  string view kept for reports and worklists.
+- Deterministic resolution: `get_blocker_resolutions` derives, per blocker,
+  the question to ask the user and 2–5 evidence-backed options (retarget to a
+  capable endpoint/platform of the same model, an alternative model via the
+  existing recommendation engine, an evidence-linked redesign task, an exact
+  source correction, and always an accept-with-rationale that is never a
+  default). Options come only from registry facts; when none exist the
+  resolution says so explicitly.
+- Durable decisions: `record_blocker_decision` writes `decisions.yaml` in the
+  run workspace (blocker id, chosen option, rationale, date). Retarget and
+  correction decisions update the run's `migration.yaml` identity
+  registry-first; redesign decisions suppress exactly their blocker and inject
+  the required, evidence-linked adaptation task on every regeneration; accept
+  decisions downgrade the blocker to a prominently reported accepted decision.
+  A decision that no longer matches a live blocker is reported stale, never
+  silently applied.
+- Honest finalization: the manifest carries `decisions`, the report gains a
+  Decisions section (accepted risk highlighted, stale decisions loud), and
+  `finalize_migration` distinguishes unresolved blockers, decision-resolved
+  blockers, and stale decisions. Complexity stays `blocked` only for
+  unresolved blockers.
+- Workflow surfaces: MCP `get_blocker_resolutions`/`record_blocker_decision`,
+  CLI `llm-migrate run blockers`/`run decide`, and start/worklist guidance
+  that directs the host agent to present questions, options, and evidence
+  verbatim, one blocker at a time, and never to decide for the user or retry
+  submissions to clear a blocker.
+
+## Boundary
+
+The tool stays deterministic and never calls an LLM: the host agent is the
+interactive party and the user is the decision maker. Fail closed everywhere —
+no decision, no suppression; accepts require a rationale; unknown blocker or
+option ids are refused. The evaluation subsystem is untouched.
+
+## Current status
+
+Implemented on 2026-09-18: structured blockers across the analyzers, planner,
+and consistency checks; the resolver and decision lifecycle in
+`core/blockers.py`; service, MCP, and CLI surfaces; golden regeneration for
+the schema bump; and unit coverage for capability retarget/redesign/accept,
+source correction, stale decisions, fail-closed ids, and the guided
+blocked-to-finalized end-to-end run.
+
+---
+
 # 13. Cross-Phase Testing Strategy
 
 ## Unit tests

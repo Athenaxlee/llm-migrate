@@ -1,5 +1,5 @@
 migration:
-  schema_version: '3'
+  schema_version: '4'
   source:
     model: claude-sonnet-4-5-20250929
     provider: anthropic
@@ -567,6 +567,7 @@ migration:
       end_line: 9
   optional_changes: []
   blockers: []
+  decisions: []
   warnings: []
   unknowns:
   - One or both values for 'adaptive_thinking' are unknown; compatibility must not
@@ -579,7 +580,7 @@ migration:
   - One or both values for 'top_p' are unknown; compatibility must not be assumed.
   prompt_changes: []
   invocation_changes:
-  - schema_version: '2'
+  - schema_version: '3'
     source_model: claude-sonnet-4-5-20250929
     target_model: claude-sonnet-5
     source_analysis:

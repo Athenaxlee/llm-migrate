@@ -1114,6 +1114,57 @@ def run_tasks(
         raise typer.Exit(2) from exc
 
 
+@run_app.command("blockers")
+def run_blockers(
+    run_dir: Path,
+    registry: Annotated[Path | None, typer.Option(help="Registry root.")] = None,
+) -> None:
+    """Show every unresolved blocker with its question and evidence-backed options.
+
+    Present each question with its options and evidence verbatim to the user,
+    one blocker at a time, then record each answer with `run decide`.
+    """
+    try:
+        _emit(_service(registry).get_blocker_resolutions(run_dir))
+    except (RegistryError, ValueError) as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(2) from exc
+
+
+@run_app.command("decide")
+def run_decide(
+    run_dir: Path,
+    blocker_id: Annotated[str, typer.Argument(help="Blocker id from `run blockers`.")],
+    option_id: Annotated[str, typer.Argument(help="Option id from `run blockers`.")],
+    rationale: Annotated[
+        str,
+        typer.Option(
+            "--rationale",
+            help="The user's own rationale (required for the accept option).",
+        ),
+    ] = "",
+    decided_on: Annotated[
+        str | None, typer.Option("--decided-on", help="Fixed ISO decision date.")
+    ] = None,
+    registry: Annotated[Path | None, typer.Option(help="Registry root.")] = None,
+) -> None:
+    """Record the user's decision for one blocker (durable in decisions.yaml)."""
+    try:
+        result = _service(registry).record_blocker_decision(
+            run_dir,
+            blocker_id,
+            option_id,
+            rationale,
+            decided_on=date.fromisoformat(decided_on) if decided_on else None,
+        )
+    except (RegistryError, ValueError) as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(2) from exc
+    _emit(result)
+    if not result.accepted:
+        raise typer.Exit(1)
+
+
 @run_app.command("submit-prompt")
 def run_submit_prompt(
     run_dir: Path,

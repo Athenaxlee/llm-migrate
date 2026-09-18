@@ -47,6 +47,14 @@ For a full migration, prefer the guided workflow over calling low-level tools ad
 3. list_adaptation_tasks(run_dir) — call it ONCE: the per-file worklist, with
    `shared_prompt_guidance` that applies to every prompt task. Do not re-list
    between submissions; each submission result confirms acceptance.
+3b. If the worklist reports blockers: get_blocker_resolutions(run_dir), then
+   present each blocker's question with its options, consequences, and
+   evidence VERBATIM to the user, ONE blocker at a time, and record each
+   answer with record_blocker_decision. The user is the decision maker: never
+   pick an option for them, never invent options, and never retry submissions
+   to make a blocker disappear. Accepting a blocker requires the user's own
+   rationale. Decisions persist in the run's decisions.yaml and re-apply on
+   every plan regeneration; each decision result says exactly what to do next.
 4. Work through the tasks: adapt prompts minimally (keep wording and structure
    except where a listed model difference or evidence-linked guidance line
    requires a change) and submit via submit_adapted_prompt; write complete
@@ -599,6 +607,56 @@ def list_adaptation_tasks(run_dir: str, now: str | None = None) -> dict[str, Any
         _service().list_adaptation_tasks(
             run_dir,
             now=datetime.fromisoformat(now) if now else None,
+        )
+    )
+
+
+@mcp.tool()
+def get_blocker_resolutions(run_dir: str, now: str | None = None) -> dict[str, Any]:
+    """Questions plus evidence-backed options for every unresolved blocker.
+
+    For each blocker of a started run, returns the question to ask the user
+    and 2-5 registry-backed options (retarget / redesign / correction /
+    accept-with-rationale), each with consequences, evidence URLs, and the
+    exact record_blocker_decision call to make once the user chooses. Present
+    questions, options, and evidence VERBATIM, one blocker at a time; never
+    choose on the user's behalf. Also reports how previously recorded
+    decisions applied, including stale ones.
+    """
+    return _json(
+        _service().get_blocker_resolutions(
+            run_dir,
+            now=datetime.fromisoformat(now) if now else None,
+        )
+    )
+
+
+@mcp.tool()
+def record_blocker_decision(
+    run_dir: str,
+    blocker_id: str,
+    option_id: str,
+    rationale: str = "",
+    decided_on: str | None = None,
+) -> dict[str, Any]:
+    """Record the user's decision for one blocker; decisions are durable.
+
+    `blocker_id` and `option_id` must come from get_blocker_resolutions.
+    Accept options REQUIRE the user's own free-text `rationale` (they are
+    refused without one and are never a default). Retarget and correction
+    decisions update the run's migration.yaml identity immediately; redesign
+    decisions inject a required, evidence-linked adaptation task on every
+    plan regeneration; accept decisions downgrade the blocker to a
+    prominently reported accepted decision. The result lists the remaining
+    unresolved blockers and the exact next step.
+    """
+    return _json(
+        _service().record_blocker_decision(
+            run_dir,
+            blocker_id,
+            option_id,
+            rationale,
+            decided_on=date.fromisoformat(decided_on) if decided_on else None,
         )
     )
 

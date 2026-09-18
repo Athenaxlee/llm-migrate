@@ -1,5 +1,5 @@
 migration:
-  schema_version: '3'
+  schema_version: '4'
   source:
     model: claude-sonnet-5
     provider: anthropic
@@ -573,6 +573,7 @@ migration:
       column: 13
       end_line: 12
   blockers: []
+  decisions: []
   warnings: []
   unknowns:
   - One or both values for 'adaptive_thinking' are unknown; compatibility must not
@@ -706,7 +707,7 @@ migration:
       basis: heuristic_recommendation
       evidence_urls: []
   invocation_changes:
-  - schema_version: '2'
+  - schema_version: '3'
     source_model: claude-sonnet-5
     target_model: claude-sonnet-4-6
     source_analysis:

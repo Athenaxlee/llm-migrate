@@ -381,7 +381,11 @@ def test_override_derived_claims_are_not_linked_to_contradicting_docs(
         item for item in plan.model_differences.differences if item.category == "structured_output"
     )
     assert structured.target_value is False  # bedrock capability override
-    assert structured.target_evidence_url is None
+    # An override-derived claim may cite only the platform entry's own sources
+    # (the AWS model card), never a profile-level document that could assert
+    # the opposite value.
+    assert structured.target_evidence_url is not None
+    assert "docs.aws.amazon.com" in structured.target_evidence_url
 
 
 def test_unchanged_file_submission_closes_coverage_without_an_invented_edit(
@@ -481,7 +485,7 @@ def test_prompt_enforced_json_never_blocks_the_plan(
     ]
     assert unsupported, "the mismatch must still be surfaced"
     assert all(item.level.value == "warning" for item in unsupported)
-    assert not any("structured output" in blocker for blocker in plan.blockers)
+    assert not any("structured output" in blocker.message for blocker in plan.blockers)
 
 
 def test_serialization_bypass_is_rejected(service: MigrationService, json_prompt_app: Path) -> None:
@@ -1010,7 +1014,7 @@ def test_dynamic_request_surfaces_as_unknown_and_native_use_blocks(
         target_endpoint="bedrock-runtime",
     )
     assert any(
-        "configures structured output" in blocker and "unsupported" in blocker
+        "configures structured output" in blocker.message and "unsupported" in blocker.message
         for blocker in plan.blockers
     )
     assert plan.migration_complexity == "blocked"

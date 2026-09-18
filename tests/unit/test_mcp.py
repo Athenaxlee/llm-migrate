@@ -47,6 +47,8 @@ def test_all_service_operations_are_exposed_as_mcp_tools() -> None:
         "start_migration",
         "get_research_prompts",
         "list_adaptation_tasks",
+        "get_blocker_resolutions",
+        "record_blocker_decision",
         "submit_adapted_prompt",
         "submit_adapted_file",
         "finalize_migration",
@@ -200,7 +202,7 @@ def test_mcp_integrated_plan_and_report_use_the_shared_workflow() -> None:
         "anthropic-api",
         "openai-api",
     )
-    assert plan["schema_version"] == "3"
+    assert plan["schema_version"] == "4"
     assert plan["affected_files"] == ["app.py", "prompts/system.txt"]
     assert (
         plan["invocation_changes"][0]["tool_schema_migrations"][0]["target_definition"]["type"]

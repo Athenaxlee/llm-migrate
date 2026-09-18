@@ -9,14 +9,17 @@ import yaml
 from jsonschema import Draft202012Validator
 from jsonschema.exceptions import SchemaError
 
+from llm_migrate.core.comparison import capability_evidence_url
 from llm_migrate.core.migration import prepare_prompt_migration, validate_prompt
 from llm_migrate.core.models import (
     ApplicationAnalysis,
+    BlockerCategory,
     ComparisonSeverity,
     CompatibilityState,
     CouplingKind,
     InvocationMigrationSpec,
     MigrationApplicationSummary,
+    MigrationBlocker,
     MigrationEndpoint,
     MigrationPlan,
     ModelComparison,
@@ -27,10 +30,13 @@ from llm_migrate.core.models import (
     PromptMigrationSpec,
     PromptSource,
     PromptSourceConfidence,
+    ResolutionKind,
     ResolvedModel,
     SourceLocation,
     ValidationIssue,
     ValidationLevel,
+    dedupe_blockers,
+    migration_blocker,
 )
 
 
@@ -155,17 +161,25 @@ def _prompt_inputs(
     return inputs, unknowns
 
 
-def _schema_validation(application: ApplicationAnalysis) -> list[ValidationIssue]:
+def _schema_validation(
+    application: ApplicationAnalysis,
+) -> tuple[list[ValidationIssue], list[MigrationBlocker]]:
     issues: list[ValidationIssue] = []
-    contracts: list[tuple[str, dict[str, Any] | None, SourceLocation]] = [
-        (f"tool {item.name or '<unknown>'}", item.input_schema, item.location)
+    blockers: list[MigrationBlocker] = []
+    contracts: list[tuple[str, str, dict[str, Any] | None, SourceLocation]] = [
+        ("tool_use", f"tool {item.name or '<unknown>'}", item.input_schema, item.location)
         for item in application.tool_definitions
     ]
     contracts.extend(
-        (f"output {item.name or '<unnamed>'}", item.json_schema, item.location)
+        (
+            "structured_output",
+            f"output {item.name or '<unnamed>'}",
+            item.json_schema,
+            item.location,
+        )
         for item in application.structured_outputs
     )
-    for label, schema, location in contracts:
+    for capability, label, schema, location in contracts:
         if schema is None:
             issues.append(
                 ValidationIssue(
@@ -179,15 +193,60 @@ def _schema_validation(application: ApplicationAnalysis) -> list[ValidationIssue
         try:
             Draft202012Validator.check_schema(schema)
         except SchemaError as exc:
+            message = f"The {label} JSON Schema is invalid: {exc.message}."
             issues.append(
                 ValidationIssue(
                     code="invalid_json_schema",
                     level=ValidationLevel.BLOCKER,
-                    message=f"The {label} JSON Schema is invalid: {exc.message}.",
+                    message=message,
                     source_path=location.path,
                 )
             )
-    return issues
+            blockers.append(
+                migration_blocker(
+                    code="invalid_json_schema",
+                    category=BlockerCategory.INVALID_SCHEMA,
+                    message=message,
+                    locations=[location],
+                    data={"capability": capability},
+                    discriminator=location.path,
+                )
+            )
+    return issues, blockers
+
+
+_PROMPT_ISSUE_CATEGORIES = {
+    "context_window_exceeded": BlockerCategory.CONTEXT_WINDOW,
+    "empty_prompt": BlockerCategory.OTHER,
+    "invalid_target_platform": BlockerCategory.PLATFORM_AMBIGUITY,
+}
+
+
+def _prompt_issue_blocker(
+    issue: ValidationIssue,
+    spec: PromptMigrationSpec,
+    target: ResolvedModel,
+    target_platform: str,
+) -> MigrationBlocker:
+    """Structure one blocker-level prompt validation issue."""
+    data: dict[str, Any] = {"source_path": issue.source_path}
+    evidence: list[str] = []
+    if issue.code == "context_window_exceeded":
+        data["approximate_tokens"] = spec.source_prompt_analysis.approximate_token_count
+        data["target_context_window"] = target.effective_capabilities.context_window_tokens
+        url = capability_evidence_url(target.profile, target.platform, "context_window_tokens")
+        if url:
+            evidence = [url]
+    if issue.code == "invalid_target_platform":
+        data["platform"] = target_platform
+    return migration_blocker(
+        code=issue.code,
+        category=_PROMPT_ISSUE_CATEGORIES.get(issue.code, BlockerCategory.OTHER),
+        message=issue.message,
+        evidence_urls=evidence,
+        data=data,
+        discriminator=issue.source_path or "",
+    )
 
 
 def _required_tests(application: ApplicationAnalysis) -> list[str]:
@@ -233,14 +292,15 @@ def generate_application_migration_plan(
     )
     prompt_inputs, unknowns = _prompt_inputs(application)
     prompt_changes: list[PromptMigrationSpec] = []
-    validation_results = _schema_validation(application)
+    validation_results, schema_blockers = _schema_validation(application)
+    blockers: list[MigrationBlocker] = [*invocation.blockers, *schema_blockers]
     validation_results.extend(
         ValidationIssue(
             code="invocation_migration_blocker",
             level=ValidationLevel.BLOCKER,
-            message=message,
+            message=blocker.message,
         )
-        for message in invocation.blockers
+        for blocker in invocation.blockers
     )
     validation_results.extend(
         ValidationIssue(
@@ -263,23 +323,26 @@ def generate_application_migration_plan(
             )
         )
     for prompt_source, component in prompt_inputs:
-        prompt_changes.append(
-            prepare_prompt_migration(
-                source,
-                target,
-                component.content,
-                source_path=prompt_source.path,
-                source_component=component.key,
-                source_role=component.role,
-            )
+        spec = prepare_prompt_migration(
+            source,
+            target,
+            component.content,
+            source_path=prompt_source.path,
+            source_component=component.key,
+            source_role=component.role,
         )
-        validation_results.extend(
-            validate_prompt(
-                target,
-                component.content,
-                source_path=prompt_source.path,
-                target_platform=target_endpoint.platform,
-            ).issues
+        prompt_changes.append(spec)
+        prompt_validation = validate_prompt(
+            target,
+            component.content,
+            source_path=prompt_source.path,
+            target_platform=target_endpoint.platform,
+        )
+        validation_results.extend(prompt_validation.issues)
+        blockers.extend(
+            _prompt_issue_blocker(issue, spec, target, target_endpoint.platform)
+            for issue in prompt_validation.issues
+            if issue.level is ValidationLevel.BLOCKER
         )
 
     target_context = target.effective_capabilities.context_window_tokens
@@ -287,24 +350,39 @@ def generate_application_migration_plan(
     if required_context is not None and (
         target_context is None or target_context < required_context
     ):
+        regression_message = (
+            f"Application requires {required_context} context tokens; target provides "
+            f"{target_context if target_context is not None else 'unknown'}."
+        )
         validation_results.append(
             ValidationIssue(
                 code="context_window_regression",
                 level=ValidationLevel.BLOCKER,
-                message=(
-                    f"Application requires {required_context} context tokens; target provides "
-                    f"{target_context if target_context is not None else 'unknown'}."
-                ),
+                message=regression_message,
+            )
+        )
+        context_url = capability_evidence_url(
+            target.profile, target.platform, "context_window_tokens"
+        )
+        blockers.append(
+            migration_blocker(
+                code="context_window_regression",
+                category=BlockerCategory.CONTEXT_WINDOW,
+                message=regression_message,
+                evidence_urls=[context_url] if context_url else [],
+                locations=_locations(application, CouplingKind.PROMPT),
+                data={
+                    "required_context_window": required_context,
+                    "target_context_window": target_context,
+                },
             )
         )
 
-    blockers = [*invocation.blockers]
+    blockers = dedupe_blockers(blockers)
     warnings = [*application.warnings, *invocation.warnings]
-    for issue in validation_results:
-        if issue.level is ValidationLevel.BLOCKER:
-            blockers.append(issue.message)
-        elif issue.level is ValidationLevel.WARNING:
-            warnings.append(issue.message)
+    warnings.extend(
+        issue.message for issue in validation_results if issue.level is ValidationLevel.WARNING
+    )
     for assessment in (
         invocation.source_analysis.tool_compatibility,
         invocation.source_analysis.structured_output_compatibility,
@@ -426,7 +504,7 @@ def generate_application_migration_plan(
         affected_files=affected_files,
         required_changes=required_changes,
         optional_changes=optional_changes,
-        blockers=sorted(set(blockers)),
+        blockers=blockers,
         warnings=sorted(set(warnings)),
         unknowns=sorted(set(unknowns)),
         prompt_changes=prompt_changes,
@@ -525,8 +603,43 @@ def _difference_files(difference: ModelDifference, limit: int = 3) -> str:
     return "<br>".join(links) if links else "—"
 
 
+_DECISION_KIND_LABELS = {
+    ResolutionKind.RETARGET: "Retarget",
+    ResolutionKind.REDESIGN_TASK: "Redesign",
+    ResolutionKind.CORRECTION: "Correction",
+    ResolutionKind.ACCEPT_WITH_RATIONALE: "ACCEPTED RISK",
+}
+
+
+def _decision_lines(plan: MigrationPlan) -> list[str]:
+    """Render every recorded blocker decision, keeping stale ones loud."""
+    lines: list[str] = []
+    for applied in plan.decisions:
+        decision = applied.decision
+        label = _DECISION_KIND_LABELS[decision.kind]
+        if applied.status == "stale":
+            lines.append(
+                f"**STALE decision** ({label}, {decision.decided_on.isoformat()}) for blocker "
+                f"`{decision.blocker_code}`: {applied.detail} The decision was NOT applied; "
+                "re-run blocker resolution if the blocker still exists."
+            )
+        else:
+            lines.append(
+                f"**{label}** ({decision.decided_on.isoformat()}) resolved blocker "
+                f"`{decision.blocker_code}` ({decision.blocker_message}) — {decision.summary} "
+                f"Rationale: {decision.rationale} Result: {applied.detail}"
+            )
+    return lines
+
+
 def generate_migration_report(plan: MigrationPlan) -> str:
     """Render a concise human review report from the canonical manifest."""
+    applied_decisions = sum(item.status == "applied" for item in plan.decisions)
+    accepted_decisions = sum(
+        item.status == "applied" and item.decision.kind is ResolutionKind.ACCEPT_WITH_RATIONALE
+        for item in plan.decisions
+    )
+    stale_decisions = sum(item.status == "stale" for item in plan.decisions)
     lines = [
         f"# Migration report: {plan.source.model} → {plan.target.model}",
         "",
@@ -539,8 +652,16 @@ def generate_migration_report(plan: MigrationPlan) -> str:
         f"- Complexity: **{plan.migration_complexity}**",
         f"- Behavioral risk: **{plan.overall_migration_risk.value}**",
         f"- Affected files: {len(plan.affected_files)}",
-        f"- Blockers: {len(plan.blockers)}; warnings: {len(plan.warnings)}; "
+        f"- Unresolved blockers: {len(plan.blockers)}; warnings: {len(plan.warnings)}; "
         f"unknowns: {len(plan.unknowns)}",
+        *(
+            [
+                f"- Blocker decisions: {applied_decisions} applied "
+                f"({accepted_decisions} accepted risk), {stale_decisions} stale"
+            ]
+            if plan.decisions
+            else []
+        ),
         "",
         "## Why this target",
         "",
@@ -619,7 +740,8 @@ def generate_migration_report(plan: MigrationPlan) -> str:
     sections = (
         ("Prompt discovery", discovery_lines),
         ("Affected files", [f"`{item}`" for item in plan.affected_files]),
-        ("Blockers", plan.blockers),
+        ("Blockers", [item.rendered for item in plan.blockers]),
+        ("Decisions", _decision_lines(plan)),
         ("Warnings", plan.warnings),
         ("Unresolved unknowns", plan.unknowns),
         ("Required changes", [item.description for item in plan.required_changes]),

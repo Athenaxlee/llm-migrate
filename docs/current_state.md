@@ -27,6 +27,14 @@ real V1.2 migration run where configuration-driven prompt loading
 "Prompt changes: None" despite real prompt migration work. See the V1.3 section
 below and `docs/project_phases.md` §12.2.
 
+V1.4: Interactive Blocker Resolution — implemented on 2026-09-18, built in
+response to blocked V1.3 runs being honest dead ends: blockers were detected
+and reported, but there was no guided, recorded path from `blocked` to a
+shippable plan. Every blocker now yields a user-facing question with
+evidence-backed options, and explicit recorded decisions (retarget, redesign,
+correction, accept-with-rationale) reshape the plan durably. See the V1.4
+section below and `docs/project_phases.md` §12.3.
+
 ## Released foundation
 
 - Git tag `v1.3.0` is the current stable release; `v1.2.0`, `v1.1.0`,
@@ -487,6 +495,47 @@ source-target `MigrationKnowledge`, not only individual model profiles.
   that drop XML-like sections or prompt components are rejected unless
   `allow_restructure` is set (CLI `--allow-restructure`, MCP parameter) with
   the justification recorded in `changes.yaml` and the final report.
+
+## V1.4 completed capabilities
+
+- Structured blockers: `plan.blockers` is a list of `MigrationBlocker`
+  (stable deterministic id, code, category, message, registry evidence URLs,
+  source locations, machine-readable data) produced at the source in the
+  invocation analyzer, planner, and source-consistency checks.
+  `MigrationPlan` is schema version 4, `InvocationMigrationSpec` schema
+  version 3, with rendered string views kept for the report and worklist.
+  Override-derived capability blockers cite the platform entry's own sources
+  (the AWS model card is now attached to the Bedrock platform entries of
+  `claude-sonnet-5`, recorded through its proposal bundle).
+- Deterministic blocker resolution (`core/blockers.py`): per blocker, the
+  question to ask the user plus 2–5 options, each with what it changes,
+  consequences, registry evidence, and the exact `record_blocker_decision`
+  call. Options are derived only from registry facts — platform capability
+  overrides, the existing recommendation engine, platform representations,
+  parameter support facts — and a blocker with no registry-backed option says
+  so explicitly. Accept-with-rationale is always present, always last, never
+  a default, and refused without the user's own rationale.
+- Durable decisions in the run's `decisions.yaml`, re-applied on every plan
+  regeneration: retarget/correction decisions update `migration.yaml`
+  registry-first (unresolvable identities are refused); redesign decisions
+  suppress exactly their blocker and inject a required, evidence-linked
+  adaptation task that flows into the per-file worklist; accept decisions
+  downgrade the blocker to a prominently reported accepted decision. A
+  decision whose blocker no longer exists is reported stale, never applied.
+- Honest reporting: the manifest carries `decisions`, the report gains a
+  Decisions section (**ACCEPTED RISK** and **STALE decision** highlighted) and
+  an unresolved-blockers summary line, and `finalize_migration` distinguishes
+  `unresolved_blockers`, `resolved_blockers`, and `stale_decisions`.
+  Complexity stays `blocked` only while unresolved blockers remain; a fully
+  decision-resolved plan recomputes normally.
+- Workflow surfaces: MCP tools `get_blocker_resolutions` and
+  `record_blocker_decision`, CLI `llm-migrate run blockers` / `run decide`,
+  and start/worklist/MCP-instruction guidance directing the host agent to
+  present each question with its options and evidence verbatim, one blocker
+  at a time, never to decide on the user's behalf, and never to retry
+  submissions to make a blocker disappear. Decision results carry the
+  remaining unresolved blockers and the exact next step, so there are no
+  re-listing loops.
 
 ## Next work
 

@@ -2,7 +2,7 @@ schema_version: '1'
 run_id: run-nova-001
 created_at: '2026-08-29T12:00:00Z'
 expires_at: '2026-09-05T12:00:00Z'
-base_registry_sha256: 1488e3a947e2dd455531b771bf751619f4b75ff4c267d5ac3f86c029443ab776
+base_registry_sha256: 2e0b7aa838aae12c7d1537251e72ea2cbc55487faada073711dcaa3159a46324
 request_sha256: f49126d024e22e984bfcb5a88d3221de305cb2208855e7d67ca6296878173bdb
 stage_hashes:
 - subject: claude-sonnet-5
@@ -20,7 +20,7 @@ stage_hashes:
 trust_level: session_agent_reviewed
 candidate_profiles:
 - name: claude-sonnet-5
-  sha256: ebc5c0c14a3938ca15f8a0d1c14a0790e13d9e91bff07b45919a30be7d64ddfa
+  sha256: 93c803bbb48bea27164b763d1ef51c316ef875f204fa9ccb4a20d178eef65c6b
 - name: gpt-6.0-nova
   sha256: 5e79fe2b599235c763dfe6b6b34f5cd4da87da837b0ff959d702eda13832cce2
 migration_knowledge:

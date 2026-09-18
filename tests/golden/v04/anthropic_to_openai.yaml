@@ -1,5 +1,5 @@
 migration:
-  schema_version: '3'
+  schema_version: '4'
   source:
     model: claude-sonnet-5
     provider: anthropic
@@ -600,6 +600,7 @@ migration:
       column: 13
       end_line: 12
   blockers: []
+  decisions: []
   warnings:
   - Unknown target support for parameter temperature.
   unknowns:
@@ -728,7 +729,7 @@ migration:
       basis: heuristic_recommendation
       evidence_urls: []
   invocation_changes:
-  - schema_version: '2'
+  - schema_version: '3'
     source_model: claude-sonnet-5
     target_model: gpt-5.6-sol
     source_analysis:

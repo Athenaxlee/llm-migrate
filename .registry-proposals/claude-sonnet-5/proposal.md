@@ -3,7 +3,7 @@
 ## Summary
 
 0 facts added
-1 fact changed
+2 facts changed
 1 conflict detected
 1 field remains unknown
 
@@ -23,6 +23,13 @@ Anthropic documents `thinking: {type: "disabled"}` for Claude Sonnet 5, while AW
 Sources:
 - Anthropic Sonnet 5 launch guide
 - AWS Claude Sonnet 5 model card
+
+## Platform-source attachment (2026-09-18)
+
+The AWS Claude Sonnet 5 model card is now attached as a platform-level source on both
+Amazon Bedrock entries, so the Bedrock capability overrides (`structured_output: false`,
+`prompt_caching: true`, `streaming: true`) cite their own evidence instead of carrying no
+link. No capability value changed.
 
 ## Verified high-impact facts already in the canonical entry
 

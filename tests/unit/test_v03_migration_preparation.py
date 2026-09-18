@@ -118,8 +118,10 @@ def test_unsupported_tool_behavior_is_a_blocker_and_files_are_unchanged(
     assert before == after
     assert result.source_analysis.tool_compatibility is not None
     assert result.source_analysis.tool_compatibility.state is CompatibilityState.UNSUPPORTED
-    assert any("tool use" in blocker for blocker in result.blockers)
-    assert any("No deterministic invocation adapter" in blocker for blocker in result.blockers)
+    assert any("tool use" in blocker.message for blocker in result.blockers)
+    assert any(
+        "No deterministic invocation adapter" in blocker.message for blocker in result.blockers
+    )
     assert result.tool_schema_migrations[0].state is CompatibilityState.UNSUPPORTED
     assert result.tool_schema_migrations[0].target_definition is None
 
@@ -206,9 +208,9 @@ def test_source_identity_mismatch_is_a_blocker(
         source_platform="anthropic-api",
         target_platform="openai-api",
     )
-    assert any("source model does not match" in item for item in result.blockers)
-    assert any("source provider does not match" in item for item in result.blockers)
-    assert any("source platform does not match" in item for item in result.blockers)
+    assert any("source model does not match" in item.message for item in result.blockers)
+    assert any("source provider does not match" in item.message for item in result.blockers)
+    assert any("source platform does not match" in item.message for item in result.blockers)
 
 
 def test_unsupported_and_reasoning_parameters_are_not_false_direct_mappings(
@@ -228,7 +230,7 @@ def test_unsupported_and_reasoning_parameters_are_not_false_direct_mappings(
     assert unsupported.configuration_migration.state is CompatibilityState.DIRECTLY_COMPATIBLE
     assert temperature.state is CompatibilityState.UNSUPPORTED
     assert temperature.target_name is None
-    assert any("temperature" in item for item in unsupported.blockers)
+    assert any("temperature" in item.message for item in unsupported.blockers)
 
     reasoning = service.prepare_invocation_migration(
         _fixture(project_root, "openai_app"),
@@ -352,6 +354,6 @@ def test_structured_output_schema_strictness_and_parser_are_analyzed(
         target_platform="amazon-bedrock",
     )
     assert any(
-        "No deterministic structured-output configuration mapping" in item
+        "No deterministic structured-output configuration mapping" in item.message
         for item in bedrock_preparation.blockers
     )

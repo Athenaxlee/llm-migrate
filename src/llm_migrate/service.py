@@ -39,6 +39,17 @@ from llm_migrate.core.agent_research import (
     topic_for_field_path,
 )
 from llm_migrate.core.artifacts import write_proposal_artifacts
+from llm_migrate.core.blockers import (
+    RESOLUTION_GUIDANCE,
+    BlockerDecisionResult,
+    BlockerResolutionSet,
+    apply_decisions,
+    build_blocker_resolutions,
+    load_decision_log,
+    render_applied_decision,
+    save_decision_log,
+    upsert_decision,
+)
 from llm_migrate.core.comparison import compare_models
 from llm_migrate.core.evaluation import (
     CustomEvaluator,
@@ -76,10 +87,13 @@ from llm_migrate.core.migration import (
 )
 from llm_migrate.core.models import (
     ApplicationAnalysis,
+    BlockerCategory,
+    BlockerDecision,
     ComparisonSeverity,
     InvocationAnalysis,
     InvocationMigrationSpec,
     LivePricingResult,
+    MigrationBlocker,
     MigrationCostEstimate,
     MigrationPlan,
     MigrationWorkload,
@@ -96,9 +110,11 @@ from llm_migrate.core.models import (
     PromptValidationResult,
     RecommendationConstraints,
     RecommendationResult,
+    ResolutionKind,
     ResolvedModel,
     ValidationIssue,
     ValidationLevel,
+    migration_blocker,
 )
 from llm_migrate.core.orchestration import (
     AgentRunner,
@@ -473,7 +489,7 @@ class MigrationService:
         )
         source_resolution = self.resolve_model(source, source_platform, source_endpoint)
         consistency_warnings: list[str] = []
-        consistency_blockers: list[str] = []
+        consistency_blockers: list[MigrationBlocker] = []
         detected_canonical: set[str] = set()
         for identifier in sorted(analysis.requirements.source_models):
             try:
@@ -495,9 +511,20 @@ class MigrationService:
                 )
         if detected_canonical and source_resolution.canonical_name not in detected_canonical:
             consistency_blockers.append(
-                "Declared source model does not match detected model(s): "
-                + ", ".join(sorted(detected_canonical))
-                + "."
+                migration_blocker(
+                    code="source_model_mismatch",
+                    category=BlockerCategory.SOURCE_CONSISTENCY,
+                    message=(
+                        "Declared source model does not match detected model(s): "
+                        + ", ".join(sorted(detected_canonical))
+                        + "."
+                    ),
+                    data={
+                        "declared": source_resolution.canonical_name,
+                        "detected": sorted(detected_canonical),
+                        "detected_platforms": sorted(analysis.requirements.source_platforms),
+                    },
+                )
             )
         elif len(detected_canonical) > 1:
             consistency_warnings.append(
@@ -507,9 +534,20 @@ class MigrationService:
         detected_providers = analysis.requirements.source_providers
         if detected_providers and source_resolution.identity.provider not in detected_providers:
             consistency_blockers.append(
-                "Declared source provider does not match detected provider(s): "
-                + ", ".join(sorted(detected_providers))
-                + "."
+                migration_blocker(
+                    code="source_provider_mismatch",
+                    category=BlockerCategory.SOURCE_CONSISTENCY,
+                    message=(
+                        "Declared source provider does not match detected provider(s): "
+                        + ", ".join(sorted(detected_providers))
+                        + "."
+                    ),
+                    data={
+                        "declared": source_resolution.identity.provider,
+                        "detected": sorted(detected_providers),
+                        "detected_models": sorted(detected_canonical),
+                    },
+                )
             )
         elif len(detected_providers) > 1:
             consistency_warnings.append(
@@ -521,9 +559,19 @@ class MigrationService:
             and source_resolution.platform.platform not in analysis.requirements.source_platforms
         ):
             consistency_blockers.append(
-                "Declared source platform does not match detected platform(s): "
-                + ", ".join(sorted(analysis.requirements.source_platforms))
-                + "."
+                migration_blocker(
+                    code="source_platform_mismatch",
+                    category=BlockerCategory.SOURCE_CONSISTENCY,
+                    message=(
+                        "Declared source platform does not match detected platform(s): "
+                        + ", ".join(sorted(analysis.requirements.source_platforms))
+                        + "."
+                    ),
+                    data={
+                        "declared": source_resolution.platform.platform,
+                        "detected": sorted(analysis.requirements.source_platforms),
+                    },
+                )
             )
         elif len(analysis.requirements.source_platforms) > 1:
             consistency_warnings.append(
@@ -1126,6 +1174,12 @@ class MigrationService:
                 "Call list_adaptation_tasks(run_dir) ONCE to get the per-file adaptation "
                 "worklist; its shared_prompt_guidance applies to every prompt task, and "
                 "there is no need to re-list between submissions.",
+                "If the worklist reports blockers, call get_blocker_resolutions(run_dir) "
+                "and present each blocker's question, options, consequences, and "
+                "evidence VERBATIM to the user, one blocker at a time; record each user "
+                "answer with record_blocker_decision. Never choose on the user's "
+                "behalf, and never retry submissions to make a blocker disappear — "
+                "recorded decisions are the only way a blocker is resolved.",
                 "For every prompt task, adapt the prompt minimally using its "
                 "evidence-linked guidance and call submit_adapted_prompt; for every "
                 "file task, write the complete adapted file and call "
@@ -1153,6 +1207,18 @@ class MigrationService:
         """Scope-isolated researcher and reviewer prompts for a run's request."""
         return render_research_prompts(Path(run_dir))
 
+    def _run_service(
+        self,
+        run_dir: Path,
+        *,
+        now: datetime | None = None,
+    ) -> tuple[MigrationService, list[str]]:
+        """The service for a run: canonical registry plus its session overlay."""
+        if (run_dir / "session-manifest.yaml").is_file():
+            service, manifest = self.load_session_service(run_dir, as_of=now or datetime.now(UTC))
+            return service, manifest_summary_lines(manifest)
+        return self, []
+
     def _plan_for_run(
         self,
         config: MigrationRunConfig,
@@ -1160,12 +1226,14 @@ class MigrationService:
         *,
         now: datetime | None = None,
     ) -> MigrationPlan:
-        """Plan a run over canonical knowledge plus its session overlay when built."""
-        service: MigrationService = self
-        session_lines: list[str] = []
-        if (run_dir / "session-manifest.yaml").is_file():
-            service, manifest = self.load_session_service(run_dir, as_of=now or datetime.now(UTC))
-            session_lines = manifest_summary_lines(manifest)
+        """Plan a run over canonical knowledge plus its session overlay when built.
+
+        Recorded blocker decisions are re-applied on every regeneration:
+        redesign/accept decisions suppress exactly the live blocker they name
+        (injecting the required redesign task), and decisions that no longer
+        match a live blocker are reported as stale, never silently applied.
+        """
+        service, session_lines = self._run_service(run_dir, now=now)
         plan = service.generate_migration_plan(
             config.application_root,
             config.source.model,
@@ -1178,7 +1246,7 @@ class MigrationService:
         )
         if session_lines:
             plan = plan.model_copy(update={"warnings": [*plan.warnings, *session_lines]})
-        return plan
+        return apply_decisions(plan, load_decision_log(run_dir, config.run_id), config)
 
     def list_adaptation_tasks(
         self,
@@ -1191,6 +1259,189 @@ class MigrationService:
         config = load_run_config(workspace)
         plan = self._plan_for_run(config, workspace, now=now)
         return derive_adaptation_tasks(config, plan, workspace)
+
+    def get_blocker_resolutions(
+        self,
+        run_dir: Path | str,
+        *,
+        now: datetime | None = None,
+    ) -> BlockerResolutionSet:
+        """Per-blocker questions with registry-backed options for user decisions."""
+        workspace = Path(run_dir)
+        config = load_run_config(workspace)
+        service, _ = self._run_service(workspace, now=now)
+        plan = self._plan_for_run(config, workspace, now=now)
+        analysis = self.scan_application(
+            config.application_root, prompt_sources=config.prompt_sources or None
+        )
+        return BlockerResolutionSet(
+            run_id=config.run_id,
+            resolutions=build_blocker_resolutions(
+                service.registry, config, plan, analysis, str(workspace)
+            ),
+            decisions=plan.decisions,
+            guidance=list(RESOLUTION_GUIDANCE),
+        )
+
+    def record_blocker_decision(
+        self,
+        run_dir: Path | str,
+        blocker_id: str,
+        option_id: str,
+        rationale: str = "",
+        *,
+        decided_on: date | None = None,
+        now: datetime | None = None,
+    ) -> BlockerDecisionResult:
+        """Record one user decision for one live blocker; fail closed otherwise.
+
+        Retarget/correction decisions update the run's migration.yaml identity
+        immediately (registry-first, so an unknown identity is refused);
+        redesign/accept decisions only mark the durable decision, which every
+        subsequent plan regeneration re-applies.
+        """
+        workspace = Path(run_dir)
+        config = load_run_config(workspace)
+        resolutions = self.get_blocker_resolutions(workspace, now=now)
+        resolution = next(
+            (item for item in resolutions.resolutions if item.blocker.id == blocker_id),
+            None,
+        )
+        if resolution is None:
+            return BlockerDecisionResult(
+                accepted=False,
+                problems=[
+                    f"blocker {blocker_id!r} is not an unresolved blocker of this run; "
+                    "it may already be resolved by a decision, fixed in the "
+                    "application, or stale — use the current get_blocker_resolutions "
+                    "output"
+                ],
+                unresolved_blockers=[item.blocker.rendered for item in resolutions.resolutions],
+                message="Rejected: unknown or already-resolved blocker id.",
+            )
+        option = next((item for item in resolution.options if item.id == option_id), None)
+        if option is None:
+            return BlockerDecisionResult(
+                accepted=False,
+                problems=[
+                    f"option {option_id!r} does not exist for blocker {blocker_id!r}; "
+                    "valid options: " + ", ".join(item.id for item in resolution.options)
+                ],
+                message="Rejected: unknown option id.",
+            )
+        if option.kind is ResolutionKind.ACCEPT_WITH_RATIONALE and not rationale.strip():
+            return BlockerDecisionResult(
+                accepted=False,
+                problems=[
+                    "an accept decision requires the user's own free-text rationale; "
+                    "record their words, not a placeholder"
+                ],
+                message="Rejected: accept-with-rationale requires a rationale.",
+            )
+        decision = BlockerDecision(
+            blocker_id=blocker_id,
+            blocker_code=resolution.blocker.code,
+            blocker_message=resolution.blocker.message,
+            option_id=option.id,
+            kind=option.kind,
+            summary=option.summary,
+            rationale=rationale.strip() or option.summary,
+            decided_on=decided_on or date.today(),
+            target_change=option.target_change,
+            source_change=option.source_change,
+            task=option.task,
+        )
+        service, _ = self._run_service(workspace, now=now)
+        config_updated = False
+        if option.kind in {ResolutionKind.RETARGET, ResolutionKind.CORRECTION}:
+            side = "target" if option.kind is ResolutionKind.RETARGET else "source"
+            change = option.target_change if side == "target" else option.source_change
+            assert change is not None
+            identity = config.target if side == "target" else config.source
+            try:
+                if change.model and change.platform is None:
+                    # A model correction must not inherit the mistakenly
+                    # declared platform; pin the model's own representation.
+                    resolved = service.resolve_model(change.model)
+                    if resolved.platform is None:
+                        if len(resolved.platforms) != 1:
+                            return BlockerDecisionResult(
+                                accepted=False,
+                                problems=[
+                                    f"{change.model!r} has multiple platform "
+                                    "representations and none was detected in the "
+                                    "application; ask the user which platform the "
+                                    f"{side} runs on and restart with start_migration"
+                                ],
+                                message="Rejected: the corrected identity is ambiguous.",
+                            )
+                        resolved = service.resolve_model(
+                            change.model, resolved.platforms[0].platform
+                        )
+                else:
+                    resolved = service.resolve_model(
+                        change.model or identity.model,
+                        change.platform or identity.platform,
+                        change.endpoint,
+                    )
+            except RegistryError as exc:
+                return BlockerDecisionResult(
+                    accepted=False,
+                    problems=[f"the chosen identity does not resolve in the registry: {exc}"],
+                    message="Rejected: the decision's identity change does not resolve.",
+                )
+            assert resolved.platform is not None
+            new_identity = ModelEndpointIdentity(
+                provider=resolved.identity.provider,
+                platform=resolved.platform.platform,
+                model=resolved.canonical_name,
+                endpoint=resolved.platform.endpoint,
+            )
+            config = config.model_copy(
+                update={
+                    side: new_identity,
+                    f"{side}_model_id": resolved.platform.model_id,
+                }
+            )
+            write_run_config(workspace, config)
+            config_updated = True
+        log = upsert_decision(load_decision_log(workspace, config.run_id), decision)
+        save_decision_log(workspace, log)
+        plan = self._plan_for_run(config, workspace, now=now)
+        unresolved = [blocker.rendered for blocker in plan.blockers]
+        stale = [render_applied_decision(item) for item in plan.decisions if item.status == "stale"]
+        next_steps: list[str] = []
+        if unresolved and config_updated:
+            next_steps.append(
+                "The decision changed the run identity, so the plan regenerated; call "
+                "get_blocker_resolutions once for the refreshed questions and continue "
+                "one blocker at a time."
+            )
+        elif unresolved:
+            next_steps.append(
+                "Continue with the remaining blockers from the resolutions already "
+                "returned, one at a time; record each user answer with "
+                "record_blocker_decision."
+            )
+        else:
+            next_steps.append(
+                "Every blocker is resolved. Call list_adaptation_tasks(run_dir) once "
+                "(the plan changed), work through the tasks, then "
+                "finalize_migration(run_dir)."
+            )
+        return BlockerDecisionResult(
+            accepted=True,
+            decision=decision,
+            run_config_updated=config_updated,
+            unresolved_blockers=unresolved,
+            stale_decisions=stale,
+            message=(
+                f"Decision recorded for blocker {resolution.blocker.code} "
+                f"[{blocker_id}]: {option.summary} "
+                f"{len(unresolved)} unresolved blocker(s) remain."
+            ),
+            next_steps=next_steps,
+        )
 
     def _validate_prompt_submission(
         self,
@@ -1319,21 +1570,40 @@ class MigrationService:
         Path(paths.report_path).write_text(report, encoding="utf-8")
         adapted_prompts = sum(entry.kind == "prompt" for entry in log.entries)
         adapted_files = sum(entry.kind == "file" for entry in log.entries)
+        resolved = [
+            render_applied_decision(item) for item in plan.decisions if item.status == "applied"
+        ]
+        stale = [render_applied_decision(item) for item in plan.decisions if item.status == "stale"]
+        blocker_note = (
+            f"{len(plan.blockers)} blocker(s) remain unresolved; drive them to "
+            "user decisions with get_blocker_resolutions/record_blocker_decision."
+            if plan.blockers
+            else (
+                f"every blocker is resolved ({len(resolved)} by recorded decision)."
+                if resolved
+                else "no blockers."
+            )
+        )
+        if stale:
+            blocker_note += f" {len(stale)} recorded decision(s) are STALE and were not applied."
         return MigrationRunFinalization(
             run_id=config.run_id,
             manifest_path=paths.manifest_path,
             report_path=paths.report_path,
             migration_complexity=plan.migration_complexity,
-            blockers=plan.blockers,
+            unresolved_blockers=[blocker.rendered for blocker in plan.blockers],
+            resolved_blockers=resolved,
+            stale_decisions=stale,
             adapted_prompts=adapted_prompts,
             adapted_files=adapted_files,
             coverage_gaps=gaps,
             message=(
                 "Migration run finalized. Review output/migration-report.md; "
                 + (
-                    f"{len(gaps)} affected file(s) still lack an adaptation deliverable."
+                    f"{len(gaps)} affected file(s) still lack an adaptation deliverable; "
                     if gaps
-                    else "every affected file has an adaptation deliverable."
+                    else "every affected file has an adaptation deliverable; "
                 )
+                + blocker_note
             ),
         )

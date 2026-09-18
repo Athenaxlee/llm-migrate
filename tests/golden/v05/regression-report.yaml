@@ -1,7 +1,7 @@
 schema_version: '2'
 suite_name: v05-golden
-evaluation_suite_sha256: cddf93b1647811f745a4cd3c692e61e93dd8d59fd058a0dfdee7610c4188020a
-migration_manifest_sha256: f70f6ad7346348d353badb9907b0f3470106f5b258aa73c1abe0cf7a02085917
+evaluation_suite_sha256: 7e8ae29120c266d4155ed6df93f459026a0b8fb4e9bbd2a02e89dc2fc6486eb5
+migration_manifest_sha256: 11ee3317492b0b7e3edfff416758252c6844ad7792cbd55c08b07509260c41f1
 source:
   model: claude-sonnet-5
   provider: anthropic

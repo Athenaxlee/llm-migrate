@@ -37,7 +37,19 @@ platforms:
     batch_inference: null
     context_window_tokens: null
     maximum_output_tokens: null
-  sources: []
+  sources:
+  - id: aws-sonnet-5-card-platform-2026-08-08
+    url: https://docs.aws.amazon.com/bedrock/latest/userguide/model-card-anthropic-claude-sonnet-5.html
+    title: Claude Sonnet 5 - Amazon Bedrock
+    source_type: official_documentation
+    authority_tier: 2
+    publisher: Amazon Web Services
+    retrieved_at: '2026-08-09'
+    published_at: null
+    supports:
+    - platforms
+    - capabilities
+    notes: null
 - platform: amazon-bedrock
   model_id: anthropic.claude-sonnet-5
   endpoint: bedrock-mantle
@@ -55,7 +67,19 @@ platforms:
     batch_inference: null
     context_window_tokens: null
     maximum_output_tokens: null
-  sources: []
+  sources:
+  - id: aws-sonnet-5-card-mantle-2026-08-08
+    url: https://docs.aws.amazon.com/bedrock/latest/userguide/model-card-anthropic-claude-sonnet-5.html
+    title: Claude Sonnet 5 - Amazon Bedrock
+    source_type: official_documentation
+    authority_tier: 2
+    publisher: Amazon Web Services
+    retrieved_at: '2026-08-09'
+    published_at: null
+    supports:
+    - platforms
+    - capabilities
+    notes: null
 lifecycle:
   status: active
   announced_on: '2026-06-30'

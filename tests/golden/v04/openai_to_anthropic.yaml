@@ -1,5 +1,5 @@
 migration:
-  schema_version: '3'
+  schema_version: '4'
   source:
     model: gpt-5.6-sol
     provider: openai
@@ -583,6 +583,7 @@ migration:
       end_line: 43
   optional_changes: []
   blockers: []
+  decisions: []
   warnings:
   - Map reasoning_effort to effort; reasoning-control semantics require review.
   unknowns:
@@ -601,7 +602,7 @@ migration:
   - One or both values for 'top_p' are unknown; compatibility must not be assumed.
   prompt_changes: []
   invocation_changes:
-  - schema_version: '2'
+  - schema_version: '3'
     source_model: gpt-5.6-sol
     target_model: claude-sonnet-5
     source_analysis:

@@ -70,6 +70,7 @@ class MigrationRunPaths(StrictModel):
     run_dir: str
     config_path: str
     request_path: str
+    decisions_path: str
     research_dir: str
     review_dir: str
     output_dir: str
@@ -180,14 +181,21 @@ class FileSubmissionResult(StrictModel):
 
 
 class MigrationRunFinalization(StrictModel):
-    """Summary of the finalized run output set."""
+    """Summary of the finalized run output set.
 
-    schema_version: Literal["1"] = "1"
+    Blocker state is reported honestly in three buckets: blockers still
+    unresolved, blockers resolved by a recorded user decision (with the
+    decision), and recorded decisions that no longer match a live blocker.
+    """
+
+    schema_version: Literal["2"] = "2"
     run_id: str
     manifest_path: str
     report_path: str
     migration_complexity: str
-    blockers: list[str] = Field(default_factory=list)
+    unresolved_blockers: list[str] = Field(default_factory=list)
+    resolved_blockers: list[str] = Field(default_factory=list)
+    stale_decisions: list[str] = Field(default_factory=list)
     adapted_prompts: int
     adapted_files: int
     coverage_gaps: list[str] = Field(default_factory=list)
@@ -215,6 +223,7 @@ def run_paths(run_dir: Path) -> MigrationRunPaths:
         run_dir=str(run_dir),
         config_path=str(run_dir / RUN_CONFIG_FILENAME),
         request_path=str(run_dir / "request.yaml"),
+        decisions_path=str(run_dir / "decisions.yaml"),
         research_dir=str(run_dir / "research"),
         review_dir=str(run_dir / "review"),
         output_dir=str(output),
@@ -487,7 +496,7 @@ def derive_adaptation_tasks(
         target_model_id=config.target_model_id,
         prompt_tasks=prompt_tasks,
         file_tasks=file_tasks,
-        blockers=plan.blockers,
+        blockers=[blocker.rendered for blocker in plan.blockers],
         guidance=[
             "Read each source file from the application, produce the complete adapted "
             "version, and submit it with submit_adapted_file; submit rewritten prompts "
@@ -509,9 +518,12 @@ def derive_adaptation_tasks(
             "Call this worklist once and work through it; each submission result "
             "already confirms acceptance, and finalize_migration reports any "
             "remaining gaps, so there is no need to re-list between submissions.",
-            "If `blockers` is non-empty, surface them to the user before finalizing "
-            "instead of retrying submissions; blockers come from the plan, not from "
-            "your submissions, and only user decisions resolve them.",
+            "If `blockers` is non-empty, call get_blocker_resolutions(run_dir) and "
+            "present each blocker's question, options, and evidence VERBATIM to the "
+            "user, one blocker at a time; record each user answer with "
+            "record_blocker_decision. Blockers come from the plan, not from your "
+            "submissions — never retry submissions to make one disappear, and never "
+            "choose an option on the user's behalf.",
             "Every submission must be the full finalized file content, not a diff.",
             "State in `changes` what was changed and in `rationale` why the target model "
             "needs it; both appear verbatim in the final report.",

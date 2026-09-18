@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 from datetime import date, datetime, timedelta
 from decimal import Decimal
 from enum import IntEnum, StrEnum
@@ -856,8 +857,135 @@ class PlatformConfigurationMigration(StrictModel):
     review_notes: list[str] = Field(default_factory=list)
 
 
+class BlockerCategory(StrEnum):
+    CAPABILITY = "capability"
+    SOURCE_CONSISTENCY = "source_consistency"
+    PLATFORM_AMBIGUITY = "platform_ambiguity"
+    CONTEXT_WINDOW = "context_window"
+    INVALID_SCHEMA = "invalid_schema"
+    PARAMETER = "parameter"
+    OTHER = "other"
+
+
+class MigrationBlocker(StrictModel):
+    """One structured migration blocker with a stable identity and its evidence.
+
+    The `id` is deterministic over (category, code, message, discriminator), so
+    the same blocker keeps the same id across plan regenerations and a recorded
+    decision can keep matching it; when the underlying facts change, the id
+    changes and dependent decisions surface as stale instead of misapplying.
+    """
+
+    id: str
+    code: str
+    category: BlockerCategory
+    message: str
+    evidence_urls: list[str] = Field(default_factory=list)
+    locations: list[SourceLocation] = Field(default_factory=list)
+    data: dict[str, Any] | None = None
+
+    @property
+    def rendered(self) -> str:
+        """Stable human-readable view used by reports and worklists."""
+        text = f"{self.message} [{self.category.value}; id: {self.id}]"
+        if self.evidence_urls:
+            text += f" (evidence: {self.evidence_urls[0]})"
+        return text
+
+
+def migration_blocker(
+    code: str,
+    category: BlockerCategory,
+    message: str,
+    *,
+    evidence_urls: list[str] | None = None,
+    locations: list[SourceLocation] | None = None,
+    data: dict[str, Any] | None = None,
+    discriminator: str = "",
+) -> MigrationBlocker:
+    """Build a blocker with its deterministic stable id."""
+    digest = hashlib.sha256(
+        f"{category.value}|{code}|{message}|{discriminator}".encode()
+    ).hexdigest()[:10]
+    return MigrationBlocker(
+        id=f"{code}:{digest}",
+        code=code,
+        category=category,
+        message=message,
+        evidence_urls=evidence_urls or [],
+        locations=locations or [],
+        data=data,
+    )
+
+
+def dedupe_blockers(blockers: list[MigrationBlocker]) -> list[MigrationBlocker]:
+    """Stable-id deduplication with a deterministic report order."""
+    unique: dict[str, MigrationBlocker] = {}
+    for blocker in blockers:
+        unique.setdefault(blocker.id, blocker)
+    return sorted(unique.values(), key=lambda item: (item.category.value, item.code, item.message))
+
+
+class ResolutionKind(StrEnum):
+    RETARGET = "retarget"
+    REDESIGN_TASK = "redesign_task"
+    CORRECTION = "correction"
+    ACCEPT_WITH_RATIONALE = "accept_with_rationale"
+
+
+class EndpointChange(StrictModel):
+    """A partial source/target identity change; unset fields keep their value."""
+
+    model: str | None = None
+    platform: str | None = None
+    endpoint: str | None = None
+
+
+class RedesignTaskSpec(StrictModel):
+    """The required adaptation task a redesign decision injects into the plan."""
+
+    category: Literal[
+        "prompt",
+        "invocation",
+        "parameter",
+        "tool",
+        "output_contract",
+        "configuration",
+        "multimodal",
+        "error_handling",
+    ]
+    description: str
+    guidance: list[str] = Field(default_factory=list)
+    evidence_urls: list[str] = Field(default_factory=list)
+
+
+class BlockerDecision(StrictModel):
+    """One durable, auditable user decision about one migration blocker."""
+
+    schema_version: Literal["1"] = "1"
+    blocker_id: str
+    blocker_code: str
+    blocker_message: str
+    option_id: str
+    kind: ResolutionKind
+    summary: str
+    rationale: str
+    decided_on: date
+    target_change: EndpointChange | None = None
+    source_change: EndpointChange | None = None
+    task: RedesignTaskSpec | None = None
+
+
+class AppliedBlockerDecision(StrictModel):
+    """How one recorded decision affected the current plan regeneration."""
+
+    decision: BlockerDecision
+    status: Literal["applied", "stale"]
+    detail: str
+
+
 class InvocationMigrationSpec(StrictModel):
-    schema_version: Literal["1", "2"] = "2"
+    schema_version: Literal["3"] = "3"
     source_model: str
     target_model: str
     source_analysis: InvocationAnalysis
@@ -868,13 +996,13 @@ class InvocationMigrationSpec(StrictModel):
     configuration_migration: PlatformConfigurationMigration | None = None
     required_changes: list[str]
     warnings: list[str]
-    blockers: list[str]
+    blockers: list[MigrationBlocker]
 
 
 class MigrationPlan(StrictModel):
     """Canonical application-level V0.4 migration manifest."""
 
-    schema_version: Literal["3"] = "3"
+    schema_version: Literal["4"] = "4"
     source: MigrationEndpoint
     target: MigrationEndpoint
     application: MigrationApplicationSummary
@@ -884,7 +1012,8 @@ class MigrationPlan(StrictModel):
     affected_files: list[str]
     required_changes: list[PlannedMigrationChange]
     optional_changes: list[PlannedMigrationChange]
-    blockers: list[str]
+    blockers: list[MigrationBlocker]
+    decisions: list[AppliedBlockerDecision] = Field(default_factory=list)
     warnings: list[str]
     unknowns: list[str]
     prompt_changes: list[PromptMigrationSpec]

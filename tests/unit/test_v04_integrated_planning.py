@@ -128,7 +128,7 @@ def test_supported_end_to_end_routes_produce_actionable_manifests(
     )
     after = {path: path.read_bytes() for path in root.rglob("*") if path.is_file()}
     assert before == after
-    assert plan.schema_version == "3"
+    assert plan.schema_version == "4"
     assert plan.source.platform == source_platform
     assert plan.target.platform == target_platform
     assert plan.affected_files
@@ -266,8 +266,8 @@ def test_unsupported_target_and_incompatible_tools_remain_blockers(
         target_platform="budget-platform",
     )
     assert plan.overall_migration_risk is ComparisonSeverity.BREAKING
-    assert any("tool use" in item for item in plan.blockers)
-    assert any("No deterministic invocation adapter" in item for item in plan.blockers)
+    assert any("tool use" in item.message for item in plan.blockers)
+    assert any("No deterministic invocation adapter" in item.message for item in plan.blockers)
     assert any("One or both values" in item for item in plan.unknowns)
 
 

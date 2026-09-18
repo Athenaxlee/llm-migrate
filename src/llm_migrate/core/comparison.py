@@ -54,6 +54,17 @@ def _override_aware_capability_url(
     return profile_url
 
 
+def capability_evidence_url(
+    profile: ModelProfile,
+    platform: PlatformAvailability | None,
+    field: str,
+) -> str | None:
+    """Override-aware evidence URL for one effective-capability fact."""
+    capabilities = effective_capabilities(profile, platform)
+    profile_url = evidence_url(profile, capabilities.sources, "capabilities")
+    return _override_aware_capability_url(platform, field, profile_url)
+
+
 def _item(
     category: str,
     field: str,

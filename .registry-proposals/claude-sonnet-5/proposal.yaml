@@ -16,6 +16,18 @@ changes:
       - anthropic-model-deprecations-2026-08-08
       - aws-sonnet-5-card-2026-08-08
     reason: Official model, launch, lifecycle, and Bedrock documentation was rechecked.
+  - field_path: platforms.amazon-bedrock.sources
+    change_type: update
+    current_value: null
+    proposed_value: AWS model card attached as a platform-level source on both Bedrock entries
+    confidence: authoritative
+    risk: low
+    supporting_sources:
+      - aws-sonnet-5-card-2026-08-08
+    reason: The Bedrock capability overrides (structured_output false, prompt_caching and
+      streaming true) are platform-scoped facts documented by the AWS model card; attaching
+      the card to the platform entries lets override-derived claims cite their own evidence
+      instead of carrying no link.
 conflicts:
   - field_path: parameters.adaptive_thinking.disable_supported
     change_type: conflict
@@ -43,6 +55,12 @@ review:
       decision: approved
       disposition: promoted
       rationale: The cited official sources support the candidate and the evidence refresh.
+    - field_path: platforms.amazon-bedrock.sources
+      decision: approved
+      disposition: promoted
+      rationale: The AWS model card already backed these platform-scoped overrides at the
+        profile level; attaching it to the platform entries only makes that provenance
+        addressable where the override-derived claims are made (2026-09-18).
     - field_path: parameters.adaptive_thinking.disable_supported
       decision: approved_as_conflict
       disposition: conflict_record_promoted

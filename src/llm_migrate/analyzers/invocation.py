@@ -7,13 +7,16 @@ from typing import Any, Literal
 from jsonschema import Draft202012Validator
 from jsonschema.exceptions import SchemaError
 
+from llm_migrate.core.comparison import capability_evidence_url, evidence_url
 from llm_migrate.core.models import (
     ApplicationAnalysis,
+    BlockerCategory,
     CompatibilityAssessment,
     CompatibilityState,
     CouplingKind,
     InvocationAnalysis,
     InvocationMigrationSpec,
+    MigrationBlocker,
     ParameterMapping,
     ParameterState,
     ParserAssumption,
@@ -25,6 +28,8 @@ from llm_migrate.core.models import (
     TargetInvocation,
     ToolDefinition,
     ToolSchemaMigration,
+    dedupe_blockers,
+    migration_blocker,
 )
 
 
@@ -645,14 +650,34 @@ def _append_contract_review(
     notes: list[str],
     *,
     warnings: list[str],
-    blockers: list[str],
+    blockers: list[MigrationBlocker],
+    capability: str,
+    location: SourceLocation,
+    capability_url: str | None,
 ) -> None:
     if state is CompatibilityState.UNSUPPORTED:
-        blockers.append(f"{label} has no safe target payload candidate.")
+        blockers.append(
+            migration_blocker(
+                code=f"{capability}_payload_unsupported",
+                category=BlockerCategory.CAPABILITY,
+                message=f"{label} has no safe target payload candidate.",
+                evidence_urls=[capability_url] if capability_url else [],
+                locations=[location],
+                data={"capability": capability},
+            )
+        )
     for note in notes:
         message = f"{label} migration: {note}"
         if note.startswith("Invalid Draft 2020-12 JSON Schema"):
-            blockers.append(message)
+            blockers.append(
+                migration_blocker(
+                    code="invalid_json_schema",
+                    category=BlockerCategory.INVALID_SCHEMA,
+                    message=message,
+                    locations=[location],
+                    data={"capability": capability},
+                )
+            )
         elif state in {
             CompatibilityState.UNKNOWN,
             CompatibilityState.SEMANTICALLY_DIFFERENT,
@@ -741,13 +766,32 @@ def _configuration_migration(
     )
 
 
+def _finding_locations(
+    application: ApplicationAnalysis,
+    kind: CouplingKind,
+    *,
+    value: str | None = None,
+    parameter: str | None = None,
+) -> list[SourceLocation]:
+    return sorted(
+        {
+            item.location
+            for item in application.findings
+            if item.kind is kind
+            and (value is None or item.value == value)
+            and (parameter is None or (item.metadata or {}).get("name") == parameter)
+        },
+        key=lambda item: (item.path, item.line, item.column),
+    )
+
+
 def prepare_invocation_migration(
     application: ApplicationAnalysis,
     source: ResolvedModel,
     target: ResolvedModel,
     *,
     preparation_warnings: list[str] | None = None,
-    preparation_blockers: list[str] | None = None,
+    preparation_blockers: list[MigrationBlocker] | None = None,
 ) -> InvocationMigrationSpec:
     analysis = analyze_invocation(application, target)
     target_invocation = _target_invocation(target)
@@ -760,11 +804,22 @@ def prepare_invocation_migration(
     configuration_migration = _configuration_migration(application, source, target_invocation)
     mappings: list[ParameterMapping] = []
     mapped_registry_parameters: set[str] = set()
-    blockers: list[str] = list(preparation_blockers or [])
+    blockers: list[MigrationBlocker] = list(preparation_blockers or [])
     warnings = [*analysis.warnings, *(preparation_warnings or [])]
+
+    def capability_url(field: str) -> str | None:
+        return capability_evidence_url(target.profile, target.platform, field)
+
     if target_invocation.operation == "unknown":
         blockers.append(
-            f"No deterministic invocation adapter exists for {target_invocation.platform}."
+            migration_blocker(
+                code="no_invocation_adapter",
+                category=BlockerCategory.CAPABILITY,
+                message=(
+                    f"No deterministic invocation adapter exists for {target_invocation.platform}."
+                ),
+                data={"platform": target_invocation.platform},
+            )
         )
     for name, value in sorted(analysis.parameters.items()):
         registry_name, semantic_mapping = _registry_parameter_name(name, target)
@@ -784,7 +839,22 @@ def prepare_invocation_migration(
         elif support.state is ParameterState.UNSUPPORTED:
             state = CompatibilityState.UNSUPPORTED
             rationale = support.notes or f"Target marks {registry_name} {support.state.value}."
-            blockers.append(f"Parameter {name} cannot be carried over unchanged: {rationale}")
+            blockers.append(
+                migration_blocker(
+                    code="parameter_unsupported",
+                    category=BlockerCategory.PARAMETER,
+                    message=f"Parameter {name} cannot be carried over unchanged: {rationale}",
+                    evidence_urls=(
+                        [url]
+                        if (url := evidence_url(target.profile, support.sources, "parameters"))
+                        else []
+                    ),
+                    locations=_finding_locations(
+                        application, CouplingKind.PARAMETER, parameter=name
+                    ),
+                    data={"parameter": name, "registry_name": registry_name, "notes": rationale},
+                )
+            )
             target_name = None
             target_container = None
         elif support.state is ParameterState.DEPRECATED:
@@ -833,12 +903,21 @@ def prepare_invocation_migration(
     for name in missing_required_parameters:
         warnings.append(f"Target requires parameter {name}; no source value was detected.")
 
-    for assessment in (
-        analysis.tool_compatibility,
-        analysis.structured_output_compatibility,
+    for capability_field, assessment in (
+        ("tool_use", analysis.tool_compatibility),
+        ("structured_output", analysis.structured_output_compatibility),
     ):
         if assessment and assessment.state is CompatibilityState.UNSUPPORTED:
-            blockers.append(assessment.rationale)
+            blockers.append(
+                migration_blocker(
+                    code=f"{capability_field}_unsupported",
+                    category=BlockerCategory.CAPABILITY,
+                    message=assessment.rationale,
+                    evidence_urls=([url] if (url := capability_url(capability_field)) else []),
+                    locations=assessment.locations,
+                    data={"capability": capability_field},
+                )
+            )
         elif assessment and assessment.state in {
             CompatibilityState.UNKNOWN,
             CompatibilityState.SEMANTICALLY_DIFFERENT,
@@ -851,6 +930,9 @@ def prepare_invocation_migration(
             tool_migration.review_notes,
             warnings=warnings,
             blockers=blockers,
+            capability="tool_use",
+            location=tool_migration.source_location,
+            capability_url=capability_url("tool_use"),
         )
     for output_migration in structured_output_migrations:
         _append_contract_review(
@@ -859,17 +941,40 @@ def prepare_invocation_migration(
             output_migration.review_notes,
             warnings=warnings,
             blockers=blockers,
+            capability="structured_output",
+            location=output_migration.source_location,
+            capability_url=capability_url("structured_output"),
         )
     if analysis.streaming and target.effective_capabilities.streaming is False:
         blockers.append(
-            "The source streams responses, but the target declares streaming unsupported."
+            migration_blocker(
+                code="streaming_unsupported",
+                category=BlockerCategory.CAPABILITY,
+                message=(
+                    "The source streams responses, but the target declares streaming unsupported."
+                ),
+                evidence_urls=[url] if (url := capability_url("streaming")) else [],
+                locations=_finding_locations(application, CouplingKind.STREAMING),
+                data={"capability": "streaming"},
+            )
         )
     elif analysis.streaming and target.effective_capabilities.streaming is None:
         warnings.append("The source streams responses; target streaming support is unknown.")
     for modality in analysis.multimodal_inputs:
         capability = getattr(target.effective_capabilities, modality, None)
         if capability is False:
-            blockers.append(f"The target does not support required {modality}.")
+            blockers.append(
+                migration_blocker(
+                    code=f"{modality}_unsupported",
+                    category=BlockerCategory.CAPABILITY,
+                    message=f"The target does not support required {modality}.",
+                    evidence_urls=[url] if (url := capability_url(modality)) else [],
+                    locations=_finding_locations(
+                        application, CouplingKind.MULTIMODAL, value=modality
+                    ),
+                    data={"capability": modality},
+                )
+            )
         elif capability is None:
             warnings.append(f"Target support for required {modality} is unknown.")
 
@@ -900,8 +1005,19 @@ def prepare_invocation_migration(
         )
         if target_invocation.structured_output_field is None:
             blockers.append(
-                f"No deterministic structured-output configuration mapping exists for "
-                f"{target_invocation.platform}."
+                migration_blocker(
+                    code="structured_output_mapping_missing",
+                    category=BlockerCategory.CAPABILITY,
+                    message=(
+                        f"No deterministic structured-output configuration mapping exists for "
+                        f"{target_invocation.platform}."
+                    ),
+                    locations=analysis.structured_output_compatibility.locations,
+                    data={
+                        "capability": "structured_output",
+                        "platform": target_invocation.platform,
+                    },
+                )
             )
     for contract in analysis.multimodal_contracts:
         target_format = (
@@ -911,8 +1027,19 @@ def prepare_invocation_migration(
         )
         if target_format is None:
             blockers.append(
-                f"No deterministic {contract.modality} payload mapping exists for "
-                f"{target_invocation.platform}."
+                migration_blocker(
+                    code=f"{contract.modality}_mapping_missing",
+                    category=BlockerCategory.CAPABILITY,
+                    message=(
+                        f"No deterministic {contract.modality} payload mapping exists for "
+                        f"{target_invocation.platform}."
+                    ),
+                    locations=[contract.location],
+                    data={
+                        "capability": contract.modality,
+                        "platform": target_invocation.platform,
+                    },
+                )
             )
         elif contract.provider_format != target_format:
             required_changes.append(
@@ -937,5 +1064,5 @@ def prepare_invocation_migration(
         configuration_migration=configuration_migration,
         required_changes=required_changes,
         warnings=sorted(set(warnings)),
-        blockers=sorted(set(blockers)),
+        blockers=dedupe_blockers(blockers),
     )
