@@ -955,6 +955,35 @@ adaptation contracts in `core/workspace.py`, and research prompt rendering in
 stored only beneath the run's `output/` directory; the analyzed application is
 never mutated, preserving the review-first naming rationale above.
 
+### V1.4 blocker-resolution operations
+
+V1.4 makes blockers structured and decidable. Blockers are `MigrationBlocker`
+values (stable deterministic id, code, category, message, registry evidence
+URLs, source locations, machine-readable data) produced at their source in
+`analyzers/invocation.py`, `core/planning.py`, and the service consistency
+checks. Two operations, mirrored by the CLI and MCP, drive them to recorded
+user decisions:
+
+```text
+get_blocker_resolutions   (run blockers)
+record_blocker_decision   (run decide)
+```
+
+The deterministic resolver and decision lifecycle live in `core/blockers.py`:
+per blocker, the question to ask the user plus 2–5 options derived only from
+registry facts (retarget to a capable representation of the same model,
+alternative models via the existing recommendation engine, evidence-linked
+redesign tasks, exact source corrections, and an accept-with-rationale that is
+always present and never a default). Decisions persist in the run's
+`decisions.yaml` and are re-applied on every plan regeneration:
+retarget/correction decisions update `migration.yaml` registry-first, redesign
+decisions suppress exactly their blocker and inject the required
+evidence-linked adaptation task, accept decisions downgrade the blocker to a
+prominently reported accepted decision, and a decision whose blocker no longer
+exists is reported stale, never silently applied. The tool never chooses: the
+host agent presents each question with its options and evidence verbatim, and
+the user decides. Complexity stays `blocked` only for unresolved blockers.
+
 ---
 
 ## 12. Key Data Flows

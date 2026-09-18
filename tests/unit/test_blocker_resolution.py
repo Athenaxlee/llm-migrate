@@ -362,7 +362,7 @@ def test_guided_run_drives_blocked_to_finalized_without_relisting(
     assert len(finalization.resolved_blockers) == 1
     report = Path(finalization.report_path).read_text(encoding="utf-8")
     assert "## Decisions" in report
-    assert "Blocker decisions: 1 applied (0 accepted risk), 0 stale" in report
+    assert "Blocker decisions: 1 applied (0 accepted risk), 0 superseded, 0 stale" in report
 
 
 def test_mcp_blocker_tools_wrap_the_shared_workflow(
@@ -421,3 +421,268 @@ def test_cli_blockers_and_decide_commands(service: MigrationService, native_app:
     )
     assert decided.exit_code == 0, decided.output
     assert json.loads(decided.stdout)["accepted"] is True
+
+
+@pytest.fixture
+def oversize_prompt_run(service: MigrationService, tmp_path: Path) -> Path:
+    """A run blocked by context_window_exceeded (plus no_invocation_adapter)."""
+    app = tmp_path / "oversize_app"
+    app.mkdir()
+    (app / "app.py").write_text("VALUE = 1\n", encoding="utf-8")
+    (app / "prompt.txt").write_text("answer carefully " * 15000, encoding="utf-8")
+    start = service.start_migration_run(
+        app,
+        "fixture-alpha-large-v1",
+        "fixture-gamma-cheap-v1",
+        source_platform="fixture-api",
+        target_platform="budget-platform",
+        as_of=AS_OF,
+        research="skip",
+        prompt_sources=["prompt.txt"],
+    )
+    assert start.status == "ready" and start.paths is not None
+    return Path(start.paths.run_dir)
+
+
+def test_accepted_prompt_blocker_no_longer_rejects_submission(
+    service: MigrationService, oversize_prompt_run: Path
+) -> None:
+    run_dir = oversize_prompt_run
+    resolutions = service.get_blocker_resolutions(run_dir)
+    codes = {item.blocker.code for item in resolutions.resolutions}
+    assert "context_window_exceeded" in codes
+    for item in resolutions.resolutions:
+        result = service.record_blocker_decision(
+            run_dir,
+            item.blocker.id,
+            "accept",
+            "We ship the oversize prompt and monitor truncation in production.",
+            decided_on=AS_OF,
+        )
+        assert result.accepted, result.problems
+    assert result.unresolved_blockers == []
+
+    submitted = service.submit_adapted_prompt(
+        run_dir,
+        "prompt.txt",
+        "",
+        "Reviewed; the user accepted the context-window risk explicitly.",
+        unchanged=True,
+        submitted_on=AS_OF,
+    )
+    assert submitted.accepted, submitted.message
+    assert any(
+        "explicitly accepted by a recorded blocker decision" in issue.message
+        for issue in submitted.validation.issues
+    )
+    finalization = service.finalize_migration_run(run_dir)
+    assert finalization.unresolved_blockers == []
+    assert "prompt.txt" not in finalization.coverage_gaps
+
+
+def test_redesign_on_prompt_blocker_reaches_the_prompt_task(
+    service: MigrationService, oversize_prompt_run: Path
+) -> None:
+    run_dir = oversize_prompt_run
+    resolutions = service.get_blocker_resolutions(run_dir)
+    context = next(
+        item for item in resolutions.resolutions if item.blocker.code == "context_window_exceeded"
+    )
+    assert context.blocker.locations, "prompt blockers must carry their file"
+    result = service.record_blocker_decision(
+        run_dir, context.blocker.id, "redesign", decided_on=AS_OF
+    )
+    assert result.accepted, result.problems
+    tasks = service.list_adaptation_tasks(run_dir)
+    prompt_task = next(task for task in tasks.prompt_tasks if task.source_path == "prompt.txt")
+    assert any(
+        "Required change:" in line and "Reduce the prompt content" in line
+        for line in prompt_task.guidance
+    ), prompt_task.guidance
+
+
+def test_correction_option_carries_a_concrete_endpoint(
+    service: MigrationService, tmp_path: Path
+) -> None:
+    app = tmp_path / "bedrock_sonnet5_app"
+    app.mkdir()
+    (app / "app.py").write_text(
+        textwrap.dedent(
+            """\
+            import boto3
+
+            client = boto3.client("bedrock-runtime")
+            client.converse(
+                modelId="anthropic.claude-sonnet-5",
+                messages=[{"role": "user", "content": [{"text": "hello"}]}],
+            )
+            """
+        ),
+        encoding="utf-8",
+    )
+    start = service.start_migration_run(
+        app,
+        "claude-sonnet-4-6",  # wrong: the code runs claude-sonnet-5 on Bedrock
+        "gpt-5.6-sol",
+        source_platform="anthropic-api",
+        target_platform="openai-api",
+        as_of=AS_OF,
+        research="skip",
+    )
+    assert start.status == "ready" and start.paths is not None
+    run_dir = Path(start.paths.run_dir)
+    resolutions = service.get_blocker_resolutions(run_dir)
+    mismatch = next(
+        item for item in resolutions.resolutions if item.blocker.code == "source_model_mismatch"
+    )
+    correction = next(
+        option for option in mismatch.options if option.id == "correct-source-model-claude-sonnet-5"
+    )
+    # The corrected identity must be concrete: a multi-endpoint platform
+    # without an endpoint would make the tool's own option unrecordable.
+    assert correction.source_change is not None
+    assert correction.source_change.platform == "amazon-bedrock"
+    assert correction.source_change.endpoint == "bedrock-runtime"
+    result = service.record_blocker_decision(
+        run_dir, mismatch.blocker.id, correction.id, decided_on=AS_OF
+    )
+    assert result.accepted, result.problems
+    config = load_run_config(run_dir)
+    assert config.source.model == "claude-sonnet-5"
+    assert config.source.endpoint == "bedrock-runtime"
+
+
+def test_same_invalid_schema_in_two_files_stays_two_blockers(
+    service: MigrationService, tmp_path: Path
+) -> None:
+    app = tmp_path / "twin_schema_app"
+    app.mkdir()
+    module = textwrap.dedent(
+        """\
+        from anthropic import Anthropic
+
+        client = Anthropic()
+        client.messages.create(
+            model="claude-sonnet-4-6",
+            messages=[{"role": "user", "content": "find"}],
+            max_tokens=100,
+            tools=[
+                {
+                    "name": "find_order",
+                    "input_schema": {"type": "object", "properties": []},
+                }
+            ],
+        )
+        """
+    )
+    (app / "one.py").write_text(module, encoding="utf-8")
+    (app / "two.py").write_text(module, encoding="utf-8")
+    start = service.start_migration_run(
+        app,
+        "claude-sonnet-4-6",
+        "claude-sonnet-5",
+        source_platform="anthropic-api",
+        target_platform="anthropic-api",
+        as_of=AS_OF,
+        research="skip",
+    )
+    assert start.status == "ready" and start.paths is not None
+    tasks = service.list_adaptation_tasks(start.paths.run_dir)
+    schema_blockers = [line for line in tasks.blockers if "invalid_json_schema" in line]
+    assert len(schema_blockers) == 2
+    assert any("one.py" in line for line in schema_blockers)
+    assert any("two.py" in line for line in schema_blockers)
+
+
+def test_foreign_decision_log_is_refused(service: MigrationService, native_app: Path) -> None:
+    run_dir = _start_blocked_run(service, native_app)
+    blocker_id = _blocker_id(service, run_dir, "structured_output_unsupported")
+    result = service.record_blocker_decision(
+        run_dir, blocker_id, "accept", "Reviewed and accepted.", decided_on=AS_OF
+    )
+    assert result.accepted
+    log = yaml.safe_load((run_dir / "decisions.yaml").read_text(encoding="utf-8"))
+    log["run_id"] = "some-other-run"
+    (run_dir / "decisions.yaml").write_text(yaml.safe_dump(log), encoding="utf-8")
+    from llm_migrate.core.workspace import WorkspaceError
+
+    with pytest.raises(WorkspaceError, match="belongs to run 'some-other-run'"):
+        service.list_adaptation_tasks(run_dir)
+
+
+def test_placeholder_rationale_is_refused(service: MigrationService, native_app: Path) -> None:
+    run_dir = _start_blocked_run(service, native_app)
+    resolutions = service.get_blocker_resolutions(run_dir)
+    first = resolutions.resolutions[0]
+    accept = first.options[-1]
+    # The advertised next_step never embeds a rationale an agent could echo.
+    assert "rationale" not in accept.next_step.arguments
+    refused = service.record_blocker_decision(
+        run_dir,
+        first.blocker.id,
+        "accept",
+        "<the user's own free-text rationale (required)>",
+    )
+    assert not refused.accepted
+    assert any("placeholder" in problem for problem in refused.problems)
+
+
+def test_superseded_retarget_is_history_not_a_stale_alarm(
+    service: MigrationService, native_app: Path
+) -> None:
+    run_dir = _start_blocked_run(service, native_app)
+    blocker_id = _blocker_id(service, run_dir, "structured_output_unsupported")
+    result = service.record_blocker_decision(
+        run_dir, blocker_id, "retarget-anthropic-api", decided_on=AS_OF
+    )
+    assert result.accepted
+    # Simulate an earlier retarget that the recorded one superseded.
+    log = yaml.safe_load((run_dir / "decisions.yaml").read_text(encoding="utf-8"))
+    earlier = dict(log["decisions"][0])
+    earlier.update(
+        {
+            "blocker_id": "structured_output_unsupported:0000000000",
+            "option_id": "retarget-amazon-bedrock-bedrock-mantle",
+            "summary": "Keep claude-sonnet-5 but run it on bedrock-mantle.",
+            "target_change": {
+                "model": "claude-sonnet-5",
+                "platform": "amazon-bedrock",
+                "endpoint": "bedrock-mantle",
+            },
+        }
+    )
+    log["decisions"] = [earlier, *log["decisions"]]
+    (run_dir / "decisions.yaml").write_text(yaml.safe_dump(log), encoding="utf-8")
+    finalization = service.finalize_migration_run(run_dir)
+    assert finalization.stale_decisions == []
+    assert len(finalization.resolved_blockers) == 2
+    assert any("superseded" in line for line in finalization.resolved_blockers)
+    report = Path(finalization.report_path).read_text(encoding="utf-8")
+    assert "**Superseded**" in report
+    assert "STALE" not in report
+
+
+def test_blocker_calls_scan_the_application_once(
+    service: MigrationService, native_app: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    run_dir = _start_blocked_run(service, native_app)
+    calls = {"scan": 0}
+    original = MigrationService.scan_application
+
+    def counting(self, root, *, prompt_sources=None):  # type: ignore[no-untyped-def]
+        calls["scan"] += 1
+        return original(self, root, prompt_sources=prompt_sources)
+
+    monkeypatch.setattr(MigrationService, "scan_application", counting)
+    resolutions = service.get_blocker_resolutions(run_dir)
+    assert calls["scan"] == 1
+    calls["scan"] = 0
+    result = service.record_blocker_decision(
+        run_dir,
+        resolutions.resolutions[0].blocker.id,
+        "accept",
+        "Accepted during the efficiency check.",
+        decided_on=AS_OF,
+    )
+    assert result.accepted
+    assert calls["scan"] == 1

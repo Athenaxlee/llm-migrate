@@ -8,6 +8,7 @@ from typing import Protocol
 
 from llm_migrate.core.freshness import is_stale
 from llm_migrate.core.models import (
+    BOOLEAN_CAPABILITY_FIELDS,
     ApplicationRequirements,
     ExcludedCandidate,
     FreshnessCategory,
@@ -22,18 +23,7 @@ from llm_migrate.core.models import (
 from llm_migrate.core.registry import ModelRegistry, RegistryError
 from llm_migrate.core.resolver import effective_capabilities
 
-_BOOLEAN_CAPABILITIES = {
-    "text_input",
-    "image_input",
-    "document_input",
-    "structured_output",
-    "tool_use",
-    "parallel_tool_use",
-    "reasoning",
-    "prompt_caching",
-    "streaming",
-    "batch_inference",
-}
+_BOOLEAN_CAPABILITIES = BOOLEAN_CAPABILITY_FIELDS
 
 
 class ScoringStrategy(Protocol):

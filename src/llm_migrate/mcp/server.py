@@ -638,6 +638,7 @@ def record_blocker_decision(
     option_id: str,
     rationale: str = "",
     decided_on: str | None = None,
+    now: str | None = None,
 ) -> dict[str, Any]:
     """Record the user's decision for one blocker; decisions are durable.
 
@@ -657,6 +658,7 @@ def record_blocker_decision(
             option_id,
             rationale,
             decided_on=date.fromisoformat(decided_on) if decided_on else None,
+            now=datetime.fromisoformat(now) if now else None,
         )
     )
 

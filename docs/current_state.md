@@ -528,6 +528,18 @@ source-target `MigrationKnowledge`, not only individual model profiles.
   `unresolved_blockers`, `resolved_blockers`, and `stale_decisions`.
   Complexity stays `blocked` only while unresolved blockers remain; a fully
   decision-resolved plan recomputes normally.
+- Review-hardened end to end (2026-09-18): the submission gate honors accept
+  decisions (an explicitly accepted prompt blocker is downgraded to a recorded
+  warning instead of dead-ending every submission); correction options always
+  carry a concrete platform+endpoint so the tool's own options are always
+  recordable; per-contract blockers are location-discriminated and same-id
+  duplicates merge their locations, so one decision can never silently cover
+  a second file; redesign tasks on prompt blockers land in the prompt task's
+  guidance; a decisions.yaml belonging to another run is refused; template
+  `<...>` rationales are rejected; superseded retargets are reported as
+  history (`superseded`), not stale alarms; a decision-resolved plan's
+  rationale states what decisions resolved; and each blocker call scans the
+  application exactly once.
 - Workflow surfaces: MCP tools `get_blocker_resolutions` and
   `record_blocker_decision`, CLI `llm-migrate run blockers` / `run decide`,
   and start/worklist/MCP-instruction guidance directing the host agent to

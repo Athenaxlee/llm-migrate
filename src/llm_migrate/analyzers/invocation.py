@@ -339,6 +339,15 @@ def analyze_invocation(
     )
 
 
+# The platforms _target_invocation below has a deterministic adapter for, and
+# the subset whose adapter exposes a structured-output request field. These are
+# the single source for "can the toolkit drive this platform" gating (the
+# blocker resolver imports them); keep them in lockstep with the branches of
+# _target_invocation.
+ADAPTER_PLATFORMS = frozenset({"anthropic-api", "openai-api", "amazon-bedrock"})
+STRUCTURED_OUTPUT_FIELD_PLATFORMS = frozenset({"anthropic-api", "openai-api"})
+
+
 def _target_invocation(target: ResolvedModel) -> TargetInvocation:
     platform = target.platform
     if platform is None:
@@ -655,6 +664,9 @@ def _append_contract_review(
     location: SourceLocation,
     capability_url: str | None,
 ) -> None:
+    # Two same-named contracts in different files must stay distinct blockers,
+    # so per-contract blockers discriminate by their source location.
+    discriminator = f"{location.path}:{location.line}"
     if state is CompatibilityState.UNSUPPORTED:
         blockers.append(
             migration_blocker(
@@ -664,6 +676,7 @@ def _append_contract_review(
                 evidence_urls=[capability_url] if capability_url else [],
                 locations=[location],
                 data={"capability": capability},
+                discriminator=discriminator,
             )
         )
     for note in notes:
@@ -676,6 +689,7 @@ def _append_contract_review(
                     message=message,
                     locations=[location],
                     data={"capability": capability},
+                    discriminator=discriminator,
                 )
             )
         elif state in {

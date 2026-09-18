@@ -1685,7 +1685,12 @@ and consistency checks; the resolver and decision lifecycle in
 `core/blockers.py`; service, MCP, and CLI surfaces; golden regeneration for
 the schema bump; and unit coverage for capability retarget/redesign/accept,
 source correction, stale decisions, fail-closed ids, and the guided
-blocked-to-finalized end-to-end run.
+blocked-to-finalized end-to-end run. Hardened the same day against its own
+review findings (accept decisions honored at the submission gate, concrete
+correction endpoints, location-discriminated blocker ids with merge-on-dedupe,
+prompt-task routing for injected redesign tasks, foreign decision logs
+refused, placeholder rationales rejected, superseded-decision history, honest
+post-decision rationale, and single-scan blocker calls).
 
 ---
 

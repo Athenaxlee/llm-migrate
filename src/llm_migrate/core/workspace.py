@@ -471,6 +471,28 @@ def derive_adaptation_tasks(
             )
         )
     file_tasks.sort(key=lambda task: task.source_path)
+    # Required changes that target a prompt file (e.g. a decision-injected
+    # prompt-reduction task) belong on that prompt task's guidance — prompt
+    # paths are excluded from file tasks, and dropping them would lose a
+    # REQUIRED change between the plan and the worklist.
+    prompt_tasks = [
+        (
+            task.model_copy(
+                update={
+                    "guidance": [
+                        *task.guidance,
+                        *(
+                            f"Required change: {description}"
+                            for description in sorted(set(changes_by_file[task.source_path]))
+                        ),
+                    ]
+                }
+            )
+            if task.source_path in changes_by_file
+            else task
+        )
+        for task in prompt_tasks
+    ]
     # Hoist guidance shared by every prompt task into one shared list, so the
     # task payload the host agent reads does not repeat it per task.
     shared_prompt_guidance = list(difference_guidance)
@@ -489,6 +511,10 @@ def derive_adaptation_tasks(
                 for task in prompt_tasks
             ]
             shared_prompt_guidance = [*shared, *shared_prompt_guidance]
+    application_level_changes = [
+        f"Plan-level required change (no specific file): {description}"
+        for description in sorted(set(changes_by_file.get("<application>", [])))
+    ]
     return AdaptationTaskList(
         run_id=config.run_id,
         source_model=config.source.model,
@@ -498,6 +524,7 @@ def derive_adaptation_tasks(
         file_tasks=file_tasks,
         blockers=[blocker.rendered for blocker in plan.blockers],
         guidance=[
+            *application_level_changes,
             "Read each source file from the application, produce the complete adapted "
             "version, and submit it with submit_adapted_file; submit rewritten prompts "
             "with submit_adapted_prompt.",

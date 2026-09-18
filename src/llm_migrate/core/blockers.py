@@ -17,24 +17,32 @@ from typing import Any, Literal
 import yaml
 from pydantic import Field, ValidationError
 
+from llm_migrate.analyzers.invocation import (
+    ADAPTER_PLATFORMS,
+    STRUCTURED_OUTPUT_FIELD_PLATFORMS,
+)
 from llm_migrate.core.agent_research import ModelEndpointIdentity
 from llm_migrate.core.comparison import capability_evidence_url, evidence_url
 from llm_migrate.core.models import (
+    BOOLEAN_CAPABILITY_FIELDS,
     ApplicationAnalysis,
     AppliedBlockerDecision,
     BlockerCategory,
     BlockerDecision,
-    ComparisonSeverity,
     EndpointChange,
     MigrationBlocker,
     MigrationPlan,
     ModelProfile,
     PlannedMigrationChange,
     PlatformAvailability,
+    PromptValidationResult,
     RecommendationConstraints,
     RedesignTaskSpec,
     ResolutionKind,
     StrictModel,
+    ValidationLevel,
+    migration_complexity,
+    prompt_issue_blocker,
 )
 from llm_migrate.core.recommendation import recommend_models
 from llm_migrate.core.registry import ModelRegistry, RegistryError
@@ -42,23 +50,6 @@ from llm_migrate.core.resolver import effective_capabilities
 from llm_migrate.core.workspace import MigrationRunConfig, WorkspaceError
 
 DECISIONS_FILENAME = "decisions.yaml"
-
-# Platforms served by a deterministic invocation adapter, and the subset with
-# a deterministic structured-output configuration mapping (see analyzers).
-_ADAPTER_PLATFORMS = {"anthropic-api", "openai-api", "amazon-bedrock"}
-_STRUCTURED_OUTPUT_FIELD_PLATFORMS = {"anthropic-api", "openai-api"}
-_BOOLEAN_CAPABILITIES = {
-    "text_input",
-    "image_input",
-    "document_input",
-    "structured_output",
-    "tool_use",
-    "parallel_tool_use",
-    "reasoning",
-    "prompt_caching",
-    "streaming",
-    "batch_inference",
-}
 
 RESOLUTION_GUIDANCE = [
     "Present each blocker's question, options, consequences, and evidence VERBATIM "
@@ -144,9 +135,19 @@ def load_decision_log(run_dir: Path, run_id: str) -> DecisionLog:
     if not path.is_file():
         return DecisionLog(run_id=run_id)
     try:
-        return DecisionLog.model_validate(yaml.safe_load(path.read_text(encoding="utf-8")))
+        log = DecisionLog.model_validate(yaml.safe_load(path.read_text(encoding="utf-8")))
     except (yaml.YAMLError, ValidationError) as exc:
         raise WorkspaceError(f"invalid decision log {path}: {exc}") from exc
+    if log.run_id != run_id:
+        # Blocker ids are content-derived and identical across runs of the
+        # same application, so a copied decisions.yaml would silently apply
+        # another run's decisions. Refuse instead.
+        raise WorkspaceError(
+            f"decision log {path} belongs to run {log.run_id!r}, not {run_id!r}; "
+            "decisions never transfer between runs — delete the copied "
+            "decisions.yaml or decide this run's blockers explicitly"
+        )
+    return log
 
 
 def save_decision_log(run_dir: Path, log: DecisionLog) -> Path:
@@ -194,8 +195,8 @@ def _next_step(
         "blocker_id": blocker.id,
         "option_id": option_id,
     }
-    if kind is ResolutionKind.ACCEPT_WITH_RATIONALE:
-        arguments["rationale"] = "<the user's own free-text rationale (required)>"
+    # The accept option deliberately carries no rationale value: the required
+    # rationale is the user's own words, never a template an agent could echo.
     return ResolutionNextStep(tool="record_blocker_decision", arguments=arguments)
 
 
@@ -238,7 +239,7 @@ def _retarget_same_model(
             and representation.endpoint == config.target.endpoint
         ):
             continue
-        if representation.platform not in _ADAPTER_PLATFORMS:
+        if representation.platform not in ADAPTER_PLATFORMS:
             continue
         if capability is not None:
             capabilities = effective_capabilities(profile, representation)
@@ -246,7 +247,7 @@ def _retarget_same_model(
                 continue
             if (
                 capability == "structured_output"
-                and representation.platform not in _STRUCTURED_OUTPUT_FIELD_PLATFORMS
+                and representation.platform not in STRUCTURED_OUTPUT_FIELD_PLATFORMS
             ):
                 continue
             evidence = _capability_evidence(profile, representation, capability)
@@ -305,7 +306,7 @@ def _alternative_model_options(
     constraints = RecommendationConstraints(
         platform=config.target.platform,
         required_capabilities=(
-            {required_capability} if required_capability in _BOOLEAN_CAPABILITIES else set()
+            {required_capability} if required_capability in BOOLEAN_CAPABILITY_FIELDS else set()
         ),
         minimum_context_window=minimum_context_window,
         source_model=config.source.model,
@@ -496,7 +497,7 @@ def _capability_options(
     # platform whose adapter has no structured-output field.
     platform_can_carry = not blocker.code.endswith("_mapping_missing") and (
         capability != "structured_output"
-        or config.target.platform in _STRUCTURED_OUTPUT_FIELD_PLATFORMS
+        or config.target.platform in STRUCTURED_OUTPUT_FIELD_PLATFORMS
     )
     if platform_can_carry:
         options.extend(
@@ -531,16 +532,16 @@ def _consistency_options(
                 profile = registry.get(name)
             except RegistryError:
                 continue
-            # Pair the corrected model with the platform the scan detected, so
-            # the correction never inherits the mistakenly declared platform.
-            platform = next(
-                (
-                    item.platform
-                    for item in profile.platforms
-                    if item.platform in detected_platforms
-                ),
+            # Pair the corrected model with a concrete representation on the
+            # platform the scan detected (never the mistakenly declared one);
+            # the endpoint must come along or a multi-endpoint platform would
+            # make the tool's own option unrecordable (ambiguous resolution).
+            representation = next(
+                (item for item in profile.platforms if item.platform in detected_platforms),
                 None,
             )
+            if representation is None and len(profile.platforms) == 1:
+                representation = profile.platforms[0]
             option_id = f"correct-source-model-{name}"
             consequences = [
                 "The run's migration.yaml source identity is corrected and the plan "
@@ -566,7 +567,11 @@ def _consistency_options(
                     consequences=consequences,
                     evidence_urls=_profile_evidence(profile),
                     next_step=_next_step(run_dir, blocker, option_id, ResolutionKind.CORRECTION),
-                    source_change=EndpointChange(model=name, platform=platform),
+                    source_change=EndpointChange(
+                        model=name,
+                        platform=representation.platform if representation else None,
+                        endpoint=representation.endpoint if representation else None,
+                    ),
                 )
             )
     if blocker.code == "source_platform_mismatch":
@@ -576,40 +581,45 @@ def _consistency_options(
         except RegistryError:
             source_profile = None
         for platform in detected[:3]:
-            representation = (
-                next(
-                    (item for item in source_profile.platforms if item.platform == platform),
-                    None,
-                )
+            representations = (
+                [item for item in source_profile.platforms if item.platform == platform]
                 if source_profile
-                else None
+                else []
             )
-            option_id = f"correct-source-platform-{platform}"
-            options.append(
-                ResolutionOption(
-                    id=option_id,
-                    kind=ResolutionKind.CORRECTION,
-                    summary=(
-                        f"Correct the run's declared source platform to {platform}, the "
-                        "platform detected in the application code."
-                    ),
-                    consequences=[
-                        "The run's migration.yaml source identity is corrected and the "
-                        "plan regenerates from the detected platform.",
-                        "Equivalent to restarting with start_migration(application_path="
-                        f"{config.application_root!r}, source={config.source.model!r}, "
-                        f"source_platform={platform!r}, target={config.target.model!r}, "
-                        f"target_platform={config.target.platform!r}).",
-                    ],
-                    evidence_urls=(
-                        _platform_evidence(source_profile, representation)
-                        if source_profile and representation
-                        else []
-                    ),
-                    next_step=_next_step(run_dir, blocker, option_id, ResolutionKind.CORRECTION),
-                    source_change=EndpointChange(platform=platform),
+            for representation in representations[:2]:
+                option_id = f"correct-source-platform-{platform}" + (
+                    f"-{representation.endpoint}" if representation.endpoint else ""
                 )
-            )
+                options.append(
+                    ResolutionOption(
+                        id=option_id,
+                        kind=ResolutionKind.CORRECTION,
+                        summary=(
+                            f"Correct the run's declared source platform to {platform}"
+                            f"{_endpoint_suffix(representation.endpoint)}, the platform "
+                            "detected in the application code."
+                        ),
+                        consequences=[
+                            "The run's migration.yaml source identity is corrected and the "
+                            "plan regenerates from the detected platform.",
+                            "Equivalent to restarting with start_migration(application_path="
+                            f"{config.application_root!r}, source={config.source.model!r}, "
+                            f"source_platform={platform!r}, target={config.target.model!r}, "
+                            f"target_platform={config.target.platform!r}).",
+                        ],
+                        evidence_urls=(
+                            _platform_evidence(source_profile, representation)
+                            if source_profile
+                            else []
+                        ),
+                        next_step=_next_step(
+                            run_dir, blocker, option_id, ResolutionKind.CORRECTION
+                        ),
+                        source_change=EndpointChange(
+                            platform=platform, endpoint=representation.endpoint
+                        ),
+                    )
+                )
     return options
 
 
@@ -685,7 +695,7 @@ def _context_window_options(
                     and representation.endpoint == config.target.endpoint
                 ):
                     continue
-                if representation.platform not in _ADAPTER_PLATFORMS:
+                if representation.platform not in ADAPTER_PLATFORMS:
                     continue
                 capabilities = effective_capabilities(profile, representation)
                 window = capabilities.context_window_tokens
@@ -935,18 +945,29 @@ def apply_decisions(
     remaining = {blocker.id: blocker for blocker in plan.blockers}
     required = list(plan.required_changes)
     applied: list[AppliedBlockerDecision] = []
-    for decision in log.decisions:
-        status: Literal["applied", "stale"]
+    for index, decision in enumerate(log.decisions):
+        status: Literal["applied", "stale", "superseded"]
         if decision.kind in {ResolutionKind.RETARGET, ResolutionKind.CORRECTION}:
             side = "target" if decision.kind is ResolutionKind.RETARGET else "source"
             identity = config.target if side == "target" else config.source
             change = decision.target_change if side == "target" else decision.source_change
+            superseded = any(later.kind is decision.kind for later in log.decisions[index + 1 :])
             if change is None or not _identity_matches(identity, change):
-                status = "stale"
-                detail = (
-                    f"The run's {side} identity no longer matches this decision; "
-                    "it was not applied."
-                )
+                if superseded:
+                    # This decision was honored when recorded and a newer
+                    # decision of the same kind moved the identity onward:
+                    # history, not a stale alarm.
+                    status = "superseded"
+                    detail = (
+                        f"A later decision changed the run's {side} again; this "
+                        "decision is kept as recorded history."
+                    )
+                else:
+                    status = "stale"
+                    detail = (
+                        f"The run's {side} identity no longer matches this decision; "
+                        "it was not applied."
+                    )
             elif decision.blocker_id in remaining:
                 status = "stale"
                 detail = (
@@ -1007,31 +1028,88 @@ def apply_decisions(
                 )
         applied.append(AppliedBlockerDecision(decision=decision, status=status, detail=detail))
     blockers = [blocker for blocker in plan.blockers if blocker.id in remaining]
-    complexity: Literal["low", "medium", "high", "blocked"] = (
-        "blocked"
-        if blockers
-        else "high"
-        if plan.model_differences.highest_severity
-        in {ComparisonSeverity.HIGH, ComparisonSeverity.BREAKING}
-        else "medium"
-        if required or plan.warnings
-        else "low"
+    applied_count = sum(item.status == "applied" for item in applied)
+    accepted_count = sum(
+        item.status == "applied" and item.decision.kind is ResolutionKind.ACCEPT_WITH_RATIONALE
+        for item in applied
     )
+    rationale = [
+        *plan.target_selection_rationale,
+        (
+            f"Recorded user decisions resolve {applied_count} blocker concern(s) "
+            f"({accepted_count} accepted as risk); {len(blockers)} blocker(s) remain "
+            "unresolved — see the Decisions section for what was traded away and why."
+        ),
+    ]
     return plan.model_copy(
         update={
             "blockers": blockers,
             "required_changes": required,
-            "migration_complexity": complexity,
+            "migration_complexity": migration_complexity(
+                blockers, plan.model_differences.highest_severity, required, plan.warnings
+            ),
+            "target_selection_rationale": rationale,
             "decisions": applied,
+        }
+    )
+
+
+def downgrade_accepted_prompt_issues(
+    validation: PromptValidationResult, log: DecisionLog
+) -> PromptValidationResult:
+    """Downgrade validation blockers the user has explicitly accepted.
+
+    The submission gate re-derives prompt validation from scratch; without
+    this, an accept decision would clear the plan while the same blocker kept
+    rejecting every submission of that prompt — a dead end. Issues are matched
+    to decisions through the same id derivation the plan uses, downgraded to
+    warnings that name the decision, and recorded on the adaptation entry.
+    Only ACCEPT decisions downgrade: a redesign promise does not make an
+    unreduced prompt submittable.
+    """
+    accepted = {
+        decision.blocker_id
+        for decision in log.decisions
+        if decision.kind is ResolutionKind.ACCEPT_WITH_RATIONALE
+    }
+    if not accepted:
+        return validation
+    issues = []
+    changed = False
+    for issue in validation.issues:
+        if issue.level is ValidationLevel.BLOCKER and prompt_issue_blocker(issue).id in accepted:
+            issues.append(
+                issue.model_copy(
+                    update={
+                        "level": ValidationLevel.WARNING,
+                        "message": issue.message
+                        + " (explicitly accepted by a recorded blocker decision)",
+                    }
+                )
+            )
+            changed = True
+        else:
+            issues.append(issue)
+    if not changed:
+        return validation
+    return validation.model_copy(
+        update={
+            "valid": not any(item.level is ValidationLevel.BLOCKER for item in issues),
+            "issues": issues,
         }
     )
 
 
 def render_applied_decision(item: AppliedBlockerDecision) -> str:
     decision = item.decision
-    prefix = "STALE " if item.status == "stale" else ""
+    prefix = {"stale": "STALE ", "superseded": "superseded "}.get(item.status, "")
+    rationale = (
+        f" Rationale: {decision.rationale}"
+        if decision.rationale and decision.rationale != decision.summary
+        else ""
+    )
     return (
         f"{prefix}{decision.kind.value} decision ({decision.decided_on.isoformat()}) "
         f"for blocker {decision.blocker_code} [{decision.blocker_id}]: "
-        f"{decision.summary} Rationale: {decision.rationale} — {item.detail}"
+        f"{decision.summary}{rationale} — {item.detail}"
     )

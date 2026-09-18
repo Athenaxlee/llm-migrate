@@ -177,6 +177,24 @@ class ModelCapabilities(StrictModel):
     sources: list[SourceReference] = Field(default_factory=list)
 
 
+# The boolean capability fields of ModelCapabilities/CapabilityOverrides; the
+# single home for every consumer that gates on "is this a boolean capability".
+BOOLEAN_CAPABILITY_FIELDS = frozenset(
+    {
+        "text_input",
+        "image_input",
+        "document_input",
+        "structured_output",
+        "tool_use",
+        "parallel_tool_use",
+        "reasoning",
+        "prompt_caching",
+        "streaming",
+        "batch_inference",
+    }
+)
+
+
 class ParameterState(StrEnum):
     SUPPORTED = "supported"
     UNSUPPORTED = "unsupported"
@@ -888,6 +906,10 @@ class MigrationBlocker(StrictModel):
     def rendered(self) -> str:
         """Stable human-readable view used by reports and worklists."""
         text = f"{self.message} [{self.category.value}; id: {self.id}]"
+        paths = sorted({item.path for item in self.locations})
+        if paths:
+            shown = ", ".join(paths[:3]) + (f" +{len(paths) - 3} more" if len(paths) > 3 else "")
+            text += f" (files: {shown})"
         if self.evidence_urls:
             text += f" (evidence: {self.evidence_urls[0]})"
         return text
@@ -919,11 +941,76 @@ def migration_blocker(
 
 
 def dedupe_blockers(blockers: list[MigrationBlocker]) -> list[MigrationBlocker]:
-    """Stable-id deduplication with a deterministic report order."""
+    """Stable-id deduplication with a deterministic report order.
+
+    Duplicates merge their locations and evidence instead of being dropped, so
+    a blocker produced at several code sites keeps every site — the injected
+    redesign task and the report must never under-state the affected files.
+    """
     unique: dict[str, MigrationBlocker] = {}
     for blocker in blockers:
-        unique.setdefault(blocker.id, blocker)
+        existing = unique.get(blocker.id)
+        if existing is None:
+            unique[blocker.id] = blocker
+            continue
+        locations = list(existing.locations)
+        locations.extend(item for item in blocker.locations if item not in locations)
+        evidence = list(existing.evidence_urls)
+        evidence.extend(item for item in blocker.evidence_urls if item not in evidence)
+        unique[blocker.id] = existing.model_copy(
+            update={
+                "locations": sorted(locations, key=lambda item: (item.path, item.line)),
+                "evidence_urls": evidence,
+            }
+        )
     return sorted(unique.values(), key=lambda item: (item.category.value, item.code, item.message))
+
+
+PROMPT_ISSUE_CATEGORIES = {
+    "context_window_exceeded": BlockerCategory.CONTEXT_WINDOW,
+    "empty_prompt": BlockerCategory.OTHER,
+    "invalid_target_platform": BlockerCategory.PLATFORM_AMBIGUITY,
+}
+
+
+def prompt_issue_blocker(
+    issue: ValidationIssue,
+    *,
+    evidence_urls: list[str] | None = None,
+    locations: list[SourceLocation] | None = None,
+    data: dict[str, Any] | None = None,
+) -> MigrationBlocker:
+    """The one derivation of a blocker (and its id) from a prompt validation issue.
+
+    Both plan generation and the submission gate must derive the SAME id from
+    the same issue, or recorded accept decisions could not be matched back to
+    the validation blocker they accepted.
+    """
+    return migration_blocker(
+        code=issue.code,
+        category=PROMPT_ISSUE_CATEGORIES.get(issue.code, BlockerCategory.OTHER),
+        message=issue.message,
+        evidence_urls=evidence_urls,
+        locations=locations,
+        data=data,
+        discriminator=issue.source_path or "",
+    )
+
+
+def migration_complexity(
+    blockers: list[MigrationBlocker],
+    highest_severity: ComparisonSeverity,
+    required_changes: list[Any],
+    warnings: list[str],
+) -> Literal["low", "medium", "high", "blocked"]:
+    """The single complexity ladder shared by plan generation and decision replay."""
+    if blockers:
+        return "blocked"
+    if highest_severity in {ComparisonSeverity.HIGH, ComparisonSeverity.BREAKING}:
+        return "high"
+    if required_changes or warnings:
+        return "medium"
+    return "low"
 
 
 class ResolutionKind(StrEnum):
@@ -977,10 +1064,15 @@ class BlockerDecision(StrictModel):
 
 
 class AppliedBlockerDecision(StrictModel):
-    """How one recorded decision affected the current plan regeneration."""
+    """How one recorded decision affected the current plan regeneration.
+
+    `superseded` marks a retarget/correction that was honored and later
+    replaced by a newer decision of the same kind: recorded history, not a
+    stale alarm.
+    """
 
     decision: BlockerDecision
-    status: Literal["applied", "stale"]
+    status: Literal["applied", "stale", "superseded"]
     detail: str
 
 

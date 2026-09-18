@@ -457,8 +457,10 @@ migration:
   required_tests: []
 ```
 
-The V0.4 implementation uses schema version 2 of `MigrationPlan` as this
-application-level contract. It composes the normalized scan, resolved platform
+The implementation uses `MigrationPlan` (schema version 4 as of V1.4) as this
+application-level contract. Blockers are structured `MigrationBlocker` records
+(stable id, code, category, message, registry evidence, source locations), and
+the manifest also records the blocker decisions applied to the plan. It composes the normalized scan, resolved platform
 representations, model comparison, prompt preparations, invocation preparation,
 tool/output compatibility, configuration locations, and static validation. YAML
 serialization adds the top-level `migration` key shown above. Manifest generation
@@ -547,6 +549,19 @@ compatibility states. It also carries a typed credential-safe target
 configuration contract for direct Anthropic, direct OpenAI, or the AWS default
 credential chain, without serializing secret values. Source mutation remains
 outside the product.
+
+### Blocker resolution (V1.4)
+
+A blocked plan is never a dead end. For every blocker the toolkit derives the
+question to ask the user plus registry-fact-backed options — retarget to a
+capable endpoint or model, an evidence-linked redesign task, an exact source
+correction, or an explicit accept that requires the user's own rationale and
+is never a default. Decisions are recorded durably in the run's
+`decisions.yaml`, re-applied on every plan regeneration, and reported honestly:
+unresolved blockers keep the plan `blocked`, decision-resolved blockers appear
+in the report's Decisions section with their rationale, and decisions whose
+blocker disappeared are reported stale rather than silently applied. The tool
+never chooses; the host agent asks and the user decides.
 
 ### Tool and structured-output migration
 

@@ -45,6 +45,7 @@ from llm_migrate.core.blockers import (
     BlockerResolutionSet,
     apply_decisions,
     build_blocker_resolutions,
+    downgrade_accepted_prompt_issues,
     load_decision_log,
     render_applied_decision,
     save_decision_log,
@@ -1225,6 +1226,8 @@ class MigrationService:
         run_dir: Path,
         *,
         now: datetime | None = None,
+        run_service: tuple[MigrationService, list[str]] | None = None,
+        analysis: ApplicationAnalysis | None = None,
     ) -> MigrationPlan:
         """Plan a run over canonical knowledge plus its session overlay when built.
 
@@ -1232,10 +1235,15 @@ class MigrationService:
         redesign/accept decisions suppress exactly the live blocker they name
         (injecting the required redesign task), and decisions that no longer
         match a live blocker are reported as stale, never silently applied.
+
+        `run_service` and `analysis` let callers that already resolved the
+        session service or scanned the application reuse them instead of
+        repeating the work (the scan dominates the latency of the interactive
+        blocker-decision loop).
         """
-        service, session_lines = self._run_service(run_dir, now=now)
+        service, session_lines = run_service or self._run_service(run_dir, now=now)
         plan = service.generate_migration_plan(
-            config.application_root,
+            analysis if analysis is not None else config.application_root,
             config.source.model,
             config.target.model,
             source_platform=config.source.platform,
@@ -1260,6 +1268,37 @@ class MigrationService:
         plan = self._plan_for_run(config, workspace, now=now)
         return derive_adaptation_tasks(config, plan, workspace)
 
+    def _blocker_resolution_context(
+        self,
+        workspace: Path,
+        *,
+        now: datetime | None = None,
+    ) -> tuple[
+        MigrationRunConfig,
+        tuple[MigrationService, list[str]],
+        ApplicationAnalysis,
+        MigrationPlan,
+        BlockerResolutionSet,
+    ]:
+        """One scan, one session-service build, one plan per blocker call."""
+        config = load_run_config(workspace)
+        run_service = self._run_service(workspace, now=now)
+        analysis = self.scan_application(
+            config.application_root, prompt_sources=config.prompt_sources or None
+        )
+        plan = self._plan_for_run(
+            config, workspace, now=now, run_service=run_service, analysis=analysis
+        )
+        resolutions = BlockerResolutionSet(
+            run_id=config.run_id,
+            resolutions=build_blocker_resolutions(
+                run_service[0].registry, config, plan, analysis, str(workspace)
+            ),
+            decisions=plan.decisions,
+            guidance=list(RESOLUTION_GUIDANCE),
+        )
+        return config, run_service, analysis, plan, resolutions
+
     def get_blocker_resolutions(
         self,
         run_dir: Path | str,
@@ -1267,21 +1306,8 @@ class MigrationService:
         now: datetime | None = None,
     ) -> BlockerResolutionSet:
         """Per-blocker questions with registry-backed options for user decisions."""
-        workspace = Path(run_dir)
-        config = load_run_config(workspace)
-        service, _ = self._run_service(workspace, now=now)
-        plan = self._plan_for_run(config, workspace, now=now)
-        analysis = self.scan_application(
-            config.application_root, prompt_sources=config.prompt_sources or None
-        )
-        return BlockerResolutionSet(
-            run_id=config.run_id,
-            resolutions=build_blocker_resolutions(
-                service.registry, config, plan, analysis, str(workspace)
-            ),
-            decisions=plan.decisions,
-            guidance=list(RESOLUTION_GUIDANCE),
-        )
+        _, _, _, _, resolutions = self._blocker_resolution_context(Path(run_dir), now=now)
+        return resolutions
 
     def record_blocker_decision(
         self,
@@ -1301,8 +1327,9 @@ class MigrationService:
         subsequent plan regeneration re-applies.
         """
         workspace = Path(run_dir)
-        config = load_run_config(workspace)
-        resolutions = self.get_blocker_resolutions(workspace, now=now)
+        config, run_service, analysis, _, resolutions = self._blocker_resolution_context(
+            workspace, now=now
+        )
         resolution = next(
             (item for item in resolutions.resolutions if item.blocker.id == blocker_id),
             None,
@@ -1329,12 +1356,17 @@ class MigrationService:
                 ],
                 message="Rejected: unknown option id.",
             )
-        if option.kind is ResolutionKind.ACCEPT_WITH_RATIONALE and not rationale.strip():
+        placeholder_rationale = rationale.strip().startswith("<") and rationale.strip().endswith(
+            ">"
+        )
+        if option.kind is ResolutionKind.ACCEPT_WITH_RATIONALE and (
+            not rationale.strip() or placeholder_rationale
+        ):
             return BlockerDecisionResult(
                 accepted=False,
                 problems=[
                     "an accept decision requires the user's own free-text rationale; "
-                    "record their words, not a placeholder"
+                    "record their words, not a placeholder or template value"
                 ],
                 message="Rejected: accept-with-rationale requires a rationale.",
             )
@@ -1351,7 +1383,7 @@ class MigrationService:
             source_change=option.source_change,
             task=option.task,
         )
-        service, _ = self._run_service(workspace, now=now)
+        service = run_service[0]
         config_updated = False
         if option.kind in {ResolutionKind.RETARGET, ResolutionKind.CORRECTION}:
             side = "target" if option.kind is ResolutionKind.RETARGET else "source"
@@ -1407,7 +1439,9 @@ class MigrationService:
             config_updated = True
         log = upsert_decision(load_decision_log(workspace, config.run_id), decision)
         save_decision_log(workspace, log)
-        plan = self._plan_for_run(config, workspace, now=now)
+        plan = self._plan_for_run(
+            config, workspace, now=now, run_service=run_service, analysis=analysis
+        )
         unresolved = [blocker.rendered for blocker in plan.blockers]
         stale = [render_applied_decision(item) for item in plan.decisions if item.status == "stale"]
         next_steps: list[str] = []
@@ -1503,6 +1537,12 @@ class MigrationService:
             if original is not None:
                 adapted_prompt = original
         validation = self._validate_prompt_submission(config, source_path, adapted_prompt)
+        # A blocker the user explicitly accepted must not keep rejecting the
+        # prompt at submission: downgrade exactly the accepted issues to
+        # warnings so the accept decision is honored end to end.
+        validation = downgrade_accepted_prompt_issues(
+            validation, load_decision_log(workspace, config.run_id)
+        )
         return workspace_submit_adapted_prompt(
             workspace,
             config,
@@ -1570,8 +1610,12 @@ class MigrationService:
         Path(paths.report_path).write_text(report, encoding="utf-8")
         adapted_prompts = sum(entry.kind == "prompt" for entry in log.entries)
         adapted_files = sum(entry.kind == "file" for entry in log.entries)
+        # Superseded retarget/correction decisions were honored and later
+        # replaced; they belong with the resolved history, never stale alarms.
         resolved = [
-            render_applied_decision(item) for item in plan.decisions if item.status == "applied"
+            render_applied_decision(item)
+            for item in plan.decisions
+            if item.status in {"applied", "superseded"}
         ]
         stale = [render_applied_decision(item) for item in plan.decisions if item.status == "stale"]
         blocker_note = (

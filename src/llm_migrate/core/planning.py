@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from typing import Any, Literal
+from typing import Any
 
 import yaml
 from jsonschema import Draft202012Validator
@@ -37,6 +37,8 @@ from llm_migrate.core.models import (
     ValidationLevel,
     dedupe_blockers,
     migration_blocker,
+    migration_complexity,
+    prompt_issue_blocker,
 )
 
 
@@ -161,25 +163,20 @@ def _prompt_inputs(
     return inputs, unknowns
 
 
-def _schema_validation(
-    application: ApplicationAnalysis,
-) -> tuple[list[ValidationIssue], list[MigrationBlocker]]:
+def _schema_validation(application: ApplicationAnalysis) -> list[ValidationIssue]:
+    """Schema validity issues for the report; the invocation analyzer owns the
+    matching blockers (one per contract, located and discriminated), so the
+    same invalid schema never becomes two differently-worded blockers."""
     issues: list[ValidationIssue] = []
-    blockers: list[MigrationBlocker] = []
-    contracts: list[tuple[str, str, dict[str, Any] | None, SourceLocation]] = [
-        ("tool_use", f"tool {item.name or '<unknown>'}", item.input_schema, item.location)
+    contracts: list[tuple[str, dict[str, Any] | None, SourceLocation]] = [
+        (f"tool {item.name or '<unknown>'}", item.input_schema, item.location)
         for item in application.tool_definitions
     ]
     contracts.extend(
-        (
-            "structured_output",
-            f"output {item.name or '<unnamed>'}",
-            item.json_schema,
-            item.location,
-        )
+        (f"output {item.name or '<unnamed>'}", item.json_schema, item.location)
         for item in application.structured_outputs
     )
-    for capability, label, schema, location in contracts:
+    for label, schema, location in contracts:
         if schema is None:
             issues.append(
                 ValidationIssue(
@@ -193,33 +190,15 @@ def _schema_validation(
         try:
             Draft202012Validator.check_schema(schema)
         except SchemaError as exc:
-            message = f"The {label} JSON Schema is invalid: {exc.message}."
             issues.append(
                 ValidationIssue(
                     code="invalid_json_schema",
                     level=ValidationLevel.BLOCKER,
-                    message=message,
+                    message=f"The {label} JSON Schema is invalid: {exc.message}.",
                     source_path=location.path,
                 )
             )
-            blockers.append(
-                migration_blocker(
-                    code="invalid_json_schema",
-                    category=BlockerCategory.INVALID_SCHEMA,
-                    message=message,
-                    locations=[location],
-                    data={"capability": capability},
-                    discriminator=location.path,
-                )
-            )
-    return issues, blockers
-
-
-_PROMPT_ISSUE_CATEGORIES = {
-    "context_window_exceeded": BlockerCategory.CONTEXT_WINDOW,
-    "empty_prompt": BlockerCategory.OTHER,
-    "invalid_target_platform": BlockerCategory.PLATFORM_AMBIGUITY,
-}
+    return issues
 
 
 def _prompt_issue_blocker(
@@ -228,7 +207,12 @@ def _prompt_issue_blocker(
     target: ResolvedModel,
     target_platform: str,
 ) -> MigrationBlocker:
-    """Structure one blocker-level prompt validation issue."""
+    """Structure one blocker-level prompt validation issue.
+
+    The id derivation is shared with the submission gate through
+    `prompt_issue_blocker`; the location ties the blocker (and any redesign
+    task a decision injects) to the prompt file so it reaches the worklist.
+    """
     data: dict[str, Any] = {"source_path": issue.source_path}
     evidence: list[str] = []
     if issue.code == "context_window_exceeded":
@@ -239,14 +223,10 @@ def _prompt_issue_blocker(
             evidence = [url]
     if issue.code == "invalid_target_platform":
         data["platform"] = target_platform
-    return migration_blocker(
-        code=issue.code,
-        category=_PROMPT_ISSUE_CATEGORIES.get(issue.code, BlockerCategory.OTHER),
-        message=issue.message,
-        evidence_urls=evidence,
-        data=data,
-        discriminator=issue.source_path or "",
+    locations = (
+        [SourceLocation(path=issue.source_path, line=1, column=0)] if issue.source_path else []
     )
+    return prompt_issue_blocker(issue, evidence_urls=evidence, locations=locations, data=data)
 
 
 def _required_tests(application: ApplicationAnalysis) -> list[str]:
@@ -292,8 +272,8 @@ def generate_application_migration_plan(
     )
     prompt_inputs, unknowns = _prompt_inputs(application)
     prompt_changes: list[PromptMigrationSpec] = []
-    validation_results, schema_blockers = _schema_validation(application)
-    blockers: list[MigrationBlocker] = [*invocation.blockers, *schema_blockers]
+    validation_results = _schema_validation(application)
+    blockers: list[MigrationBlocker] = [*invocation.blockers]
     validation_results.extend(
         ValidationIssue(
             code="invocation_migration_blocker",
@@ -459,18 +439,8 @@ def generate_application_migration_plan(
             *(item.source_path for item in prompt_changes if item.source_path),
         }
     )
-    complexity: Literal["low", "medium", "high", "blocked"] = (
-        "blocked"
-        if blockers
-        else "high"
-        if comparison.highest_severity
-        in {
-            ComparisonSeverity.HIGH,
-            ComparisonSeverity.BREAKING,
-        }
-        else "medium"
-        if required_changes or warnings
-        else "low"
+    complexity = migration_complexity(
+        blockers, comparison.highest_severity, required_changes, warnings
     )
     providers = sorted(application.requirements.source_providers)
     platforms = sorted(application.requirements.source_platforms)
@@ -617,17 +587,27 @@ def _decision_lines(plan: MigrationPlan) -> list[str]:
     for applied in plan.decisions:
         decision = applied.decision
         label = _DECISION_KIND_LABELS[decision.kind]
+        rationale = (
+            f" Rationale: {decision.rationale}"
+            if decision.rationale and decision.rationale != decision.summary
+            else ""
+        )
         if applied.status == "stale":
             lines.append(
                 f"**STALE decision** ({label}, {decision.decided_on.isoformat()}) for blocker "
                 f"`{decision.blocker_code}`: {applied.detail} The decision was NOT applied; "
                 "re-run blocker resolution if the blocker still exists."
             )
+        elif applied.status == "superseded":
+            lines.append(
+                f"**Superseded** ({label}, {decision.decided_on.isoformat()}) for blocker "
+                f"`{decision.blocker_code}`: {decision.summary}{rationale} {applied.detail}"
+            )
         else:
             lines.append(
                 f"**{label}** ({decision.decided_on.isoformat()}) resolved blocker "
-                f"`{decision.blocker_code}` ({decision.blocker_message}) — {decision.summary} "
-                f"Rationale: {decision.rationale} Result: {applied.detail}"
+                f"`{decision.blocker_code}` ({decision.blocker_message}) — "
+                f"{decision.summary}{rationale} Result: {applied.detail}"
             )
     return lines
 
@@ -639,6 +619,7 @@ def generate_migration_report(plan: MigrationPlan) -> str:
         item.status == "applied" and item.decision.kind is ResolutionKind.ACCEPT_WITH_RATIONALE
         for item in plan.decisions
     )
+    superseded_decisions = sum(item.status == "superseded" for item in plan.decisions)
     stale_decisions = sum(item.status == "stale" for item in plan.decisions)
     lines = [
         f"# Migration report: {plan.source.model} → {plan.target.model}",
@@ -657,7 +638,8 @@ def generate_migration_report(plan: MigrationPlan) -> str:
         *(
             [
                 f"- Blocker decisions: {applied_decisions} applied "
-                f"({accepted_decisions} accepted risk), {stale_decisions} stale"
+                f"({accepted_decisions} accepted risk), "
+                f"{superseded_decisions} superseded, {stale_decisions} stale"
             ]
             if plan.decisions
             else []
