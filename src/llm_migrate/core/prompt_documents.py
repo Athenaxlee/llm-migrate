@@ -16,6 +16,7 @@ from typing import Any, Literal
 
 import yaml
 
+from llm_migrate.analyzers.prompt import structural_sections
 from llm_migrate.core.models import PromptComponent, PromptSourceFormat
 
 STRUCTURED_SUFFIXES: dict[str, PromptSourceFormat] = {
@@ -155,24 +156,8 @@ def build_candidate_document(
     return None
 
 
-def structured_submission_problems(
-    original_text: str,
-    adapted_text: str,
-    format: PromptSourceFormat,
-) -> list[str]:
-    """Fail-closed checks for a submitted structured prompt adaptation.
-
-    The adapted document must parse, and every non-prompt value must be
-    preserved exactly; only recognized prompt components may change.
-    """
-    try:
-        original = parse_structured_document(original_text, format)
-    except PromptDocumentError:
-        return []  # An unparseable original is not the submitter's problem.
-    try:
-        adapted = parse_structured_document(adapted_text, format)
-    except PromptDocumentError as exc:
-        return [f"the adapted prompt document is not valid {format.value}: {exc}"]
+def _document_problems(original: Any, adapted: Any) -> list[str]:
+    """Non-prompt values must be preserved exactly; only components may change."""
     if not isinstance(original, dict):
         return []
     if not isinstance(adapted, dict):
@@ -193,3 +178,94 @@ def structured_submission_problems(
         if key not in original:
             problems.append(f"the adapted document added the unexpected key {key!r}")
     return problems
+
+
+def _section_drops(label: str | None, original: str, adapted: str) -> list[str]:
+    """Paired XML-like sections the adapted text lost relative to the original."""
+    original_sections = structural_sections(original)
+    adapted_sections = structural_sections(adapted)
+    prefix = f"{label!r} " if label else ""
+    drops: list[str] = []
+    for name, count in original_sections.items():
+        lost = count - adapted_sections.get(name, 0)
+        if lost <= 0:
+            continue
+        detail = f"<{name}>" if count == 1 else f"{lost} of {count} <{name}> section(s)"
+        drops.append(f"{prefix}drops structural section {detail}")
+    return drops
+
+
+def _component_drops(original: Any, adapted: Any) -> list[str]:
+    """Removed prompt components and lost sections, tolerant of message reorder.
+
+    Components with positional keys (`messages[i].content`) are compared in
+    aggregate so that reordering, merging, or removing individual messages is
+    not misreported as a structural loss when their sections survive.
+    """
+    original_components = extract_prompt_components(original)
+    adapted_components = extract_prompt_components(adapted)
+    named_adapted = {
+        component.key: component
+        for component in adapted_components
+        if component.key and "[" not in component.key
+    }
+    drops: list[str] = []
+    positional_original: list[PromptComponent] = []
+    positional_adapted = [
+        component for component in adapted_components if component.key and "[" in component.key
+    ]
+    for component in original_components:
+        key = component.key
+        if key is None:
+            continue
+        if "[" in key:
+            positional_original.append(component)
+            continue
+        adapted_component = named_adapted.get(key)
+        if adapted_component is None:
+            drops.append(f"prompt component {key!r} was removed")
+            continue
+        drops.extend(_section_drops(key, component.content, adapted_component.content))
+    if positional_original:
+        drops.extend(
+            _section_drops(
+                "messages",
+                "\n".join(component.content for component in positional_original),
+                "\n".join(component.content for component in positional_adapted),
+            )
+        )
+    return drops
+
+
+def evaluate_prompt_submission(
+    original_text: str,
+    adapted_text: str,
+    format: PromptSourceFormat | None,
+) -> tuple[list[str], list[str]]:
+    """Fail-closed checks for a submitted prompt adaptation, in one parse.
+
+    Returns `(problems, structural_drops)`: `problems` always block the
+    submission (invalid syntax, changed non-prompt values); `structural_drops`
+    block unless the submitter explicitly acknowledges a restructure.
+    """
+    if format is None:
+        return [], _section_drops(None, original_text, adapted_text)
+    try:
+        original = parse_structured_document(original_text, format)
+    except PromptDocumentError:
+        return [], []  # An unparseable original is not the submitter's problem.
+    try:
+        adapted = parse_structured_document(adapted_text, format)
+    except PromptDocumentError as exc:
+        return [f"the adapted prompt document is not valid {format.value}: {exc}"], []
+    return _document_problems(original, adapted), _component_drops(original, adapted)
+
+
+def is_prompt_bearing(text: str, format: PromptSourceFormat | None) -> bool:
+    """Whether a file's content is prompt material that needs prompt validation."""
+    if format in (PromptSourceFormat.YAML, PromptSourceFormat.JSON, PromptSourceFormat.TOML):
+        try:
+            return bool(extract_prompt_components(parse_structured_document(text, format)))
+        except PromptDocumentError:
+            return False
+    return bool(structural_sections(text))

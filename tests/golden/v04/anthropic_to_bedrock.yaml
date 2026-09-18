@@ -159,7 +159,7 @@ migration:
       knowledge_id: null
       locations: []
       source_evidence_url: https://platform.claude.com/docs/en/about-claude/models/overview
-      target_evidence_url: https://platform.claude.com/docs/en/about-claude/models/overview
+      target_evidence_url: null
     - category: tool_use
       field: tool_use
       source_value: true
@@ -176,7 +176,7 @@ migration:
         column: 10
         end_line: 25
       source_evidence_url: https://platform.claude.com/docs/en/about-claude/models/overview
-      target_evidence_url: https://platform.claude.com/docs/en/about-claude/models/overview
+      target_evidence_url: null
     - category: parallel_tool_use
       field: parallel_tool_use
       source_value: null
@@ -224,7 +224,7 @@ migration:
         column: 11
         end_line: 27
       source_evidence_url: https://platform.claude.com/docs/en/about-claude/models/overview
-      target_evidence_url: https://platform.claude.com/docs/en/about-claude/models/overview
+      target_evidence_url: null
     - category: streaming
       field: streaming
       source_value: true
@@ -241,7 +241,7 @@ migration:
         column: 11
         end_line: 26
       source_evidence_url: https://platform.claude.com/docs/en/about-claude/models/overview
-      target_evidence_url: https://platform.claude.com/docs/en/about-claude/models/overview
+      target_evidence_url: null
     - category: batch_inference
       field: batch_inference
       source_value: true
@@ -555,7 +555,8 @@ migration:
       end_line: 27
   optional_changes:
   - category: prompt
-    description: Review the prepared prompt candidate for prompts/system.txt.
+    description: Adapt and review the prompt prompts/system.txt for the target model
+      using its evidence-linked guidance.
     files:
     - app.py
     locations:

@@ -582,7 +582,8 @@ migration:
       end_line: 27
   optional_changes:
   - category: prompt
-    description: Review the prepared prompt candidate for prompts/system.txt.
+    description: Adapt and review the prompt prompts/system.txt for the target model
+      using its evidence-linked guidance.
     files:
     - app.py
     locations:

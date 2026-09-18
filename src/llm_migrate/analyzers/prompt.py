@@ -19,6 +19,25 @@ _PREFILL = re.compile(
     r"\b(?:assistant prefill|prefill the assistant|begin (?:your|the) response with)\b", re.I
 )
 _JSON_ONLY = re.compile(r"\b(?:json only|only (?:valid )?json)\b", re.I)
+_TAG = re.compile(r"<(/?)([A-Za-z][\w.-]*)\b[^>]*>")
+
+
+def structural_sections(prompt: str) -> dict[str, int]:
+    """Counts of paired XML-like sections, keyed by tag name.
+
+    Only names that appear as BOTH an opening and a closing tag count as
+    prompt structure; unpaired angle-bracketed tokens (placeholders such as
+    `<CUSTOMER_NAME>`, emails, autolinks) are not sections. Counting pairs
+    rather than deduplicated names lets callers detect the loss of one of
+    several same-named sections (e.g. one of two `<example>` blocks).
+    """
+    opening: Counter[str] = Counter()
+    closing: Counter[str] = Counter()
+    for slash, name in _TAG.findall(prompt):
+        (closing if slash else opening)[name] += 1
+    return {
+        name: min(opening[name], closing[name]) for name in sorted(opening.keys() & closing.keys())
+    }
 
 
 def analyze_prompt(prompt: str) -> PromptAnalysis:

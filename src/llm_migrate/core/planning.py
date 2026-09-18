@@ -326,7 +326,8 @@ def generate_application_migration_plan(
             optional_changes.append(
                 _change(
                     "prompt",
-                    f"Review the prepared prompt candidate for {prompt.source_path}{suffix}.",
+                    f"Adapt and review the prompt {prompt.source_path}{suffix} for the "
+                    "target model using its evidence-linked guidance.",
                     _locations(application, CouplingKind.PROMPT),
                 )
             )
@@ -461,11 +462,11 @@ def _candidate_presence(candidate: Any | None) -> str:
 
 
 def _table_text(text: str, limit: int = 100) -> str:
-    """Make text safe inside one Markdown table cell."""
+    """Make text safe inside one Markdown table cell, including link text."""
     flattened = " ".join(text.split())
     if len(flattened) > limit:
         flattened = flattened[: limit - 1] + "…"
-    return flattened.replace("|", "\\|")
+    return flattened.replace("|", "\\|").replace("[", "\\[").replace("]", "\\]")
 
 
 def _difference_type(difference: ModelDifference) -> str:
@@ -504,9 +505,13 @@ def _difference_value(value: Any) -> str:
 
 
 def _difference_claim(value: Any, evidence_url: str | None) -> str:
-    """A claim cell, hyperlinked to the registry source that backs it."""
+    """A claim cell, hyperlinked to the registry source that backs it.
+
+    Absent or unknown values are never linked: a source can back a claim,
+    not the lack of one.
+    """
     cell = _difference_value(value)
-    if evidence_url is not None and value is not None:
+    if evidence_url is not None and value is not None and cell not in ("", "unknown"):
         return f"[{cell}]({evidence_url})"
     return cell
 

@@ -6,6 +6,7 @@ import hashlib
 from typing import Literal
 
 from llm_migrate.analyzers.prompt import analyze_prompt
+from llm_migrate.core.comparison import evidence_url
 from llm_migrate.core.models import (
     AdviceBasis,
     MigrationAdvice,
@@ -29,15 +30,9 @@ def _advice(
 
 
 def _guidance_evidence(profile: ModelProfile) -> list[str]:
-    """URLs backing a profile's prompt guidance: field sources, then topic sources."""
-    urls = [str(source.url) for source in profile.prompt_guidance.sources if source.url]
-    if not urls:
-        urls = [
-            str(source.url)
-            for source in profile.sources
-            if "prompt_guidance" in source.supports and source.url
-        ]
-    return urls[:1]
+    """URL backing a profile's prompt guidance, shared with the report table."""
+    url = evidence_url(profile, profile.prompt_guidance.sources, "prompt_guidance")
+    return [url] if url is not None else []
 
 
 def prepare_prompt_migration(
@@ -205,6 +200,23 @@ def prepare_prompt_migration(
                     basis=AdviceBasis.DETERMINISTIC,
                 )
             )
+    if "explicit_chain_of_thought" in categories:
+        semantic_diff.append(
+            PromptSemanticChange(
+                state=SemanticDiffState.UNRESOLVED,
+                concern="reasoning policy",
+                before="Explicit reasoning-process instructions are present.",
+                rationale=(
+                    "The target declares native reasoning; test outcome-focused wording and "
+                    "configure reasoning through supported invocation controls instead of "
+                    "prompt text."
+                    if target_capabilities.reasoning
+                    else "Review explicit reasoning-process instructions against the target's "
+                    "reasoning behavior."
+                ),
+                basis=AdviceBasis.HEURISTIC,
+            )
+        )
     if "assistant_prefill" in categories:
         semantic_diff.append(
             PromptSemanticChange(

@@ -45,6 +45,12 @@
       "after": "Never invent facts. Do not omit fields. Avoid prose. You must not add keys."
     },
     {
+      "state": "unresolved",
+      "concern": "reasoning policy",
+      "before": "Explicit reasoning-process instructions are present.",
+      "after": null
+    },
+    {
       "state": "replaced",
       "concern": "system-message transport",
       "before": "system request field",
