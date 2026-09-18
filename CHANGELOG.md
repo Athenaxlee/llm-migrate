@@ -3,6 +3,37 @@
 All notable changes are documented here. The project follows semantic
 versioning.
 
+## Unreleased
+
+- Interactive blocker resolution: blockers are structured `MigrationBlocker`
+  records (stable deterministic id, code, category, message, registry evidence
+  URLs, source locations) — `MigrationPlan` is schema version 4 and
+  `InvocationMigrationSpec` schema version 3. New `get_blocker_resolutions` /
+  `record_blocker_decision` MCP tools and `llm-migrate run blockers` /
+  `run decide` CLI commands derive, per blocker, the question to ask the user
+  plus 2–5 registry-fact-backed options (retarget to a capable endpoint or
+  model via the recommendation engine, an evidence-linked redesign task, an
+  exact source correction, or an explicit accept that requires the user's own
+  rationale and is never a default). The tool never chooses; the host agent
+  presents questions, options, and evidence verbatim, one blocker at a time.
+- Durable decisions: choices persist in the run's `decisions.yaml` and
+  re-apply on every plan regeneration — retarget/correction decisions update
+  the run identity registry-first, redesign decisions inject the required
+  evidence-linked adaptation task into the plan and worklist, accept decisions
+  downgrade the blocker to a prominently reported accepted decision (honored
+  end-to-end, including at the prompt-submission gate), and a decision whose
+  blocker no longer exists is reported stale, never silently applied.
+  Superseded retargets are recorded history, foreign decision logs are
+  refused, and template rationales are rejected.
+- Honest reporting: the manifest carries the applied decisions, the report
+  gains a Decisions section (accepted risk and stale decisions highlighted)
+  plus a post-decision rationale line, and `finalize_migration` distinguishes
+  unresolved blockers, decision-resolved blockers, and stale decisions.
+  Complexity stays `blocked` only for unresolved blockers.
+- Registry: the AWS model card is attached as a platform-level source on
+  Claude Sonnet 5's Bedrock entries (recorded through its proposal bundle), so
+  override-derived capability blockers cite their own evidence.
+
 ## 1.3.0 — 2026-09-18
 
 - Added prompt provenance discovery: the scanner now parses YAML/JSON/TOML

@@ -240,8 +240,11 @@ Start with start_migration and follow its next_steps. If a model needs
 confirmation, ask me instead of guessing or researching it. Ask me before
 running research and before finalizing. Research uses the prompts from
 get_research_prompts with an independent reviewer that did not produce the
-research. Submit every adapted prompt and adapted file through the
-submit_adapted_* tools; never edit application source files directly.
+research. If the plan reports blockers, show me each blocker's question,
+options, and evidence verbatim (get_blocker_resolutions), one at a time, and
+record my answers with record_blocker_decision — never decide for me. Submit
+every adapted prompt and adapted file through the submit_adapted_* tools;
+never edit application source files directly.
 ```
 
 Model identifiers may be vague: regional Bedrock inference-profile prefixes
@@ -261,8 +264,9 @@ The expected outputs, collected under `<application>/.llm-migrate/runs/<run-id>/
 | Adapted prompts (`output/prompts/`) | Host-authored prompt rewrites for the target model, statically validated |
 | Adapted files (`output/files/`) | Complete post-adaptation application files behind fail-closed checks |
 | Change log (`output/changes.yaml`) | Per-file what-changed and why, with hashes and validation state |
+| Blocker decisions (`decisions.yaml`) | Durable record of every user decision on a blocker (option, rationale, date), re-applied on each plan regeneration |
 | Migration manifest | Required changes, blockers, warnings, unknowns, tests, and rollout guidance |
-| Migration report | Human-readable rendering including per-file adaptation changes, rationale, and coverage gaps |
+| Migration report | Human-readable rendering including per-file adaptation changes, rationale, coverage gaps, and the blocker Decisions section |
 | Regression report | Optional observed source/target behavior differences |
 
 ## MCP tool guide
@@ -281,7 +285,9 @@ available for manual or partial use.
 | `start_migration` | Begin any full migration | Matches both models registry-first (candidates for confirmation instead of hard failures), scans the application, reports whether research is needed and why, creates the run workspace, and returns ordered next steps |
 | `get_research_prompts` | The run recommends research and the user agrees | Renders one bounded, scope-isolated researcher and reviewer prompt pair per remaining scope from `request.yaml`, with per-scope status so completed stages are never re-run |
 | `list_adaptation_tasks` | The plan (canonical or session-backed) is ready | Derives the per-file worklist: prompts to rewrite with guidance and risks, and files to adapt with their required changes |
-| `submit_adapted_prompt` | The host has written an improved target-model prompt | Statically validates it against the target and stores it under `output/prompts/`; blockers are rejected |
+| `get_blocker_resolutions` | The worklist reports blockers | Returns, per blocker, the question to ask the user plus 2–5 registry-backed options (retarget to a capable endpoint or model, an evidence-linked redesign task, an exact source correction, or an explicit accept) with consequences and evidence URLs — the agent presents them verbatim and never chooses |
+| `record_blocker_decision` | The user has chosen an option | Records the decision durably in the run's `decisions.yaml` (accepts require the user's own rationale); retarget/correction decisions update the run identity registry-first, redesign decisions inject the required evidence-linked task, and stale decisions are reported, never silently applied |
+| `submit_adapted_prompt` | The host has written an improved target-model prompt | Statically validates it against the target and stores it under `output/prompts/`; blockers are rejected unless the user explicitly accepted them by recorded decision |
 | `submit_adapted_file` | The host has written one complete adapted application file | Applies fail-closed checks (path containment, Python syntax, actually changed, model-id consistency) and stores it under `output/files/` |
 | `finalize_migration` | Submissions are done (re-runnable any time) | Writes `migration-manifest.yaml`, `changes.yaml`, and `migration-report.md` with per-file changes, rationale, and coverage gaps |
 
@@ -364,7 +370,7 @@ agent host can read and write the stage YAML files but cannot call MCP directly.
 
 ```bash
 llm-migrate --help
-llm-migrate run --help        # guided runs: start, tasks, submit-*, finalize
+llm-migrate run --help        # guided runs: start, tasks, blockers, decide, submit-*, finalize
 llm-migrate models match --help
 llm-migrate research --help   # includes `research prompts`
 llm-migrate plan --help
