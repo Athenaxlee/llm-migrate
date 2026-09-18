@@ -1622,7 +1622,8 @@ patterns deliberately stay `dynamic`/unresolved and are reported as such.
 
 ## Current status
 
-Implemented on 2026-09-16: scanner/config/provenance modules, per-component
+Complete and released as `v1.3.0` on 2026-09-18: scanner/config/provenance
+modules, per-component
 planning and workspace adaptation, overrides across all surfaces, the
 `configured_prompt_app` regression fixture with golden scan output, and unit
 coverage for discovery, coverage states, false-positive protection, overrides,

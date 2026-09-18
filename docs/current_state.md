@@ -19,7 +19,8 @@ triggering unnecessary research, self-invented colliding research prompts,
 scattered outputs, and no adapted-prompt/file deliverables). See the V1.2
 section below and `docs/project_phases.md` §12.1.
 
-V1.3: Prompt Provenance Discovery — implemented on 2026-09-16 in response to a
+V1.3: Prompt Provenance Discovery and Evidence-Based Adaptation — complete and
+released as `v1.3.0` on 2026-09-18, built in response to a
 real V1.2 migration run where configuration-driven prompt loading
 (`model_profiles.yaml` → prompt-path values → `yaml.safe_load` →
 `sys_prompt`/`user_prompt`) was invisible to the scanner and the report showed
@@ -28,8 +29,8 @@ below and `docs/project_phases.md` §12.2.
 
 ## Released foundation
 
-- Git tag `v1.2.0` is the current stable release; `v1.1.0`, `v1.0.0`, and
-  `v0.1.0` remain prior recorded release tags.
+- Git tag `v1.3.0` is the current stable release; `v1.2.0`, `v1.1.0`,
+  `v1.0.0`, and `v0.1.0` remain prior recorded release tags.
 - The V0.1 reviewed registry, proposal workflow, provenance, freshness, model
   profiles, and directional Claude migration knowledge remain intact.
 - Every non-fixture provider profile has exactly one checked-in proposal

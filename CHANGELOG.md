@@ -3,6 +3,49 @@
 All notable changes are documented here. The project follows semantic
 versioning.
 
+## 1.3.0 — 2026-09-18
+
+- Added prompt provenance discovery: the scanner now parses YAML/JSON/TOML
+  configuration structurally alongside Python and reports structured
+  `PromptSource` records (components with roles, provenance chains,
+  evidence-based confidence) plus a prompt-discovery coverage summary, so
+  configuration-driven prompt loading (`config -> prompt path -> yaml.safe_load
+  -> sys_prompt`) is resolved instead of reported as "no prompt changes".
+  Bounded Python loader/path recognition (`open`, `Path` joins,
+  `Path(__file__).parent`, `yaml/json/tomllib` loads, nested config
+  subscripts, loader-style helpers) without executing application code.
+  `ApplicationAnalysis` is schema version 3.
+- Added explicit `prompt_sources` overrides on scan/plan/report/run start
+  (service, CLI `--prompt-source`, MCP), persisted in the run's
+  `migration.yaml`.
+- The migration report's model differences are now a prioritized table with
+  per-side claims hyperlinked to the registry sources that back them, and
+  hyperlinked file:line locations of the code each difference affects.
+  `MigrationPlan` is schema version 3.
+- Prompt adaptation is minimal and evidence-based: the deterministic candidate
+  is the source prompt verbatim, guidance advice carries evidence URLs, prompt
+  tasks list protected structural sections, in-prompt findings, and the
+  evidenced migration-knowledge differences, and submissions fail closed on
+  structural drops unless `allow_restructure` records a justification.
+- Runtime-aware submission integrity: validation and adaptation checks operate
+  on decoded runtime prompt values, so serialization tricks (unicode escapes,
+  quoting, whitespace or case-only edits) can neither hide content from
+  validation nor pass as adaptations; the context-window budget applies to the
+  joined decoded components; `unchanged=true` records reviewed no-change
+  prompts and files (refused when the content still references the source
+  model); the sanctioned source-to-target model-id swap inside prompt
+  documents is allowed and noted; dynamically built requests (`**kwargs`)
+  surface an explicit unknown-compatibility assessment.
+- Prompt text mentioning JSON or tools now warns instead of blocking: only
+  invocation evidence (a request that actually configures the native feature)
+  produces blockers, so prompt-enforced JSON parsed by the application never
+  falsely blocks a plan.
+- Guided-workflow efficiency for host agents: shared prompt guidance is
+  hoisted once per worklist (`shared_prompt_guidance`, roughly halving the
+  task payload on multi-prompt applications), the workflow instructs a single
+  task listing with no re-listing between submissions, and finalization
+  coverage derives from the same worklist the agent received.
+
 ## 1.2.0 — 2026-09-15
 
 - Added the V1.2 guided migration run workspace: `start_migration` creates a
