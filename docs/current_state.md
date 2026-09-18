@@ -445,9 +445,15 @@ source-target `MigrationKnowledge`, not only individual model profiles.
   validation and adaptation checks run on the DECODED runtime prompt values,
   so serialization tricks (unicode escapes, quoting, whitespace style) can
   neither hide content from validation nor make an unchanged prompt look
-  adapted: a submission whose decoded values equal the original is rejected
-  with a pointer to `unchanged=true` (now supported for prompts as well as
-  files), and whitespace/case-only edits are flagged. Prompt tasks surface
+  adapted: a submission whose decoded values equal the original — or differ
+  only by whitespace or letter case — is rejected with a pointer to
+  `unchanged=true` (now supported for prompts as well as files, refused when
+  the prompt's decoded values still reference the source model, and mutually
+  exclusive with supplied content). The context-window budget is checked over
+  the joined decoded components, the one sanctioned non-prompt edit is the
+  source-to-target model-id swap, an unparseable original is disclosed rather
+  than silently skipped, and dynamically built requests (`**kwargs`) surface
+  an explicit UNKNOWN compatibility assessment instead of silently passing. Prompt tasks surface
   in-prompt curation findings (duplicated requirements, negative wording,
   chain-of-thought requests, prefill and JSON-only workarounds) so agents
   adapt the actual prompt rather than restating model-level guidance, and

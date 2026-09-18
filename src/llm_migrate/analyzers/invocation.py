@@ -81,12 +81,40 @@ def _schema_validation_error(schema: dict[str, Any] | None) -> str | None:
     return None
 
 
+def _dynamic_invocation_assessment(
+    application: ApplicationAnalysis, concern: str
+) -> CompatibilityAssessment | None:
+    """UNKNOWN assessment when a request is built dynamically (`**kwargs`).
+
+    A splatted or non-literal request hides its fields from static analysis;
+    the absence of tool/structured-output findings is then no evidence of
+    absence, so the compatibility question stays explicitly unresolved
+    instead of silently passing.
+    """
+    dynamic = [
+        item
+        for item in application.findings
+        if item.kind is CouplingKind.INVOCATION and (item.metadata or {}).get("dynamic_request")
+    ]
+    if not dynamic:
+        return None
+    return CompatibilityAssessment(
+        concern=concern,
+        state=CompatibilityState.UNKNOWN,
+        rationale=(
+            f"An invocation builds its request dynamically (**kwargs); {concern} "
+            "could not be statically established and must be verified manually."
+        ),
+        locations=[item.location for item in dynamic],
+    )
+
+
 def _tool_assessment(
     application: ApplicationAnalysis, target: ResolvedModel
 ) -> CompatibilityAssessment | None:
     findings = [item for item in application.findings if item.kind is CouplingKind.TOOL]
     if not findings:
-        return None
+        return _dynamic_invocation_assessment(application, "native tool use")
     capability = target.effective_capabilities.tool_use
     if capability is False:
         return CompatibilityAssessment(
@@ -178,7 +206,7 @@ def _structured_output_assessment(
         item for item in application.findings if item.kind is CouplingKind.STRUCTURED_OUTPUT
     ]
     if not findings:
-        return None
+        return _dynamic_invocation_assessment(application, "native structured-output use")
     capability = target.effective_capabilities.structured_output
     if capability is False:
         return CompatibilityAssessment(

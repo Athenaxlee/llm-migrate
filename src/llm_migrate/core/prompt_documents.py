@@ -157,28 +157,60 @@ def build_candidate_document(
     return None
 
 
-def _document_problems(original: Any, adapted: Any) -> list[str]:
-    """Non-prompt values must be preserved exactly; only components may change."""
+def _is_model_id_swap(original: Any, adapted: Any, source_id: str, target_id: str) -> bool:
+    """Whether a non-prompt value changed exactly by source->target model id."""
+    original_json = json.dumps(original, sort_keys=True, default=str)
+    adapted_json = json.dumps(adapted, sort_keys=True, default=str)
+    return source_id in original_json and adapted_json == original_json.replace(
+        source_id, target_id
+    )
+
+
+def _document_problems(
+    original: Any,
+    adapted: Any,
+    original_components: list[PromptComponent],
+    source_model_id: str | None,
+    target_model_id: str | None,
+) -> tuple[list[str], list[str]]:
+    """Non-prompt values must be preserved exactly; only components may change.
+
+    The one sanctioned non-prompt change is replacing the source model id with
+    the target model id (a prompt document may carry its own `model:` value);
+    such swaps are reported as notes, never as problems.
+    """
     if not isinstance(original, dict):
-        return []
+        return [], []
     if not isinstance(adapted, dict):
-        return ["the adapted prompt document must keep the original top-level mapping structure"]
-    prompt_keys = {
-        component.key for component in extract_prompt_components(original) if component.key
-    }
+        return (
+            ["the adapted prompt document must keep the original top-level mapping structure"],
+            [],
+        )
+    prompt_keys = {component.key for component in original_components if component.key}
     top_level_prompt_keys = {key.split("[", 1)[0] for key in prompt_keys}
     problems: list[str] = []
+    notes: list[str] = []
     for key, value in original.items():
         if key in top_level_prompt_keys:
             continue
         if key not in adapted:
             problems.append(f"the adapted document dropped the non-prompt key {key!r}")
         elif adapted[key] != value:
-            problems.append(f"the adapted document changed the non-prompt value of {key!r}")
+            if (
+                source_model_id
+                and target_model_id
+                and source_model_id != target_model_id
+                and _is_model_id_swap(value, adapted[key], source_model_id, target_model_id)
+            ):
+                notes.append(
+                    f"non-prompt value {key!r} updated from the source to the target model id"
+                )
+            else:
+                problems.append(f"the adapted document changed the non-prompt value of {key!r}")
     for key in adapted:
         if key not in original:
             problems.append(f"the adapted document added the unexpected key {key!r}")
-    return problems
+    return problems, notes
 
 
 def _section_drops(label: str | None, original: str, adapted: str) -> list[str]:
@@ -196,15 +228,16 @@ def _section_drops(label: str | None, original: str, adapted: str) -> list[str]:
     return drops
 
 
-def _component_drops(original: Any, adapted: Any) -> list[str]:
+def _component_drops(
+    original_components: list[PromptComponent],
+    adapted_components: list[PromptComponent],
+) -> list[str]:
     """Removed prompt components and lost sections, tolerant of message reorder.
 
     Components with positional keys (`messages[i].content`) are compared in
     aggregate so that reordering, merging, or removing individual messages is
     not misreported as a structural loss when their sections survive.
     """
-    original_components = extract_prompt_components(original)
-    adapted_components = extract_prompt_components(adapted)
     named_adapted = {
         component.key: component
         for component in adapted_components
@@ -228,13 +261,11 @@ def _component_drops(original: Any, adapted: Any) -> list[str]:
             continue
         drops.extend(_section_drops(key, component.content, adapted_component.content))
     if positional_original:
-        drops.extend(
-            _section_drops(
-                "messages",
-                "\n".join(component.content for component in positional_original),
-                "\n".join(component.content for component in positional_adapted),
-            )
-        )
+        original_joined = "\n".join(component.content for component in positional_original)
+        adapted_joined = "\n".join(component.content for component in positional_adapted)
+        if original_joined.strip() and not adapted_joined.strip():
+            drops.append("all message content was removed or emptied")
+        drops.extend(_section_drops("messages", original_joined, adapted_joined))
     return drops
 
 
@@ -251,24 +282,51 @@ class SubmissionAssessment:
     structural_drops: list[str]
     runtime_changed: bool
     cosmetic_only: bool
+    checks_skipped: str | None = None
+    notes: tuple[str, ...] = ()
 
 
 def _normalized(text: str) -> str:
     return " ".join(text.split()).casefold()
 
 
+def _runtime_views(
+    components: list[PromptComponent],
+) -> tuple[dict[str, str], list[str]]:
+    """Named components as a mapping (order-insensitive) plus ordered messages.
+
+    Top-level key order carries no runtime meaning (lookups are by key), so
+    reordering keys is not a change; message order does carry meaning, so the
+    positional components stay an ordered list.
+    """
+    named = {
+        component.key: component.content
+        for component in components
+        if component.key and "[" not in component.key
+    }
+    positional = [
+        component.content for component in components if component.key and "[" in component.key
+    ]
+    return named, positional
+
+
 def evaluate_prompt_submission(
     original_text: str,
     adapted_text: str,
     format: PromptSourceFormat | None,
+    *,
+    source_model_id: str | None = None,
+    target_model_id: str | None = None,
 ) -> SubmissionAssessment:
     """Fail-closed checks for a submitted prompt adaptation, in one parse.
 
     `problems` always block the submission (invalid syntax, changed non-prompt
     values); `structural_drops` block unless the submitter explicitly
     acknowledges a restructure; `runtime_changed` is False when the decoded
-    prompt values are identical to the original; `cosmetic_only` is True when
-    they differ only by whitespace or letter case.
+    prompt values are identical to the original (top-level key order ignored);
+    `cosmetic_only` is True when they differ only by whitespace or letter
+    case; `checks_skipped` discloses when the original could not be checked;
+    `notes` records sanctioned model-id swaps in non-prompt values.
     """
     if format is None:
         changed = original_text != adapted_text
@@ -280,27 +338,63 @@ def evaluate_prompt_submission(
         )
     try:
         original = parse_structured_document(original_text, format)
-    except PromptDocumentError:
-        # An unparseable original is not the submitter's problem.
-        return SubmissionAssessment([], [], True, False)
+    except PromptDocumentError as exc:
+        # An unparseable original is not the submitter's problem, but silence
+        # would make "could not check" look like "checked and passed".
+        return SubmissionAssessment(
+            [],
+            [],
+            True,
+            False,
+            checks_skipped=(
+                "the original prompt document could not be parsed "
+                f"({exc}); document and structural checks were skipped"
+            ),
+        )
     try:
         adapted = parse_structured_document(adapted_text, format)
     except PromptDocumentError as exc:
         return SubmissionAssessment(
             [f"the adapted prompt document is not valid {format.value}: {exc}"], [], True, False
         )
-    original_values = [(item.key, item.content) for item in extract_prompt_components(original)]
-    adapted_values = [(item.key, item.content) for item in extract_prompt_components(adapted)]
-    changed = original_values != adapted_values
-    cosmetic = changed and [(key, _normalized(content)) for key, content in original_values] == [
-        (key, _normalized(content)) for key, content in adapted_values
-    ]
+    original_components = extract_prompt_components(original)
+    adapted_components = extract_prompt_components(adapted)
+    original_named, original_positional = _runtime_views(original_components)
+    adapted_named, adapted_positional = _runtime_views(adapted_components)
+    changed = original_named != adapted_named or original_positional != adapted_positional
+    cosmetic = (
+        changed
+        and {key: _normalized(value) for key, value in original_named.items()}
+        == {key: _normalized(value) for key, value in adapted_named.items()}
+        and [_normalized(value) for value in original_positional]
+        == [_normalized(value) for value in adapted_positional]
+    )
+    problems, notes = _document_problems(
+        original, adapted, original_components, source_model_id, target_model_id
+    )
     return SubmissionAssessment(
-        problems=_document_problems(original, adapted),
-        structural_drops=_component_drops(original, adapted),
+        problems=problems,
+        structural_drops=_component_drops(original_components, adapted_components),
         runtime_changed=changed,
         cosmetic_only=cosmetic,
+        notes=tuple(notes),
     )
+
+
+def document_mentions(text: str, format: PromptSourceFormat | None, needle: str) -> bool:
+    """Whether the DECODED values of a prompt document mention `needle`.
+
+    Structured documents are searched through their parsed string values, so
+    escapes cannot hide a mention; unparseable or plain-text content falls
+    back to a raw substring check.
+    """
+    if format in (PromptSourceFormat.YAML, PromptSourceFormat.JSON, PromptSourceFormat.TOML):
+        try:
+            data = parse_structured_document(text, format)
+        except PromptDocumentError:
+            return needle in text
+        return needle in json.dumps(data, sort_keys=True, default=str, ensure_ascii=False)
+    return needle in text
 
 
 def is_prompt_bearing(text: str, format: PromptSourceFormat | None) -> bool:

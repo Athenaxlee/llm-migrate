@@ -547,7 +547,7 @@ def test_validation_runs_on_decoded_values(
     assert result.validation.valid  # ...but as a warning, not a blocker
 
 
-def test_unchanged_prompt_and_cosmetic_only_detection(
+def test_unchanged_prompt_and_cosmetic_only_rejection(
     service: MigrationService, json_prompt_app: Path
 ) -> None:
     start = service.start_migration_run(
@@ -571,6 +571,8 @@ def test_unchanged_prompt_and_cosmetic_only_detection(
         submitted_on=AS_OF,
     )
     assert unchanged.accepted, unchanged.message
+    # Whitespace/case-only edits are no-ops in disguise and are rejected, so
+    # the incident cannot recur one keystroke away from the escape bypass.
     cosmetic = service.submit_adapted_prompt(
         run_dir,
         "prompts/extract.yaml",
@@ -579,8 +581,19 @@ def test_unchanged_prompt_and_cosmetic_only_detection(
         ["Lower-cased the format instruction."],
         submitted_on=AS_OF,
     )
-    assert cosmetic.accepted
+    assert not cosmetic.accepted
     assert "whitespace or letter case" in cosmetic.message
+    assert "unchanged=true" in cosmetic.message
+    # Reordering top-level keys leaves every runtime value identical: a no-op.
+    reordered = service.submit_adapted_prompt(
+        run_dir,
+        "prompts/extract.yaml",
+        'user_prompt: "ignored"\n',
+        "placeholder",
+        ["x"],
+        submitted_on=AS_OF,
+    )
+    assert not reordered.accepted  # dropped sys_prompt entirely
 
 
 def test_in_prompt_findings_reach_the_task_guidance(
@@ -620,3 +633,384 @@ def test_worklist_and_finalization_coverage_agree(
     worklist = sorted(item.source_path for item in [*tasks.prompt_tasks, *tasks.file_tasks])
     final = service.finalize_migration_run(start.paths.run_dir)
     assert final.coverage_gaps == worklist  # nothing submitted: gaps == worklist, exactly
+
+
+@pytest.fixture
+def review_round_app(tmp_path: Path) -> Path:
+    """Prompt document carrying its own model id plus multiple components."""
+    app = tmp_path / "review_round_app"
+    (app / "prompts").mkdir(parents=True)
+    (app / "prompts" / "agent.yaml").write_text(
+        "model: claude-sonnet-4-6\n"
+        'sys_prompt: "You are a document assistant. Return valid JSON only."\n'
+        "messages:\n"
+        '  - {role: user, content: "First question."}\n'
+        '  - {role: user, content: "Second question."}\n',
+        encoding="utf-8",
+    )
+    (app / "app.py").write_text(
+        textwrap.dedent(
+            """\
+            import yaml
+            from anthropic import Anthropic
+
+            with open("prompts/agent.yaml") as handle:
+                prompts = yaml.safe_load(handle)
+
+            client = Anthropic()
+            client.messages.create(
+                model="claude-sonnet-4-6",
+                system=prompts["sys_prompt"],
+                messages=[{"role": "user", "content": "hi"}],
+                max_tokens=800,
+            )
+            """
+        ),
+        encoding="utf-8",
+    )
+    return app
+
+
+def _start_review_round(service: MigrationService, app: Path):  # type: ignore[no-untyped-def]
+    return service.start_migration_run(
+        app,
+        "claude-sonnet-4-6",
+        "claude-sonnet-5",
+        source_platform="anthropic-api",
+        target_platform="anthropic-api",
+        as_of=AS_OF,
+        research="skip",
+    )
+
+
+def test_key_reorder_only_is_rejected_as_a_no_op(
+    service: MigrationService, review_round_app: Path
+) -> None:
+    start = _start_review_round(service, review_round_app)
+    assert start.paths is not None
+    reordered = (
+        'sys_prompt: "You are a document assistant. Return valid JSON only."\n'
+        "model: claude-sonnet-4-6\n"
+        "messages:\n"
+        '  - {role: user, content: "First question."}\n'
+        '  - {role: user, content: "Second question."}\n'
+    )
+    result = service.submit_adapted_prompt(
+        start.paths.run_dir,
+        "prompts/agent.yaml",
+        reordered,
+        "Adapted the document layout.",
+        ["Moved the system prompt first."],
+        submitted_on=AS_OF,
+    )
+    assert not result.accepted
+    assert "decodes to the same runtime values" in result.message
+
+
+def test_blanking_all_message_content_is_a_structural_drop(
+    service: MigrationService, review_round_app: Path
+) -> None:
+    start = _start_review_round(service, review_round_app)
+    assert start.paths is not None
+    gutted = (
+        "model: claude-sonnet-4-6\n"
+        'sys_prompt: "You are a document assistant. Return valid JSON only."\n'
+        "messages:\n"
+        '  - {role: user, content: "   "}\n'
+    )
+    result = service.submit_adapted_prompt(
+        start.paths.run_dir,
+        "prompts/agent.yaml",
+        gutted,
+        "Trimmed the message history.",
+        ["Removed the seed questions."],
+        submitted_on=AS_OF,
+    )
+    assert not result.accepted
+    assert "all message content was removed or emptied" in result.message
+
+
+def test_model_id_swap_in_non_prompt_value_is_sanctioned(
+    service: MigrationService, review_round_app: Path
+) -> None:
+    start = _start_review_round(service, review_round_app)
+    assert start.paths is not None
+    adapted = (
+        "model: claude-sonnet-5\n"
+        'sys_prompt: "You are a document assistant. Return valid JSON only, with every '
+        'required key present."\n'
+        "messages:\n"
+        '  - {role: user, content: "First question."}\n'
+        '  - {role: user, content: "Second question."}\n'
+    )
+    result = service.submit_adapted_prompt(
+        start.paths.run_dir,
+        "prompts/agent.yaml",
+        adapted,
+        "Adapted the output contract and pointed the document at the target model.",
+        ["Strengthened the JSON key requirement; swapped the model id."],
+        submitted_on=AS_OF,
+    )
+    assert result.accepted, result.message
+    assert "updated from the source to the target model id" in result.message
+    # Any OTHER non-prompt change is still rejected.
+    tampered = adapted.replace("model: claude-sonnet-5", "model: gpt-5.6-sol")
+    rejected = service.submit_adapted_prompt(
+        start.paths.run_dir,
+        "prompts/agent.yaml",
+        tampered,
+        "Adapted.",
+        ["x"],
+        submitted_on=AS_OF,
+    )
+    assert not rejected.accepted
+    assert "changed the non-prompt value of 'model'" in rejected.message
+
+
+def test_unchanged_prompt_rejected_when_source_model_is_referenced(
+    service: MigrationService, review_round_app: Path
+) -> None:
+    start = _start_review_round(service, review_round_app)
+    assert start.paths is not None
+    result = service.submit_adapted_prompt(
+        start.paths.run_dir,
+        "prompts/agent.yaml",
+        "",
+        "Looks fine as-is.",
+        [],
+        unchanged=True,
+        submitted_on=AS_OF,
+    )
+    assert not result.accepted
+    assert "reference the source model" in result.message
+    no_rationale = service.submit_adapted_prompt(
+        start.paths.run_dir,
+        "prompts/agent.yaml",
+        "",
+        "   ",
+        [],
+        unchanged=True,
+        submitted_on=AS_OF,
+    )
+    assert not no_rationale.accepted
+    assert "requires a rationale" in no_rationale.message
+
+
+def test_unchanged_with_content_is_an_error(
+    service: MigrationService, review_round_app: Path
+) -> None:
+    start = _start_review_round(service, review_round_app)
+    assert start.paths is not None
+    with pytest.raises(ValueError, match="cannot be combined"):
+        service.submit_adapted_prompt(
+            start.paths.run_dir,
+            "prompts/agent.yaml",
+            "sys_prompt: adapted",
+            "r",
+            ["c"],
+            unchanged=True,
+            submitted_on=AS_OF,
+        )
+    with pytest.raises(ValueError, match="cannot be combined"):
+        service.submit_adapted_file(
+            start.paths.run_dir,
+            "app.py",
+            "content",
+            "r",
+            ["c"],
+            unchanged=True,
+            submitted_on=AS_OF,
+        )
+
+
+def test_validation_issues_are_aggregated_not_per_component(
+    service: MigrationService, review_round_app: Path
+) -> None:
+    start = service.start_migration_run(
+        review_round_app,
+        "us.anthropic.claude-sonnet-4-6",
+        "us.anthropic.claude-sonnet-5",
+        source_platform="bedrock",
+        target_platform="bedrock",
+        target_endpoint="bedrock-runtime",
+        as_of=AS_OF,
+        research="skip",
+    )
+    assert start.paths is not None
+    adapted = (
+        "model: claude-sonnet-4-6\n"
+        'sys_prompt: "You are a document assistant. Return valid JSON only, with every '
+        'required key."\n'
+        "messages:\n"
+        '  - {role: user, content: "First question, in valid JSON."}\n'
+        '  - {role: user, content: "Second question, in valid JSON."}\n'
+    )
+    result = service.submit_adapted_prompt(
+        start.paths.run_dir,
+        "prompts/agent.yaml",
+        adapted,
+        "Adapted for the bedrock target.",
+        ["Strengthened key requirements; swapped the model id."],
+        submitted_on=AS_OF,
+    )
+    assert result.accepted, result.message
+    codes = [issue.code for issue in result.validation.issues]
+    # Three JSON-mentioning components, ONE aggregated issue - not one each.
+    assert codes.count("unsupported_structured_output") == 1
+
+
+def test_aggregate_context_budget_blocks_oversized_documents(
+    service: MigrationService, tmp_path: Path
+) -> None:
+    app = tmp_path / "big_prompt_app"
+    (app / "prompts").mkdir(parents=True)
+    half = "word " * 20000  # ~25k tokens per component; gamma allows 32k total
+    (app / "prompts" / "big.yaml").write_text(
+        f'sys_prompt: "{half}"\nuser_prompt: "{half}"\n', encoding="utf-8"
+    )
+    (app / "app.py").write_text(
+        textwrap.dedent(
+            """\
+            import yaml
+            from anthropic import Anthropic
+
+            with open("prompts/big.yaml") as handle:
+                prompts = yaml.safe_load(handle)
+
+            client = Anthropic()
+            client.messages.create(
+                model="alpha-large-v1",
+                system=prompts["sys_prompt"],
+                messages=[{"role": "user", "content": prompts["user_prompt"]}],
+                max_tokens=500,
+            )
+            """
+        ),
+        encoding="utf-8",
+    )
+    start = service.start_migration_run(
+        app,
+        "alpha large",
+        "gamma cheap",
+        as_of=AS_OF,
+        research="skip",
+    )
+    assert start.paths is not None
+    adapted = (
+        (app / "prompts" / "big.yaml")
+        .read_text(encoding="utf-8")
+        .replace("word word", "term word", 1)
+    )
+    result = service.submit_adapted_prompt(
+        start.paths.run_dir,
+        "prompts/big.yaml",
+        adapted,
+        "Adapted.",
+        ["Reworded the opening."],
+        submitted_on=AS_OF,
+    )
+    assert not result.accepted
+    # Each component alone fits gamma's 32k window; the JOINED payload must not.
+    assert "context window" in result.message.casefold()
+
+
+def test_unparseable_original_is_disclosed_not_silent(
+    service: MigrationService, tmp_path: Path
+) -> None:
+    app = tmp_path / "broken_original_app"
+    (app / "prompts").mkdir(parents=True)
+    (app / "prompts" / "broken.yaml").write_text('sys_prompt: "unterminated\n', encoding="utf-8")
+    (app / "app.py").write_text(
+        textwrap.dedent(
+            """\
+            from anthropic import Anthropic
+
+            client = Anthropic()
+            client.messages.create(
+                model="claude-sonnet-4-6",
+                messages=[{"role": "user", "content": "hi"}],
+                max_tokens=100,
+            )
+            """
+        ),
+        encoding="utf-8",
+    )
+    start = _start_review_round(service, app)
+    assert start.paths is not None
+    result = service.submit_adapted_prompt(
+        start.paths.run_dir,
+        "prompts/broken.yaml",
+        'sys_prompt: "A complete adapted prompt."\n',
+        "Repaired and adapted the prompt.",
+        ["Fixed the document and adapted the wording."],
+        submitted_on=AS_OF,
+    )
+    assert result.accepted, result.message
+    assert "could not be parsed" in result.message
+
+
+def test_dynamic_request_surfaces_as_unknown_and_native_use_blocks(
+    service: MigrationService, tmp_path: Path
+) -> None:
+    dynamic_app = tmp_path / "dynamic_app"
+    dynamic_app.mkdir()
+    (dynamic_app / "app.py").write_text(
+        textwrap.dedent(
+            """\
+            from anthropic import Anthropic
+
+            from settings import build_request
+
+            client = Anthropic()
+            request = build_request()
+            client.messages.create(**request)
+            """
+        ),
+        encoding="utf-8",
+    )
+    plan = service.generate_migration_plan(
+        dynamic_app,
+        "claude-sonnet-4-6",
+        "claude-sonnet-5",
+        source_platform="anthropic-api",
+        target_platform="amazon-bedrock",
+        target_endpoint="bedrock-runtime",
+    )
+    assert any("dynamically" in unknown for unknown in plan.unknowns)
+
+    native_app = tmp_path / "native_app"
+    native_app.mkdir()
+    (native_app / "app.py").write_text(
+        textwrap.dedent(
+            """\
+            from anthropic import Anthropic
+
+            client = Anthropic()
+            client.messages.create(
+                model="claude-sonnet-4-6",
+                messages=[{"role": "user", "content": "extract"}],
+                max_tokens=500,
+                output_config={
+                    "format": {
+                        "type": "json_schema",
+                        "schema": {"type": "object", "properties": {}},
+                    }
+                },
+            )
+            """
+        ),
+        encoding="utf-8",
+    )
+    plan = service.generate_migration_plan(
+        native_app,
+        "claude-sonnet-4-6",
+        "claude-sonnet-5",
+        source_platform="anthropic-api",
+        target_platform="amazon-bedrock",
+        target_endpoint="bedrock-runtime",
+    )
+    assert any(
+        "configures structured output" in blocker and "unsupported" in blocker
+        for blocker in plan.blockers
+    )
+    assert plan.migration_complexity == "blocked"

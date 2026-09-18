@@ -523,6 +523,7 @@ class _Visitor(ast.NodeVisitor):
                 ".converse",
             )
         ):
+            dynamic_request = any(item.arg is None for item in node.keywords)
             self._add(
                 node,
                 CouplingKind.INVOCATION,
@@ -530,6 +531,7 @@ class _Visitor(ast.NodeVisitor):
                 provider=provider,
                 platform=platform,
                 value=call_name,
+                metadata={"dynamic_request": True} if dynamic_request else None,
             )
         keyword_map = {item.arg: item.value for item in node.keywords if item.arg}
         model_node = keyword_map.get("model") or keyword_map.get("modelId")

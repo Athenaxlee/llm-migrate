@@ -1147,6 +1147,9 @@ def run_submit_prompt(
     if content is None and not unchanged:
         typer.echo("--content is required unless --unchanged is set", err=True)
         raise typer.Exit(2)
+    if content is not None and unchanged:
+        typer.echo("--content and --unchanged are mutually exclusive", err=True)
+        raise typer.Exit(2)
     try:
         result = _service(registry).submit_adapted_prompt(
             run_dir,
@@ -1193,6 +1196,9 @@ def run_submit_file(
     """Check and store one adapted application file beneath the run's output/files/."""
     if content is None and not unchanged:
         typer.echo("--content is required unless --unchanged is set", err=True)
+        raise typer.Exit(2)
+    if content is not None and unchanged:
+        typer.echo("--content and --unchanged are mutually exclusive", err=True)
         raise typer.Exit(2)
     try:
         result = _service(registry).submit_adapted_file(

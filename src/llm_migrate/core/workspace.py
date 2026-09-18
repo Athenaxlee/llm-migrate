@@ -27,6 +27,7 @@ from llm_migrate.core.models import (
     MigrationPlan,
     ModelMatchResult,
     PromptMigrationSpec,
+    PromptSourceFormat,
     PromptValidationResult,
     StrictModel,
     ValidationLevel,
@@ -34,6 +35,7 @@ from llm_migrate.core.models import (
 from llm_migrate.core.prompt_documents import (
     STRUCTURED_SUFFIXES,
     build_candidate_document,
+    document_mentions,
     evaluate_prompt_submission,
     is_prompt_bearing,
     source_format,
@@ -351,15 +353,19 @@ def derive_adaptation_tasks(
     config: MigrationRunConfig,
     plan: MigrationPlan,
     run_dir: Path,
+    log: AdaptationLog | None = None,
 ) -> AdaptationTaskList:
     """Turn one migration plan into an explicit, per-file adaptation worklist."""
-    log = load_adaptation_log(run_dir, config.run_id)
+    if log is None:
+        log = load_adaptation_log(run_dir, config.run_id)
     submitted = {(entry.kind, entry.source_path) for entry in log.entries}
     prompt_tasks: list[PromptAdaptationTask] = []
     prompt_paths: set[str] = set()
     specs_by_path: dict[str, list[PromptMigrationSpec]] = {}
     for spec in plan.prompt_changes:
-        specs_by_path.setdefault(spec.source_path or "<inline>", []).append(spec)
+        if spec.source_path is None:
+            continue  # No real path means no submittable (or closable) task.
+        specs_by_path.setdefault(spec.source_path, []).append(spec)
     difference_guidance = [
         f"Model difference ({item.severity.value}): {item.migration_impact}"
         + (f" Action: {item.recommended_action}" if item.recommended_action else "")
@@ -494,9 +500,9 @@ def derive_adaptation_tasks(
             "rejected unless the submission sets allow_restructure and records the "
             "justification.",
             "Prompt submissions must change the DECODED runtime prompt values; "
-            "serialization-only edits (unicode escapes, quoting or whitespace style) "
-            "are rejected, and validation runs on the decoded values, so encoding "
-            "tricks cannot clear a finding.",
+            "serialization-only, whitespace-only, and case-only edits are rejected, "
+            "and validation runs on the decoded values, so encoding tricks cannot "
+            "clear a finding.",
             "If a prompt or file genuinely needs no change for the target model, "
             "submit it with unchanged=true (both submission tools support it) "
             "instead of inventing an edit or leaving a coverage gap.",
@@ -520,6 +526,48 @@ def read_original_prompt(config: MigrationRunConfig, source_path: str) -> str | 
     """The application's current content for one prompt source path, if present."""
     original = _application_base(config) / _safe_relative_path(config, source_path)
     return original.read_text(encoding="utf-8") if original.is_file() else None
+
+
+def structured_submission_format(
+    config: MigrationRunConfig, source_path: str
+) -> PromptSourceFormat | None:
+    """The structured format of a submission path, resolved the one true way.
+
+    Both the service-level validation and the workspace checks must derive the
+    format from the same sanitized path, or a symlinked/odd path could be
+    validated as plain text while being checked as a structured document.
+    """
+    return STRUCTURED_SUFFIXES.get(_safe_relative_path(config, source_path).suffix.casefold())
+
+
+def _unchanged_prompt_problems(
+    config: MigrationRunConfig,
+    original_text: str,
+    format: PromptSourceFormat | None,
+    rationale: str,
+) -> list[str]:
+    """Guards for recording a prompt as reviewed-but-unchanged."""
+    problems: list[str] = []
+    if not rationale.strip():
+        problems.append("unchanged=true requires a rationale recording the review")
+    needles = [
+        needle
+        for needle, counterpart in (
+            (config.source_model_id, config.target_model_id),
+            (config.source.model, config.target.model),
+        )
+        if needle and needle != counterpart
+    ]
+    mentioned = sorted(
+        {needle for needle in needles if document_mentions(original_text, format, needle)}
+    )
+    if mentioned:
+        problems.append(
+            "the prompt's decoded values reference the source model ("
+            + ", ".join(mentioned)
+            + "); it cannot be recorded as unchanged"
+        )
+    return problems
 
 
 def submit_adapted_prompt(
@@ -548,30 +596,58 @@ def submit_adapted_prompt(
     ]
     original = _application_base(config) / relative
     original_text = original.read_text(encoding="utf-8") if original.is_file() else None
-    if unchanged:
-        if original_text is None:
-            blockers.append("unchanged=true requires the prompt file to exist in the application")
-        else:
-            adapted_prompt = original_text
-            if not changes:
-                changes = ["Reviewed for the target model; no change required."]
-    if not adapted_prompt.strip():
-        blockers.append("the adapted prompt is empty")
     format = STRUCTURED_SUFFIXES.get(relative.suffix.casefold())
     structure_warnings: list[str] = []
-    if original_text is None and not unchanged:
+    if unchanged:
+        if original_text is None:
+            return PromptSubmissionResult(
+                accepted=False,
+                source_path=source_path,
+                validation=validation,
+                message=(
+                    "Rejected: unchanged=true requires the prompt file to exist in the application"
+                ),
+            )
+        problems = _unchanged_prompt_problems(config, original_text, format, rationale)
+        if problems:
+            return PromptSubmissionResult(
+                accepted=False,
+                source_path=source_path,
+                validation=validation,
+                message="Rejected: " + "; ".join(problems),
+            )
+        adapted_prompt = original_text
+        if not changes:
+            changes = ["Reviewed for the target model; no change required."]
+    elif original_text is None:
         structure_warnings.append(
             "the original prompt file was not found in the application; document and "
             "structural checks were skipped and no source fingerprint was recorded"
         )
-    elif original_text is not None and not unchanged and adapted_prompt.strip():
-        assessment = evaluate_prompt_submission(original_text, adapted_prompt, format)
+    elif adapted_prompt.strip():
+        assessment = evaluate_prompt_submission(
+            original_text,
+            adapted_prompt,
+            format,
+            source_model_id=config.source_model_id,
+            target_model_id=config.target_model_id,
+        )
         blockers.extend(assessment.problems)
-        if not assessment.problems and not assessment.runtime_changed:
+        if assessment.checks_skipped:
+            structure_warnings.append(assessment.checks_skipped)
+        clean = not assessment.problems and not assessment.checks_skipped
+        if clean and not assessment.runtime_changed:
             blockers.append(
                 "the adapted prompt decodes to the same runtime values as the original; "
                 "byte-level or serialization changes are not an adaptation. Resubmit with "
                 "unchanged=true to record a reviewed no-change prompt"
+            )
+        elif clean and assessment.cosmetic_only:
+            blockers.append(
+                "the adaptation changes only whitespace or letter case in the runtime "
+                "prompt values; that is not a target-model adaptation. Make a substantive "
+                "change, or resubmit with unchanged=true to record a reviewed no-change "
+                "prompt"
             )
         drops = assessment.structural_drops
         if drops and not allow_restructure:
@@ -588,11 +664,9 @@ def submit_adapted_prompt(
             )
         elif drops:
             structure_warnings.extend(f"restructure accepted: {drop}" for drop in drops)
-        if assessment.cosmetic_only:
-            structure_warnings.append(
-                "the adaptation changes only whitespace or letter case in the runtime "
-                "prompt values; verify this is an intentional adaptation"
-            )
+        structure_warnings.extend(f"note: {note}" for note in assessment.notes)
+    if not adapted_prompt.strip():
+        blockers.append("the adapted prompt is empty")
     if blockers:
         return PromptSubmissionResult(
             accepted=False,
@@ -799,10 +873,20 @@ def render_adaptation_section(log: AdaptationLog, gaps: list[str]) -> str:
         lines.append("")
     lines.extend(("### Adaptation coverage", ""))
     if gaps:
-        lines.extend(
-            f"- `{file}`: no adapted version was submitted; its planned changes remain manual."
-            for file in gaps
-        )
+        submitted_kinds = {entry.source_path: entry.kind for entry in log.entries}
+        for file in gaps:
+            other_kind = submitted_kinds.get(file)
+            if other_kind is not None:
+                lines.append(
+                    f"- `{file}`: a {other_kind} deliverable exists for this path, but the "
+                    "task requires the other submission kind (prompt sources must go "
+                    "through submit_adapted_prompt); the required checks were bypassed."
+                )
+            else:
+                lines.append(
+                    f"- `{file}`: no adapted version was submitted; its planned changes "
+                    "remain manual."
+                )
     else:
         lines.append("- Every affected file has a submitted adaptation deliverable.")
     lines.append("")

@@ -619,10 +619,12 @@ def submit_adapted_prompt(
     listed model difference or evidence-linked guidance item requires a
     change, and cite that evidence in `changes`. Validation runs on the
     DECODED runtime prompt values, and a submission whose decoded values
-    equal the original's is rejected — byte-level or serialization tricks
-    (escapes, quoting, whitespace style) are never an adaptation. If the
-    prompt needs no change, pass `unchanged=true` with an empty
-    `adapted_prompt` to record a reviewed no-change deliverable. Blockers are
+    equal the original's — or differ only by whitespace or letter case — is
+    rejected: serialization tricks, escapes, quoting and cosmetic edits are
+    never an adaptation. If the prompt needs no change, pass `unchanged=true`
+    with an EMPTY `adapted_prompt` (combining it with content is an error)
+    to record a reviewed no-change deliverable; the claim is refused when the
+    prompt's decoded values still reference the source model. Blockers are
     rejected, and a submission that drops the original's structural sections
     (XML-like tags or prompt components) is rejected unless
     `allow_restructure` is true and the justification is recorded in

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import hashlib
 from collections.abc import Callable, Mapping, Sequence
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
@@ -112,7 +111,6 @@ from llm_migrate.core.planning import (
     migration_manifest_as_yaml,
 )
 from llm_migrate.core.prompt_documents import (
-    STRUCTURED_SUFFIXES,
     PromptDocumentError,
     extract_prompt_components,
     parse_structured_document,
@@ -153,6 +151,7 @@ from llm_migrate.core.workspace import (
     render_adaptation_section,
     run_paths,
     sanitize_run_id,
+    structured_submission_format,
     write_run_config,
 )
 from llm_migrate.core.workspace import (
@@ -1201,46 +1200,31 @@ class MigrationService:
     ) -> PromptValidationResult:
         """Validate the DECODED runtime prompt values, not the serialized text.
 
-        For structured documents each extracted component is validated
-        individually, so serialization tricks (unicode escapes, quoting or
-        style changes) can neither hide prompt content from validation nor
-        clear a finding that applies to the decoded value.
+        For structured documents the extracted components are validated as one
+        joined payload: serialization tricks cannot hide content from
+        validation, aggregate checks (the context-window budget, emptiness)
+        run over the full runtime prompt rather than per component, and
+        prompt-independent issues are reported once instead of per component.
+        Only an unparseable document falls back to the raw text; the workspace
+        rejects that syntax error itself.
         """
-        format = STRUCTURED_SUFFIXES.get(Path(source_path).suffix.casefold())
-        components = []
+        format = structured_submission_format(config, source_path)
+        text_to_validate = adapted_prompt
         if format is not None and adapted_prompt.strip():
             try:
                 components = extract_prompt_components(
                     parse_structured_document(adapted_prompt, format)
                 )
             except PromptDocumentError:
-                components = []  # The workspace rejects the syntax error itself.
-        if not components:
-            return self.validate_prompt(
-                config.target.model,
-                adapted_prompt,
-                source_path=source_path,
-                target_platform=config.target.platform,
-                target_endpoint=config.target.endpoint,
-            )
-        issues: list[ValidationIssue] = []
-        valid = True
-        for component in components:
-            result = self.validate_prompt(
-                config.target.model,
-                component.content,
-                source_path=(f"{source_path}#{component.key}" if component.key else source_path),
-                target_platform=config.target.platform,
-                target_endpoint=config.target.endpoint,
-            )
-            valid = valid and result.valid
-            issues.extend(result.issues)
-        return PromptValidationResult(
-            valid=valid,
-            source_prompt_sha256=hashlib.sha256(adapted_prompt.encode("utf-8")).hexdigest(),
-            target_model=config.target.model,
+                pass
+            else:
+                text_to_validate = "\n\n".join(component.content for component in components)
+        return self.validate_prompt(
+            config.target.model,
+            text_to_validate,
+            source_path=source_path,
             target_platform=config.target.platform,
-            issues=issues,
+            target_endpoint=config.target.endpoint,
         )
 
     def submit_adapted_prompt(
@@ -1258,6 +1242,11 @@ class MigrationService:
         """Validate and persist one adapted prompt beneath the run's output/prompts/."""
         workspace = Path(run_dir)
         config = load_run_config(workspace)
+        if unchanged and adapted_prompt.strip():
+            raise ValueError(
+                "unchanged=true cannot be combined with adapted content; omit the "
+                "content or drop unchanged"
+            )
         if unchanged:
             original = read_original_prompt(config, source_path)
             if original is not None:
@@ -1289,6 +1278,11 @@ class MigrationService:
         submitted_on: date | None = None,
     ) -> FileSubmissionResult:
         """Check and persist one adapted application file beneath output/files/."""
+        if unchanged and adapted_content.strip():
+            raise ValueError(
+                "unchanged=true cannot be combined with adapted content; omit the "
+                "content or drop unchanged"
+            )
         workspace = Path(run_dir)
         return workspace_submit_adapted_file(
             workspace,
@@ -1318,7 +1312,7 @@ class MigrationService:
         Path(paths.manifest_path).write_text(
             self.migration_manifest_as_yaml(plan), encoding="utf-8"
         )
-        tasks = derive_adaptation_tasks(config, plan, workspace)
+        tasks = derive_adaptation_tasks(config, plan, workspace, log)
         gaps = coverage_gaps(tasks)
         report = self.migration_report(plan)
         report = report.rstrip("\n") + "\n\n" + render_adaptation_section(log, gaps) + "\n"
