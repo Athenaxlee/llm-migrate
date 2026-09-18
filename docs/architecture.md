@@ -250,6 +250,13 @@ consumer is classified `inline`, `source`, or `dynamic`, and planning surfaces
 a `resolved`/`partial`/`unresolved` coverage state instead of silently
 reporting "no prompt changes" when consumers exist.
 
+All prompt validation and adaptation checks operate on DECODED runtime
+prompt values, never on serialized source text: encoding tricks cannot hide
+prompt content from validation or disguise a no-op as an adaptation. Prompt
+text mentioning a capability (JSON output, tools) is never treated as proof
+that the native API feature is used — prompt-enforced mechanisms warn, and
+only invocation evidence may block.
+
 Prompt adaptation follows "no evidence, no rewrite": the deterministic
 candidate is always the source prompt verbatim, every recommended change is
 evidence-linked advice (registry prompt guidance and migration knowledge with

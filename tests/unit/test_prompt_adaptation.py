@@ -338,14 +338,15 @@ def test_message_reorder_is_not_a_structural_drop() -> None:
             ]
         }
     )
-    problems, drops = evaluate_prompt_submission(original, reordered, PromptSourceFormat.YAML)
-    assert problems == []
-    assert drops == []
+    assessment = evaluate_prompt_submission(original, reordered, PromptSourceFormat.YAML)
+    assert assessment.problems == []
+    assert assessment.structural_drops == []
+    assert assessment.runtime_changed
     flattened = yaml.safe_dump(
         {"messages": [{"role": "user", "content": "Stay safe. Question one."}]}
     )
-    _, drops = evaluate_prompt_submission(original, flattened, PromptSourceFormat.YAML)
-    assert any("<policy>" in drop for drop in drops)
+    assessment = evaluate_prompt_submission(original, flattened, PromptSourceFormat.YAML)
+    assert any("<policy>" in drop for drop in assessment.structural_drops)
 
 
 def test_missing_original_prompt_is_flagged_not_silent(
@@ -427,3 +428,195 @@ def test_unchanged_file_submission_closes_coverage_without_an_invented_edit(
     )
     assert not lazy.accepted
     assert "source model id" in lazy.message
+
+
+@pytest.fixture
+def json_prompt_app(tmp_path: Path) -> Path:
+    """App whose prompt enforces JSON through prompt text plus json.loads()."""
+    app = tmp_path / "json_prompt_app"
+    (app / "prompts").mkdir(parents=True)
+    (app / "prompts" / "extract.yaml").write_text(
+        'sys_prompt: "Extract the fields.\\nExtract the fields.\\nReturn valid JSON only."\n',
+        encoding="utf-8",
+    )
+    (app / "app.py").write_text(
+        textwrap.dedent(
+            """\
+            import json
+
+            import yaml
+            from anthropic import Anthropic
+
+            with open("prompts/extract.yaml") as handle:
+                prompts = yaml.safe_load(handle)
+
+            client = Anthropic()
+            response = client.messages.create(
+                model="claude-sonnet-4-6",
+                system=prompts["sys_prompt"],
+                messages=[{"role": "user", "content": "document"}],
+                max_tokens=800,
+            )
+            data = json.loads(response.content[0].text)
+            """
+        ),
+        encoding="utf-8",
+    )
+    return app
+
+
+def test_prompt_enforced_json_never_blocks_the_plan(
+    service: MigrationService, json_prompt_app: Path
+) -> None:
+    plan = service.generate_migration_plan(
+        json_prompt_app,
+        "claude-sonnet-4-6",
+        "claude-sonnet-5",
+        source_platform="anthropic-api",
+        target_platform="amazon-bedrock",  # structured_output: false via override
+        target_endpoint="bedrock-runtime",
+    )
+    unsupported = [
+        item for item in plan.validation_results if item.code == "unsupported_structured_output"
+    ]
+    assert unsupported, "the mismatch must still be surfaced"
+    assert all(item.level.value == "warning" for item in unsupported)
+    assert not any("structured output" in blocker for blocker in plan.blockers)
+
+
+def test_serialization_bypass_is_rejected(service: MigrationService, json_prompt_app: Path) -> None:
+    start = service.start_migration_run(
+        json_prompt_app,
+        "claude-sonnet-4-6",
+        "claude-sonnet-5",
+        source_platform="anthropic-api",
+        target_platform="anthropic-api",
+        as_of=AS_OF,
+        research="skip",
+    )
+    assert start.paths is not None
+    # The exact incident: JSON decodes to JSON, so the runtime prompt is
+    # unchanged; the submission must be rejected, not recorded as an adaptation.
+    bypass = (
+        'sys_prompt: "Extract the fields.\\nExtract the fields.\\nReturn valid \\u004aSON only."\n'
+    )
+    result = service.submit_adapted_prompt(
+        start.paths.run_dir,
+        "prompts/extract.yaml",
+        bypass,
+        "Adapted the output-format instruction.",
+        ["Reworded the JSON requirement."],
+        submitted_on=AS_OF,
+    )
+    assert not result.accepted
+    assert "decodes to the same runtime values" in result.message
+    assert "unchanged=true" in result.message
+
+
+def test_validation_runs_on_decoded_values(
+    service: MigrationService, json_prompt_app: Path
+) -> None:
+    start = service.start_migration_run(
+        json_prompt_app,
+        "us.anthropic.claude-sonnet-4-6",
+        "us.anthropic.claude-sonnet-5",
+        source_platform="bedrock",
+        target_platform="bedrock",
+        target_endpoint="bedrock-runtime",
+        as_of=AS_OF,
+        research="skip",
+    )
+    assert start.paths is not None
+    # A real adaptation that hides the word JSON behind an escape in the raw
+    # YAML: decoded-component validation must still see it.
+    adapted = (
+        'sys_prompt: "Extract every field from every row.\\n'
+        'Return valid \\u004aSON only, with all required keys."\n'
+    )
+    result = service.submit_adapted_prompt(
+        start.paths.run_dir,
+        "prompts/extract.yaml",
+        adapted,
+        "Clarified scope per literal-instruction guidance.",
+        ["Made the extraction scope explicit."],
+        submitted_on=AS_OF,
+    )
+    assert result.accepted, result.message
+    codes = {issue.code for issue in result.validation.issues}
+    assert "unsupported_structured_output" in codes  # seen despite the escape
+    assert result.validation.valid  # ...but as a warning, not a blocker
+
+
+def test_unchanged_prompt_and_cosmetic_only_detection(
+    service: MigrationService, json_prompt_app: Path
+) -> None:
+    start = service.start_migration_run(
+        json_prompt_app,
+        "claude-sonnet-4-6",
+        "claude-sonnet-5",
+        source_platform="anthropic-api",
+        target_platform="anthropic-api",
+        as_of=AS_OF,
+        research="skip",
+    )
+    assert start.paths is not None
+    run_dir = start.paths.run_dir
+    unchanged = service.submit_adapted_prompt(
+        run_dir,
+        "prompts/extract.yaml",
+        "",
+        "Prompt already fits the target; JSON enforcement stays prompt-level.",
+        [],
+        unchanged=True,
+        submitted_on=AS_OF,
+    )
+    assert unchanged.accepted, unchanged.message
+    cosmetic = service.submit_adapted_prompt(
+        run_dir,
+        "prompts/extract.yaml",
+        'sys_prompt: "Extract the fields.\\nExtract the fields.\\nreturn valid json only."\n',
+        "Adapted casing.",
+        ["Lower-cased the format instruction."],
+        submitted_on=AS_OF,
+    )
+    assert cosmetic.accepted
+    assert "whitespace or letter case" in cosmetic.message
+
+
+def test_in_prompt_findings_reach_the_task_guidance(
+    service: MigrationService, json_prompt_app: Path
+) -> None:
+    start = service.start_migration_run(
+        json_prompt_app,
+        "claude-sonnet-4-6",
+        "claude-sonnet-5",
+        source_platform="anthropic-api",
+        target_platform="anthropic-api",
+        as_of=AS_OF,
+        research="skip",
+    )
+    assert start.paths is not None
+    tasks = service.list_adaptation_tasks(start.paths.run_dir)
+    task = next(item for item in tasks.prompt_tasks if item.source_path == "prompts/extract.yaml")
+    findings = [line for line in task.guidance if line.startswith("[sys_prompt] In-prompt finding")]
+    assert any("duplicated_requirements" in line for line in findings)
+    assert any("json_only_prompting" in line for line in findings)
+
+
+def test_worklist_and_finalization_coverage_agree(
+    service: MigrationService, json_prompt_app: Path
+) -> None:
+    start = service.start_migration_run(
+        json_prompt_app,
+        "claude-sonnet-4-6",
+        "claude-sonnet-5",
+        source_platform="anthropic-api",
+        target_platform="anthropic-api",
+        as_of=AS_OF,
+        research="skip",
+    )
+    assert start.paths is not None
+    tasks = service.list_adaptation_tasks(start.paths.run_dir)
+    worklist = sorted(item.source_path for item in [*tasks.prompt_tasks, *tasks.file_tasks])
+    final = service.finalize_migration_run(start.paths.run_dir)
+    assert final.coverage_gaps == worklist  # nothing submitted: gaps == worklist, exactly

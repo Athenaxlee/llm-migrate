@@ -59,14 +59,20 @@ def test_prompt_migration_spec_preserves_contract_without_rewriting(
     assert any("chain-of-thought" in item.text for item in result.reasoning_configuration)
 
 
-def test_prompt_validation_reports_target_blockers(service: MigrationService) -> None:
+def test_prompt_lexical_capability_mismatches_warn_not_block(
+    service: MigrationService,
+) -> None:
+    # Prompt text mentioning JSON or tools is not proof the native API feature
+    # is used (prompt-enforced JSON needs no structured-output support), so
+    # these surface as warnings; only invocation evidence may block.
     result = service.validate_prompt("gamma cheap", "Use the weather tool. Return JSON.")
-    assert not result.valid
+    assert result.valid
     assert {item.code for item in result.issues} == {
         "unsupported_structured_output",
         "unsupported_tool_instructions",
     }
-    assert all(item.level is ValidationLevel.BLOCKER for item in result.issues)
+    assert all(item.level is ValidationLevel.WARNING for item in result.issues)
+    assert any("prompt-enforced" in item.message for item in result.issues)
 
 
 def test_prompt_validation_returns_platform_errors_as_blockers(

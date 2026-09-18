@@ -305,6 +305,15 @@ def _advice_texts(items: list[MigrationAdvice]) -> list[str]:
     ]
 
 
+_CURATION_FINDING_CATEGORIES = {
+    "duplicated_requirements",
+    "negative_wording",
+    "explicit_chain_of_thought",
+    "assistant_prefill",
+    "json_only_prompting",
+}
+
+
 def _spec_guidance(spec: PromptMigrationSpec) -> list[str]:
     return [
         *_advice_texts(spec.requirements_to_preserve),
@@ -379,6 +388,13 @@ def derive_adaptation_tasks(
                     + ", ".join(f"<{name}>" for name in sections)
                     + "; submissions that drop them are rejected unless allow_restructure "
                     "is set with recorded evidence."
+                )
+            for finding in spec.source_prompt_analysis.findings:
+                if finding.category not in _CURATION_FINDING_CATEGORIES:
+                    continue
+                evidence = f" Evidence: {finding.evidence[0]!r}." if finding.evidence else ""
+                guidance.append(
+                    f"{prefix}In-prompt finding ({finding.category}): {finding.message}{evidence}"
                 )
             for text in _spec_guidance(spec):
                 line = prefix + text
@@ -477,9 +493,13 @@ def derive_adaptation_tasks(
             "task. Structural drops (removed XML-like sections or components) are "
             "rejected unless the submission sets allow_restructure and records the "
             "justification.",
-            "If a file task genuinely needs no change for the target model, submit it "
-            "with submit_adapted_file(..., unchanged=true) instead of inventing an "
-            "edit or leaving a coverage gap.",
+            "Prompt submissions must change the DECODED runtime prompt values; "
+            "serialization-only edits (unicode escapes, quoting or whitespace style) "
+            "are rejected, and validation runs on the decoded values, so encoding "
+            "tricks cannot clear a finding.",
+            "If a prompt or file genuinely needs no change for the target model, "
+            "submit it with unchanged=true (both submission tools support it) "
+            "instead of inventing an edit or leaving a coverage gap.",
             "Call this worklist once and work through it; each submission result "
             "already confirms acceptance, and finalize_migration reports any "
             "remaining gaps, so there is no need to re-list between submissions.",
@@ -496,6 +516,12 @@ def derive_adaptation_tasks(
     )
 
 
+def read_original_prompt(config: MigrationRunConfig, source_path: str) -> str | None:
+    """The application's current content for one prompt source path, if present."""
+    original = _application_base(config) / _safe_relative_path(config, source_path)
+    return original.read_text(encoding="utf-8") if original.is_file() else None
+
+
 def submit_adapted_prompt(
     run_dir: Path,
     config: MigrationRunConfig,
@@ -506,26 +532,48 @@ def submit_adapted_prompt(
     validation: PromptValidationResult,
     submitted_on: date,
     allow_restructure: bool = False,
+    unchanged: bool = False,
 ) -> PromptSubmissionResult:
-    """Persist one validated adapted prompt beneath output/prompts/."""
+    """Persist one validated adapted prompt beneath output/prompts/.
+
+    `unchanged=True` records that the prompt was reviewed and needs no change:
+    the original content is copied as the deliverable. Without it, a
+    submission whose DECODED runtime prompt values equal the original's is
+    rejected — byte-level or serialization changes (escapes, quoting,
+    whitespace style) are not an adaptation and cannot clear validation.
+    """
     relative = _safe_relative_path(config, source_path)
     blockers = [
         issue.message for issue in validation.issues if issue.level is ValidationLevel.BLOCKER
     ]
-    if not adapted_prompt.strip():
-        blockers.append("the adapted prompt is empty")
     original = _application_base(config) / relative
     original_text = original.read_text(encoding="utf-8") if original.is_file() else None
+    if unchanged:
+        if original_text is None:
+            blockers.append("unchanged=true requires the prompt file to exist in the application")
+        else:
+            adapted_prompt = original_text
+            if not changes:
+                changes = ["Reviewed for the target model; no change required."]
+    if not adapted_prompt.strip():
+        blockers.append("the adapted prompt is empty")
     format = STRUCTURED_SUFFIXES.get(relative.suffix.casefold())
     structure_warnings: list[str] = []
-    if original_text is None:
+    if original_text is None and not unchanged:
         structure_warnings.append(
             "the original prompt file was not found in the application; document and "
             "structural checks were skipped and no source fingerprint was recorded"
         )
-    elif adapted_prompt.strip():
-        problems, drops = evaluate_prompt_submission(original_text, adapted_prompt, format)
-        blockers.extend(problems)
+    elif original_text is not None and not unchanged and adapted_prompt.strip():
+        assessment = evaluate_prompt_submission(original_text, adapted_prompt, format)
+        blockers.extend(assessment.problems)
+        if not assessment.problems and not assessment.runtime_changed:
+            blockers.append(
+                "the adapted prompt decodes to the same runtime values as the original; "
+                "byte-level or serialization changes are not an adaptation. Resubmit with "
+                "unchanged=true to record a reviewed no-change prompt"
+            )
+        drops = assessment.structural_drops
         if drops and not allow_restructure:
             blockers.append(
                 "the adapted prompt restructures the original without justification: "
@@ -540,6 +588,11 @@ def submit_adapted_prompt(
             )
         elif drops:
             structure_warnings.extend(f"restructure accepted: {drop}" for drop in drops)
+        if assessment.cosmetic_only:
+            structure_warnings.append(
+                "the adaptation changes only whitespace or letter case in the runtime "
+                "prompt values; verify this is an intentional adaptation"
+            )
     if blockers:
         return PromptSubmissionResult(
             accepted=False,
@@ -700,13 +753,21 @@ def submit_adapted_file(
     )
 
 
-def coverage_gaps(plan: MigrationPlan, log: AdaptationLog) -> list[str]:
-    """Affected files that still have no submitted adaptation deliverable."""
-    submitted = {entry.source_path for entry in log.entries}
-    return [file for file in plan.affected_files if file not in submitted]
+def coverage_gaps(tasks: AdaptationTaskList) -> list[str]:
+    """Worklist entries that still have no submitted adaptation deliverable.
+
+    Computed from the same derived task list the agent works through, so the
+    worklist and the finalization coverage report can never disagree about
+    which files count.
+    """
+    pending: list[PromptAdaptationTask | FileAdaptationTask] = [
+        *tasks.prompt_tasks,
+        *tasks.file_tasks,
+    ]
+    return sorted(task.source_path for task in pending if task.status == "pending")
 
 
-def render_adaptation_section(plan: MigrationPlan, log: AdaptationLog) -> str:
+def render_adaptation_section(log: AdaptationLog, gaps: list[str]) -> str:
     """Render the per-file adaptation changes and rationale for the report."""
     lines = [
         "## Adaptation deliverables",
@@ -736,7 +797,6 @@ def render_adaptation_section(plan: MigrationPlan, log: AdaptationLog) -> str:
             lines.append("- Validation warnings:")
             lines.extend(f"  - {warning}" for warning in entry.warnings)
         lines.append("")
-    gaps = coverage_gaps(plan, log)
     lines.extend(("### Adaptation coverage", ""))
     if gaps:
         lines.extend(

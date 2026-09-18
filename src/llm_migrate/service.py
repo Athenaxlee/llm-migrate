@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 from collections.abc import Callable, Mapping, Sequence
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
@@ -110,6 +111,12 @@ from llm_migrate.core.planning import (
     generate_migration_report,
     migration_manifest_as_yaml,
 )
+from llm_migrate.core.prompt_documents import (
+    STRUCTURED_SUFFIXES,
+    PromptDocumentError,
+    extract_prompt_components,
+    parse_structured_document,
+)
 from llm_migrate.core.proposals import propose_registry_update
 from llm_migrate.core.recommendation import recommend_models
 from llm_migrate.core.registry import ModelRegistry, RegistryError
@@ -142,6 +149,7 @@ from llm_migrate.core.workspace import (
     derive_adaptation_tasks,
     load_adaptation_log,
     load_run_config,
+    read_original_prompt,
     render_adaptation_section,
     run_paths,
     sanitize_run_id,
@@ -1185,6 +1193,56 @@ class MigrationService:
         plan = self._plan_for_run(config, workspace, now=now)
         return derive_adaptation_tasks(config, plan, workspace)
 
+    def _validate_prompt_submission(
+        self,
+        config: MigrationRunConfig,
+        source_path: str,
+        adapted_prompt: str,
+    ) -> PromptValidationResult:
+        """Validate the DECODED runtime prompt values, not the serialized text.
+
+        For structured documents each extracted component is validated
+        individually, so serialization tricks (unicode escapes, quoting or
+        style changes) can neither hide prompt content from validation nor
+        clear a finding that applies to the decoded value.
+        """
+        format = STRUCTURED_SUFFIXES.get(Path(source_path).suffix.casefold())
+        components = []
+        if format is not None and adapted_prompt.strip():
+            try:
+                components = extract_prompt_components(
+                    parse_structured_document(adapted_prompt, format)
+                )
+            except PromptDocumentError:
+                components = []  # The workspace rejects the syntax error itself.
+        if not components:
+            return self.validate_prompt(
+                config.target.model,
+                adapted_prompt,
+                source_path=source_path,
+                target_platform=config.target.platform,
+                target_endpoint=config.target.endpoint,
+            )
+        issues: list[ValidationIssue] = []
+        valid = True
+        for component in components:
+            result = self.validate_prompt(
+                config.target.model,
+                component.content,
+                source_path=(f"{source_path}#{component.key}" if component.key else source_path),
+                target_platform=config.target.platform,
+                target_endpoint=config.target.endpoint,
+            )
+            valid = valid and result.valid
+            issues.extend(result.issues)
+        return PromptValidationResult(
+            valid=valid,
+            source_prompt_sha256=hashlib.sha256(adapted_prompt.encode("utf-8")).hexdigest(),
+            target_model=config.target.model,
+            target_platform=config.target.platform,
+            issues=issues,
+        )
+
     def submit_adapted_prompt(
         self,
         run_dir: Path | str,
@@ -1194,18 +1252,17 @@ class MigrationService:
         changes: list[str] | None = None,
         *,
         allow_restructure: bool = False,
+        unchanged: bool = False,
         submitted_on: date | None = None,
     ) -> PromptSubmissionResult:
         """Validate and persist one adapted prompt beneath the run's output/prompts/."""
         workspace = Path(run_dir)
         config = load_run_config(workspace)
-        validation = self.validate_prompt(
-            config.target.model,
-            adapted_prompt,
-            source_path=source_path,
-            target_platform=config.target.platform,
-            target_endpoint=config.target.endpoint,
-        )
+        if unchanged:
+            original = read_original_prompt(config, source_path)
+            if original is not None:
+                adapted_prompt = original
+        validation = self._validate_prompt_submission(config, source_path, adapted_prompt)
         return workspace_submit_adapted_prompt(
             workspace,
             config,
@@ -1216,6 +1273,7 @@ class MigrationService:
             validation,
             submitted_on or date.today(),
             allow_restructure=allow_restructure,
+            unchanged=unchanged,
         )
 
     def submit_adapted_file(
@@ -1260,10 +1318,11 @@ class MigrationService:
         Path(paths.manifest_path).write_text(
             self.migration_manifest_as_yaml(plan), encoding="utf-8"
         )
+        tasks = derive_adaptation_tasks(config, plan, workspace)
+        gaps = coverage_gaps(tasks)
         report = self.migration_report(plan)
-        report = report.rstrip("\n") + "\n\n" + render_adaptation_section(plan, log) + "\n"
+        report = report.rstrip("\n") + "\n\n" + render_adaptation_section(log, gaps) + "\n"
         Path(paths.report_path).write_text(report, encoding="utf-8")
-        gaps = coverage_gaps(plan, log)
         adapted_prompts = sum(entry.kind == "prompt" for entry in log.entries)
         adapted_files = sum(entry.kind == "file" for entry in log.entries)
         return MigrationRunFinalization(

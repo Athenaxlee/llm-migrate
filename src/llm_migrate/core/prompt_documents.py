@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import json
 import tomllib
+from dataclasses import dataclass
 from typing import Any, Literal
 
 import yaml
@@ -237,28 +238,69 @@ def _component_drops(original: Any, adapted: Any) -> list[str]:
     return drops
 
 
+@dataclass(frozen=True)
+class SubmissionAssessment:
+    """Deterministic checks over the DECODED runtime prompt values.
+
+    Comparing decoded values (not serialized source text) means encoding
+    tricks — unicode escapes, quoting changes, YAML style changes — can never
+    make an unchanged prompt look adapted or hide content from validation.
+    """
+
+    problems: list[str]
+    structural_drops: list[str]
+    runtime_changed: bool
+    cosmetic_only: bool
+
+
+def _normalized(text: str) -> str:
+    return " ".join(text.split()).casefold()
+
+
 def evaluate_prompt_submission(
     original_text: str,
     adapted_text: str,
     format: PromptSourceFormat | None,
-) -> tuple[list[str], list[str]]:
+) -> SubmissionAssessment:
     """Fail-closed checks for a submitted prompt adaptation, in one parse.
 
-    Returns `(problems, structural_drops)`: `problems` always block the
-    submission (invalid syntax, changed non-prompt values); `structural_drops`
-    block unless the submitter explicitly acknowledges a restructure.
+    `problems` always block the submission (invalid syntax, changed non-prompt
+    values); `structural_drops` block unless the submitter explicitly
+    acknowledges a restructure; `runtime_changed` is False when the decoded
+    prompt values are identical to the original; `cosmetic_only` is True when
+    they differ only by whitespace or letter case.
     """
     if format is None:
-        return [], _section_drops(None, original_text, adapted_text)
+        changed = original_text != adapted_text
+        return SubmissionAssessment(
+            problems=[],
+            structural_drops=_section_drops(None, original_text, adapted_text),
+            runtime_changed=changed,
+            cosmetic_only=changed and _normalized(original_text) == _normalized(adapted_text),
+        )
     try:
         original = parse_structured_document(original_text, format)
     except PromptDocumentError:
-        return [], []  # An unparseable original is not the submitter's problem.
+        # An unparseable original is not the submitter's problem.
+        return SubmissionAssessment([], [], True, False)
     try:
         adapted = parse_structured_document(adapted_text, format)
     except PromptDocumentError as exc:
-        return [f"the adapted prompt document is not valid {format.value}: {exc}"], []
-    return _document_problems(original, adapted), _component_drops(original, adapted)
+        return SubmissionAssessment(
+            [f"the adapted prompt document is not valid {format.value}: {exc}"], [], True, False
+        )
+    original_values = [(item.key, item.content) for item in extract_prompt_components(original)]
+    adapted_values = [(item.key, item.content) for item in extract_prompt_components(adapted)]
+    changed = original_values != adapted_values
+    cosmetic = changed and [(key, _normalized(content)) for key, content in original_values] == [
+        (key, _normalized(content)) for key, content in adapted_values
+    ]
+    return SubmissionAssessment(
+        problems=_document_problems(original, adapted),
+        structural_drops=_component_drops(original, adapted),
+        runtime_changed=changed,
+        cosmetic_only=cosmetic,
+    )
 
 
 def is_prompt_bearing(text: str, format: PromptSourceFormat | None) -> bool:

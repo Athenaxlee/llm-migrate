@@ -438,6 +438,21 @@ source-target `MigrationKnowledge`, not only individual model profiles.
   `generate_migration_plan/report`, and `start_migration` across service, CLI
   (`--prompt-source`), and MCP, persisted in the run's `migration.yaml` so
   every later run stage sees them.
+- Runtime-aware submission integrity: prompt-lexical capability mismatches
+  (a prompt mentioning JSON or tools) are warnings that name the mechanism —
+  prompt-enforced output formats need no native structured-output support —
+  and can never block a plan; only invocation evidence blocks. Submission
+  validation and adaptation checks run on the DECODED runtime prompt values,
+  so serialization tricks (unicode escapes, quoting, whitespace style) can
+  neither hide content from validation nor make an unchanged prompt look
+  adapted: a submission whose decoded values equal the original is rejected
+  with a pointer to `unchanged=true` (now supported for prompts as well as
+  files), and whitespace/case-only edits are flagged. Prompt tasks surface
+  in-prompt curation findings (duplicated requirements, negative wording,
+  chain-of-thought requests, prefill and JSON-only workarounds) so agents
+  adapt the actual prompt rather than restating model-level guidance, and
+  finalization coverage is computed from the same derived worklist the agent
+  received, so the two can never disagree.
 - Host-agent token efficiency: guidance shared by every prompt task is hoisted
   once into `AdaptationTaskList.shared_prompt_guidance` instead of repeating
   per task (roughly halving the worklist payload on multi-prompt apps), the

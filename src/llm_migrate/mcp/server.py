@@ -611,18 +611,24 @@ def submit_adapted_prompt(
     rationale: str,
     changes: list[str] | None = None,
     allow_restructure: bool = False,
+    unchanged: bool = False,
 ) -> dict[str, Any]:
     """Validate and store one refined prompt for the target model.
 
     Adapt minimally: keep the original wording and structure except where a
     listed model difference or evidence-linked guidance item requires a
-    change, and cite that evidence in `changes`. The prompt is statically
-    validated against the target model; blockers are rejected, and a
-    submission that drops the original's structural sections (XML-like tags
-    or prompt components) is rejected unless `allow_restructure` is true and
-    the justification is recorded in `changes`. Accepted prompts are written
-    beneath `<run>/output/prompts/` mirroring the application layout, and the
-    rationale/changes appear verbatim in the final migration report.
+    change, and cite that evidence in `changes`. Validation runs on the
+    DECODED runtime prompt values, and a submission whose decoded values
+    equal the original's is rejected — byte-level or serialization tricks
+    (escapes, quoting, whitespace style) are never an adaptation. If the
+    prompt needs no change, pass `unchanged=true` with an empty
+    `adapted_prompt` to record a reviewed no-change deliverable. Blockers are
+    rejected, and a submission that drops the original's structural sections
+    (XML-like tags or prompt components) is rejected unless
+    `allow_restructure` is true and the justification is recorded in
+    `changes`. Accepted prompts are written beneath `<run>/output/prompts/`
+    mirroring the application layout, and the rationale/changes appear
+    verbatim in the final migration report.
     """
     return _json(
         _service().submit_adapted_prompt(
@@ -632,6 +638,7 @@ def submit_adapted_prompt(
             rationale,
             changes,
             allow_restructure=allow_restructure,
+            unchanged=unchanged,
         )
     )
 

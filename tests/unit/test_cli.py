@@ -134,7 +134,9 @@ def test_invocation_prepare_and_prompt_validate_commands(project_root: Path) -> 
         ],
     )
     assert validated.exit_code == 0, validated.output
-    assert not json.loads(validated.stdout)["valid"]
+    validated_payload = json.loads(validated.stdout)
+    assert validated_payload["valid"]  # prompt-lexical mismatches warn, never block
+    assert any(item["code"].startswith("unsupported_") for item in validated_payload["issues"])
 
     prompt_path = project_root / "examples" / "prompt.md"
     prompt_before = prompt_path.read_bytes()

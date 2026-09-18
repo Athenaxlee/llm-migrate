@@ -376,9 +376,24 @@ def validate_prompt(
                 source_path=source_path,
             )
         )
-    for category, capability, label in (
-        ("structured_output", target_capabilities.structured_output, "structured output"),
-        ("tool_instructions", target_capabilities.tool_use, "tool use"),
+    # Prompt text mentioning JSON or tools is not evidence that the native API
+    # feature is used: prompt-enforced JSON parsed by the application needs no
+    # structured-output support, and only the invocation analysis can prove a
+    # native-feature dependency. Prompt-lexical mismatches therefore warn; the
+    # invocation-level checks own the blockers.
+    for category, capability, label, mechanism in (
+        (
+            "structured_output",
+            target_capabilities.structured_output,
+            "structured output",
+            "prompt-enforced output formats parsed by the application do not require it",
+        ),
+        (
+            "tool_instructions",
+            target_capabilities.tool_use,
+            "tool use",
+            "only an invocation that configures tools depends on it",
+        ),
     ):
         if category not in categories:
             continue
@@ -386,8 +401,13 @@ def validate_prompt(
             issues.append(
                 ValidationIssue(
                     code=f"unsupported_{category}",
-                    level=ValidationLevel.BLOCKER,
-                    message=f"Prompt assumes {label}, but the target declares it unsupported.",
+                    level=ValidationLevel.WARNING,
+                    message=(
+                        f"The prompt references {label}, which the target declares "
+                        f"unsupported as a native feature; {mechanism}. If the "
+                        "invocation uses the native feature, the invocation analysis "
+                        "reports it; otherwise verify the behavior on the target."
+                    ),
                     source_path=source_path,
                 )
             )

@@ -1602,6 +1602,12 @@ scanner saw the LLM consumers but resolved no prompt file, and the report's
   evidenced migration-knowledge differences; submissions that drop XML-like
   sections or components fail closed unless `allow_restructure` is set with a
   recorded justification ("no evidence, no rewrite").
+- Runtime-aware integrity: prompt-lexical capability mismatches warn instead
+  of blocking (prompt-enforced JSON needs no native structured-output API);
+  validation and adaptation checks compare DECODED runtime prompt values, so
+  serialization-only edits are rejected rather than recorded as adaptations;
+  prompt tasks carry in-prompt curation findings; and finalization coverage
+  derives from the same worklist the agent received.
 - Host-agent efficiency: shared prompt guidance is hoisted once per worklist
   (`shared_prompt_guidance`), the guided flow instructs one `list` call with
   no re-listing between submissions, and reviewed no-change files are recorded
