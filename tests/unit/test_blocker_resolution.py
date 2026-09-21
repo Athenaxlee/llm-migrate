@@ -14,7 +14,7 @@ from llm_migrate.core.blockers import load_decision_log
 from llm_migrate.core.models import ResolutionKind
 from llm_migrate.core.workspace import load_run_config
 from llm_migrate.service import MigrationService
-from tests.unit.adaptation_helpers import dispose_all
+from tests.unit.adaptation_helpers import dispose_all, edit_change
 
 AS_OF = date(2026, 9, 18)
 
@@ -172,9 +172,9 @@ def test_redesign_decision_injects_required_task_with_evidence(
     tasks = service.list_adaptation_tasks(run_dir)
     app_task = next(task for task in tasks.file_tasks if task.source_path == "app.py")
     redesign_changes = [
-        change
+        change.text
         for change in app_task.required_changes
-        if "Redesign off native structured output" in change
+        if "Redesign off native structured output" in change.text
     ]
     assert redesign_changes
     assert "Guidance:" in redesign_changes[0]
@@ -353,6 +353,14 @@ def test_guided_run_drives_blocked_to_finalized_without_relisting(
         "Move the invocation to claude-sonnet-5 on the Anthropic API per the decision.",
         ["Replaced the model identifier with claude-sonnet-5."],
         submitted_on=AS_OF,
+        guidance_dispositions=dispose_all(service, run_dir, "app.py"),
+        annotated_changes=[
+            edit_change(
+                "claude-sonnet-4-6",
+                "claude-sonnet-5",
+                why="The recorded retarget decision moves the app to claude-sonnet-5.",
+            )
+        ],
     )
     assert submitted.accepted, submitted.message
 

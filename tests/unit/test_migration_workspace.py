@@ -11,7 +11,12 @@ import yaml
 
 from llm_migrate.core.workspace import load_run_config
 from llm_migrate.service import MigrationService
-from tests.unit.adaptation_helpers import dispose_all
+from tests.unit.adaptation_helpers import (
+    dispose_all,
+    edit_change,
+    insert_change,
+    restructure_change,
+)
 
 AS_OF = date(2026, 9, 15)
 
@@ -176,8 +181,16 @@ def test_submit_adapted_file_fails_closed_then_accepts(
         "Sonnet 5 uses a new Bedrock model id.",
         ["Replaced the modelId value."],
         submitted_on=AS_OF,
+        guidance_dispositions=dispose_all(service, run_dir, "app.py"),
+        annotated_changes=[
+            edit_change(
+                "anthropic.claude-sonnet-4-6",
+                "anthropic.claude-sonnet-5",
+                why="Sonnet 5 has its own Bedrock model id.",
+            )
+        ],
     )
-    assert accepted.accepted
+    assert accepted.accepted, accepted.message
     assert accepted.output_path is not None
     written = Path(accepted.output_path)
     assert written == Path(run_dir) / "output" / "files" / "app.py"
@@ -199,8 +212,10 @@ def test_submit_adapted_file_warns_when_source_model_id_remains(
         "why",
         ["Added a timeout."],
         submitted_on=AS_OF,
+        guidance_dispositions=dispose_all(service, start.paths.run_dir, "app.py"),
+        annotated_changes=[insert_change("TIMEOUT = 30", why="Added a request timeout.")],
     )
-    assert result.accepted
+    assert result.accepted, result.message
     assert any("still appears" in warning for warning in result.warnings)
 
 
@@ -242,8 +257,9 @@ def test_submit_adapted_prompt_validates_and_records(
         ["Tightened the instruction to one sentence."],
         submitted_on=AS_OF,
         guidance_dispositions=dispose_all(service, run_dir, "prompts/system.txt"),
+        annotated_changes=[restructure_change(why="Rewrote the prompt as one direct instruction.")],
     )
-    assert result.accepted
+    assert result.accepted, result.message
     assert result.output_path is not None
     assert (
         Path(result.output_path) == Path(run_dir) / "output" / "prompts" / "prompts" / "system.txt"
@@ -270,6 +286,13 @@ def test_submit_adapted_prompt_accepts_multi_endpoint_bedrock_target(
         ["Added an explicit tool-use instruction."],
         submitted_on=AS_OF,
         guidance_dispositions=dispose_all(service, start.paths.run_dir, "prompts/system.txt"),
+        annotated_changes=[
+            edit_change(
+                "Answer using the supplied tool.",
+                "Use the find_order tool for every order lookup and answer concisely.",
+                why="Sonnet 5 needs the tool policy stated explicitly.",
+            )
+        ],
     )
     assert result.accepted, result.message
     assert not any(issue.code == "ambiguous_target_platform" for issue in result.validation.issues)
@@ -289,14 +312,23 @@ def test_finalize_writes_manifest_report_and_coverage(
 
     original = (bedrock_app / "app.py").read_text(encoding="utf-8")
     adapted = original.replace("anthropic.claude-sonnet-4-6", "anthropic.claude-sonnet-5")
-    service.submit_adapted_file(
+    submitted = service.submit_adapted_file(
         run_dir,
         "app.py",
         adapted,
         "Sonnet 5 uses a new Bedrock model id.",
         ["Replaced the modelId value."],
         submitted_on=AS_OF,
+        guidance_dispositions=dispose_all(service, run_dir, "app.py"),
+        annotated_changes=[
+            edit_change(
+                "anthropic.claude-sonnet-4-6",
+                "anthropic.claude-sonnet-5",
+                why="Sonnet 5 has its own Bedrock model id.",
+            )
+        ],
     )
+    assert submitted.accepted, submitted.message
     final = service.finalize_migration_run(run_dir)
     assert final.coverage_gaps == []
     assert final.adapted_files == 1
@@ -378,7 +410,7 @@ def test_worklist_names_verbatim_source_and_disposition_rules(
     )
     assert start.paths is not None
     tasks = service.list_adaptation_tasks(start.paths.run_dir)
-    assert tasks.schema_version == "2"
+    assert tasks.schema_version == "3"
     assert tasks.prompt_tasks[0].verbatim_source
     assert any("verbatim_source` is the ORIGINAL" in line for line in tasks.guidance)
     assert any("dispose EVERY guidance item" in line for line in tasks.guidance)

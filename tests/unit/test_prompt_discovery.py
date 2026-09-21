@@ -17,7 +17,7 @@ from llm_migrate.core.models import (
 )
 from llm_migrate.scanners import scan_application
 from llm_migrate.service import MigrationService
-from tests.unit.adaptation_helpers import dispose_all
+from tests.unit.adaptation_helpers import dispose_all, edit_change
 
 AS_OF = date(2026, 9, 15)
 
@@ -307,6 +307,18 @@ def test_structured_prompt_submission_preserves_format(
         ["Rewrote both prompt components."],
         submitted_on=AS_OF,
         guidance_dispositions=dispose_all(service, run_dir, "prompt_lib/claude_prompt.yaml"),
+        annotated_changes=[
+            edit_change(
+                "You are a single-document summarizer.",
+                "You are a careful single-document summarizer.",
+                why="Tightened the role statement for the target model.",
+            ),
+            edit_change(
+                "Summarize the supplied document.",
+                "Summarize the supplied document faithfully.",
+                why="Made faithfulness explicit for the target model.",
+            ),
+        ],
     )
     assert accepted.accepted, accepted.message
     assert accepted.output_path is not None

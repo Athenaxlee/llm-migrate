@@ -61,9 +61,13 @@ For a full migration, prefer the guided workflow over calling low-level tools ad
    never a proposed adaptation) and submit via submit_adapted_prompt with a
    guidance_dispositions entry for EVERY guidance item (applied /
    not_applicable / declined with a note); write complete adapted files and
-   submit via submit_adapted_file, or pass unchanged=true for prompts or files
-   that need no change — the report then states explicitly that no change was
-   needed and why. Submissions are validated and stored under <run>/output/,
+   submit via submit_adapted_file with a guidance_dispositions entry for every
+   required change, or pass unchanged=true for prompts or files that need no
+   change — the report then states explicitly that no change was needed and
+   why. Every CHANGED submission must document each edit in annotated_changes:
+   exact original/adapted text anchors, a one-sentence why, and evidence
+   (kind 'mechanical' for typo-level fixes); undocumented or phantom changes
+   are rejected. Submissions are validated and stored under <run>/output/,
    never in the application tree.
 5. finalize_migration(run_dir) — writes migration-manifest.yaml and
    migration-report.md (including per-file changes and rationale) under
@@ -681,17 +685,28 @@ def submit_adapted_prompt(
     allow_restructure: bool = False,
     unchanged: bool = False,
     guidance_dispositions: list[dict[str, str]] | None = None,
+    annotated_changes: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """Validate and store one refined prompt for the target model.
 
     Adapt minimally: keep the original wording and structure except where a
     listed model difference or evidence-linked guidance item requires a
-    change, and cite that evidence in `changes`. `guidance_dispositions`
-    must dispose EVERY guidance item of this prompt's task (its `guidance`
-    plus the worklist's `shared_prompt_guidance`) exactly once, each entry
-    `{"guidance_id": ..., "disposition": "applied" | "not_applicable" |
-    "declined", "note": ...}` (a decline requires the note); missing or
-    unknown ids are rejected. Validation runs on the DECODED runtime prompt
+    change. `guidance_dispositions` must dispose EVERY guidance item of this
+    prompt's task (its `guidance` plus the worklist's
+    `shared_prompt_guidance`) exactly once, each entry `{"guidance_id": ...,
+    "disposition": "applied" | "not_applicable" | "declined", "note": ...}`
+    (a decline requires the note); missing or unknown ids are rejected.
+    Every edit must be documented in `annotated_changes`: each entry
+    `{"operation": "edit" | "insert" | "delete" | "restructure",
+    "original_anchor": <exact span of the original decoded content, for
+    edit/delete>, "adapted_anchor": <exact span of the adapted content, for
+    edit/insert>, "why": <one sentence: which target-model behavior needs
+    it>, "evidence": [{"kind": "model_guidance" | "model_difference" |
+    "analysis_finding" | "research" | "mechanical", "url": ..., "reference":
+    ...}]}`. Anchors are matched against the DECODED runtime values; every
+    diff hunk must be covered and every annotation must match a real edit
+    (undocumented or phantom changes are rejected); non-mechanical evidence
+    needs a url or reference. Validation runs on the DECODED runtime prompt
     values, and a submission whose decoded values equal the original's — or
     differ only by whitespace or letter case — is rejected: serialization
     tricks, escapes, quoting and cosmetic edits are never an adaptation. If
@@ -700,13 +715,14 @@ def submit_adapted_prompt(
     reviewed no-change deliverable — the final report then states explicitly
     that no change was needed and why; the claim is refused when the prompt's
     decoded values still reference the source model, and it cannot mark any
-    guidance item as applied. Blockers are rejected, and a submission that
-    drops the original's structural sections (XML-like tags or prompt
-    components) is rejected unless `allow_restructure` is true and the
-    justification is recorded in `changes`. Accepted prompts are written
-    beneath `<run>/output/prompts/` mirroring the application layout, and the
-    rationale/changes/dispositions appear verbatim in the final migration
-    report.
+    guidance item as applied or carry annotated changes. Blockers are
+    rejected, and a submission that drops the original's structural sections
+    (XML-like tags or prompt components) is rejected unless
+    `allow_restructure` is true and the justification is recorded (a
+    `restructure` annotation with no anchors claims the whole rewrite).
+    Accepted prompts are written beneath `<run>/output/prompts/` mirroring
+    the application layout, and the annotations/dispositions appear verbatim
+    in the final migration report.
     """
     return _json(
         _service().submit_adapted_prompt(
@@ -718,6 +734,7 @@ def submit_adapted_prompt(
             allow_restructure=allow_restructure,
             unchanged=unchanged,
             guidance_dispositions=guidance_dispositions,
+            annotated_changes=annotated_changes,
         )
     )
 
@@ -728,20 +745,29 @@ def submit_adapted_file(
     source_path: str,
     adapted_content: str,
     rationale: str,
-    changes: list[str],
+    changes: list[str] | None = None,
     new_file: bool = False,
     unchanged: bool = False,
+    guidance_dispositions: list[dict[str, str]] | None = None,
+    annotated_changes: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """Store one finalized post-adaptation application file for review.
 
-    `adapted_content` must be the complete file, not a diff. Submissions are
-    checked deterministically (path containment, Python syntax, model-id
-    consistency) and written beneath `<run>/output/files/`; the application
-    tree itself is never modified. If the file genuinely needs no change for
-    the target model, pass `unchanged=true` with an empty `adapted_content`:
-    the original is copied as the deliverable and the coverage gap closes
-    without resending the file. Prompt source files are rejected here; submit
-    them with submit_adapted_prompt instead.
+    `adapted_content` must be the complete file, not a diff.
+    `guidance_dispositions` must dispose every required change of this
+    file's task exactly once (same shape and rules as prompt submissions),
+    and every edit to an existing file must be documented in
+    `annotated_changes` (same shape and rules as prompt submissions, with
+    anchors matched against the raw file content). Submissions are checked
+    deterministically (path containment, Python syntax, model-id
+    consistency, annotation-diff reconciliation) and written beneath
+    `<run>/output/files/`; the application tree itself is never modified. If
+    the file genuinely needs no change for the target model, pass
+    `unchanged=true` with an empty `adapted_content`: the original is copied
+    as the deliverable, the coverage gap closes without resending the file,
+    and the final report states explicitly that no change was needed and
+    why. Prompt source files are rejected here; submit them with
+    submit_adapted_prompt instead.
     """
     return _json(
         _service().submit_adapted_file(
@@ -752,6 +778,8 @@ def submit_adapted_file(
             changes,
             new_file=new_file,
             unchanged=unchanged,
+            guidance_dispositions=guidance_dispositions,
+            annotated_changes=annotated_changes,
         )
     )
 

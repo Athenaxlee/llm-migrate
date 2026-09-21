@@ -5,10 +5,10 @@ from __future__ import annotations
 from collections.abc import Callable, Mapping, Sequence
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any, Literal, TypeVar
 
 import yaml
-from pydantic import ValidationError
+from pydantic import BaseModel, ValidationError
 
 from llm_migrate.adapters.evaluation import BuiltinEvaluationExecutor
 from llm_migrate.adapters.evidence import (
@@ -39,6 +39,7 @@ from llm_migrate.core.agent_research import (
     build_research_consensus,
     topic_for_field_path,
 )
+from llm_migrate.core.annotations import AnnotatedChange, plan_evidence_urls
 from llm_migrate.core.artifacts import write_proposal_artifacts
 from llm_migrate.core.blockers import (
     RESOLUTION_GUIDANCE,
@@ -181,6 +182,26 @@ from llm_migrate.core.workspace import (
     submit_adapted_prompt as workspace_submit_adapted_prompt,
 )
 from llm_migrate.scanners import scan_application
+
+_ModelT = TypeVar("_ModelT", bound=BaseModel)
+
+
+def _coerced_models(
+    model: type[_ModelT],
+    items: Sequence[_ModelT | Mapping[str, Any]] | None,
+    label: str,
+) -> list[_ModelT]:
+    """Transport payloads (mappings) coerced into their typed models, fail-closed."""
+    coerced: list[_ModelT] = []
+    for item in items or []:
+        if isinstance(item, model):
+            coerced.append(item)
+            continue
+        try:
+            coerced.append(model.model_validate(item))
+        except ValidationError as exc:
+            raise ValueError(f"invalid {label} {item!r}: {exc}") from exc
+    return coerced
 
 
 class MigrationService:
@@ -1190,9 +1211,14 @@ class MigrationService:
                 "submit_adapted_prompt with a guidance_dispositions entry for every "
                 "guidance item (applied / not_applicable / declined with a note); "
                 "for every file task, write the complete adapted file and call "
-                "submit_adapted_file, or pass unchanged=true when the file needs no "
+                "submit_adapted_file with a guidance_dispositions entry for every "
+                "required change, or pass unchanged=true when the file needs no "
                 "change for the target model — the report then states explicitly "
                 "that no change was needed and why.",
+                "Document every edit of a changed submission in annotated_changes: "
+                "exact original/adapted text anchors, a one-sentence why, and the "
+                "evidence behind it (kind 'mechanical' for typo-level fixes); "
+                "undocumented or phantom changes are rejected.",
                 "Call finalize_migration(run_dir) to write migration-manifest.yaml, "
                 "migration-report.md, and the adaptation change log under output/; it "
                 "reports any remaining coverage gaps.",
@@ -1530,6 +1556,7 @@ class MigrationService:
         allow_restructure: bool = False,
         unchanged: bool = False,
         guidance_dispositions: Sequence[GuidanceDisposition | Mapping[str, Any]] | None = None,
+        annotated_changes: Sequence[AnnotatedChange | Mapping[str, Any]] | None = None,
         submitted_on: date | None = None,
         now: datetime | None = None,
     ) -> PromptSubmissionResult:
@@ -1538,7 +1565,9 @@ class MigrationService:
         `guidance_dispositions` must dispose every guidance item of the
         prompt's task (its own guidance plus the worklist's shared prompt
         guidance) as applied / not_applicable / declined (with a note);
-        submissions that leave guidance undisposed are rejected.
+        submissions that leave guidance undisposed are rejected. A changed
+        submission must document every edit in `annotated_changes`, each
+        anchored to the actual diff with its why and evidence.
         """
         workspace = Path(run_dir)
         config = load_run_config(workspace)
@@ -1547,15 +1576,10 @@ class MigrationService:
                 "unchanged=true cannot be combined with adapted content; omit the "
                 "content or drop unchanged"
             )
-        dispositions: list[GuidanceDisposition] = []
-        for item in guidance_dispositions or []:
-            if isinstance(item, GuidanceDisposition):
-                dispositions.append(item)
-                continue
-            try:
-                dispositions.append(GuidanceDisposition.model_validate(item))
-            except ValidationError as exc:
-                raise ValueError(f"invalid guidance disposition {item!r}: {exc}") from exc
+        dispositions = _coerced_models(
+            GuidanceDisposition, guidance_dispositions, "guidance disposition"
+        )
+        annotations = _coerced_models(AnnotatedChange, annotated_changes, "annotated change")
         if unchanged:
             original = read_original_prompt(config, source_path)
             if original is not None:
@@ -1582,6 +1606,8 @@ class MigrationService:
             unchanged=unchanged,
             guidance_dispositions=dispositions,
             tasks=tasks,
+            annotated_changes=annotations,
+            known_evidence_urls=plan_evidence_urls(plan),
         )
 
     def submit_adapted_file(
@@ -1590,29 +1616,49 @@ class MigrationService:
         source_path: str,
         adapted_content: str,
         rationale: str,
-        changes: list[str],
+        changes: list[str] | None = None,
         *,
         new_file: bool = False,
         unchanged: bool = False,
+        guidance_dispositions: Sequence[GuidanceDisposition | Mapping[str, Any]] | None = None,
+        annotated_changes: Sequence[AnnotatedChange | Mapping[str, Any]] | None = None,
         submitted_on: date | None = None,
+        now: datetime | None = None,
     ) -> FileSubmissionResult:
-        """Check and persist one adapted application file beneath output/files/."""
+        """Check and persist one adapted application file beneath output/files/.
+
+        `guidance_dispositions` must dispose every required change of the
+        file's task, and a changed submission of an existing file must
+        document every edit in `annotated_changes`, each anchored to the
+        actual diff with its why and evidence.
+        """
         if unchanged and adapted_content.strip():
             raise ValueError(
                 "unchanged=true cannot be combined with adapted content; omit the "
                 "content or drop unchanged"
             )
         workspace = Path(run_dir)
+        config = load_run_config(workspace)
+        plan = self._plan_for_run(config, workspace, now=now)
+        tasks = derive_adaptation_tasks(config, plan, workspace)
         return workspace_submit_adapted_file(
             workspace,
-            load_run_config(workspace),
+            config,
             source_path,
             adapted_content,
             rationale,
-            changes,
+            changes or [],
             submitted_on or date.today(),
             new_file=new_file,
             unchanged=unchanged,
+            guidance_dispositions=_coerced_models(
+                GuidanceDisposition, guidance_dispositions, "guidance disposition"
+            ),
+            tasks=tasks,
+            annotated_changes=_coerced_models(
+                AnnotatedChange, annotated_changes, "annotated change"
+            ),
+            known_evidence_urls=plan_evidence_urls(plan),
         )
 
     def finalize_migration_run(

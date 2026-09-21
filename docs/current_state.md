@@ -570,12 +570,33 @@ source-target `MigrationKnowledge`, not only individual model profiles.
   `run submit-prompt --dispose <id>=<disposition>[:<note>]`, MCP
   `submit_adapted_prompt(guidance_dispositions=...)`, and updated worklist,
   start, and MCP-instruction guidance.
+- Hunk-anchored annotated changes (2026-09-21, phase v1.4.0-b of
+  `docs/adaptation-review.md`): every changed submission (prompt or file)
+  must document each edit as an `AnnotatedChange` — an exact-span anchor in
+  the original and/or adapted content (operation edit/insert/delete/
+  restructure), a one-sentence why, and evidence entries (`model_guidance` /
+  `model_difference` / `analysis_finding` / `research` need a url or
+  reference; `mechanical` covers typo-level fixes). Reconciliation is
+  deterministic and fail-closed over the DECODED runtime values
+  (`core/annotations.py`): every diff hunk needs a covering annotation whose
+  anchors resolve, every annotation must match a real hunk, unknown evidence
+  URLs (not carried by the plan) warn, a no-anchor `restructure` claims the
+  whole rewrite, and `unchanged=true` cannot carry annotations. Annotations
+  get stable content-derived ids at acceptance and persist in `changes.yaml`
+  (schema version 2; version 1 logs still load); the report renders each
+  change as `<why>; evidence: <kind url/reference>` with its before/after
+  spans, while deliverable files stay clean. File tasks gained disposition
+  parity (`required_changes` carry stable ids, disposed like prompt
+  guidance; `AdaptationTaskList` schema version 3). Surfaces: CLI
+  `--annotations <yaml>` on both submit commands plus `--dispose` on
+  `run submit-file`, MCP `annotated_changes`/`guidance_dispositions` on both
+  submission tools.
 
 ## Next work
 
-1. Evidence-backed adaptation review phases v1.4.0-b (hunk-anchored annotated
-   changes validated against the real diff) and v1.4.0-c (per-change
-   accept/reject review decisions) per `docs/adaptation-review.md`.
+1. Evidence-backed adaptation review phase v1.4.0-c (per-change accept/reject
+   review decisions with durable, sha-keyed records and deterministic
+   regeneration from accepted hunks) per `docs/adaptation-review.md`.
 2. Exercise the V1.2 guided workflow with real coding-agent hosts (Claude Code,
    Copilot) and fold observed friction back into the tool guidance.
 3. Add broader scanners/model families through the existing normalized scanner,

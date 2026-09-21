@@ -152,8 +152,21 @@ def test_mcp_guided_run_covers_the_vague_bedrock_scenario(tmp_path, project_root
         original.replace("anthropic.claude-sonnet-4-6", "anthropic.claude-sonnet-5"),
         "Sonnet 5 uses a new Bedrock model id.",
         ["Replaced the modelId value."],
+        guidance_dispositions=[
+            {"guidance_id": item["id"], "disposition": "applied", "note": ""}
+            for item in tasks["file_tasks"][0]["required_changes"]
+        ],
+        annotated_changes=[
+            {
+                "operation": "edit",
+                "original_anchor": "anthropic.claude-sonnet-4-6",
+                "adapted_anchor": "anthropic.claude-sonnet-5",
+                "why": "Sonnet 5 has its own Bedrock model id.",
+                "evidence": [{"kind": "mechanical"}],
+            }
+        ],
     )
-    assert submission["accepted"] is True
+    assert submission["accepted"] is True, submission["message"]
 
     final = mcp_finalize_migration(run_dir)
     assert final["coverage_gaps"] == []

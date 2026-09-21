@@ -7,7 +7,7 @@ diff in clear language with its supporting evidence, let the user accept or
 reject individual changes, and keep the migrated artifact itself clean (no
 explanatory comments inside deliverables).
 
-Status: phase v1.4.0-a implemented; phases v1.4.0-b and v1.4.0-c designed, not
+Status: phases v1.4.0-a and v1.4.0-b implemented; phase v1.4.0-c designed, not
 yet implemented. Designed 2026-09-21.
 
 ## Problem
@@ -169,14 +169,29 @@ serialization-only edits) and enforce:
   count `reviewed_unchanged` separately in `MigrationRunFinalization`
   (schema version 3).
 
-### v1.4.0-b — annotated, hunk-anchored changes
+### v1.4.0-b — annotated, hunk-anchored changes (implemented)
 
-- `AnnotatedChange` model (anchors, operation, why, evidence) extending the
-  `PromptSemanticChange` vocabulary; `changes.yaml` schema version 2.
-- Diff computation over decoded runtime values in both submit paths; hunk
-  coverage, anchor resolution, and evidence checks as above.
-- File tasks gain disposition parity for their `required_changes`.
-- Report renders per-change diff hunks with their annotations.
+- `AnnotatedChange` / `ChangeEvidence` models (`core/annotations.py`):
+  operation (`edit` / `insert` / `delete` / `restructure`), exact-span
+  anchors, one-sentence `why`, evidence entries, and a content-derived
+  stable id filled at acceptance; `changes.yaml` schema version 2 (version 1
+  logs still load).
+- Diff computation over the decoded runtime values in both submit paths
+  (structured prompt documents decode to their component values, so
+  serialization tricks change nothing): every hunk must be covered by an
+  annotation whose anchors resolve, every annotation must match a real hunk,
+  non-`mechanical` evidence needs a url or reference, and evidence URLs are
+  checked against the plan's known evidence set (unknown URLs warn). A
+  `restructure` annotation with no anchors claims the whole rewrite. An
+  `unchanged=true` submission cannot carry annotations.
+- File tasks gained disposition parity: `required_changes` carry stable ids
+  and file submissions dispose them like prompt guidance.
+- The report renders each change as its why-plus-evidence line with the
+  before/after anchored spans; the deliverable files stay clean.
+- Surfaces: CLI `--annotations <yaml file>` on `run submit-prompt` /
+  `run submit-file` (plus `--dispose` on `submit-file`), MCP
+  `annotated_changes` / `guidance_dispositions` parameters on both
+  submission tools.
 
 ### v1.4.0-c — change review decisions
 

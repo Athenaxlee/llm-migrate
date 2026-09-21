@@ -1166,6 +1166,17 @@ def run_decide(
         raise typer.Exit(1)
 
 
+def _load_annotations(path: Path) -> list[dict[str, Any]]:
+    """Annotated changes from a YAML (or JSON) file holding a list of entries."""
+    try:
+        data = yaml.safe_load(path.read_text(encoding="utf-8"))
+    except (OSError, yaml.YAMLError) as exc:
+        raise ValueError(f"cannot read annotations file {path}: {exc}") from exc
+    if not isinstance(data, list):
+        raise ValueError(f"annotations file {path} must hold a list of annotated-change entries")
+    return data
+
+
 def _parse_disposition(value: str) -> GuidanceDisposition:
     """Parse one `--dispose` value: `<guidance-id>=<disposition>[:<note>]`."""
     guidance_id, separator, rest = value.partition("=")
@@ -1211,6 +1222,17 @@ def run_submit_prompt(
             ),
         ),
     ] = None,
+    annotations: Annotated[
+        Path | None,
+        typer.Option(
+            "--annotations",
+            help=(
+                "YAML file holding the list of annotated changes (operation, "
+                "original_anchor/adapted_anchor, why, evidence); required for a "
+                "changed submission."
+            ),
+        ),
+    ] = None,
     allow_restructure: Annotated[
         bool,
         typer.Option(
@@ -1244,6 +1266,7 @@ def run_submit_prompt(
             allow_restructure=allow_restructure,
             unchanged=unchanged,
             guidance_dispositions=[_parse_disposition(item) for item in dispose or []],
+            annotated_changes=_load_annotations(annotations) if annotations else None,
         )
     except (RegistryError, ValueError) as exc:
         typer.echo(str(exc), err=True)
@@ -1265,6 +1288,28 @@ def run_submit_file(
     change: Annotated[
         list[str] | None,
         typer.Option("--change", help="One change description; repeatable."),
+    ] = None,
+    dispose: Annotated[
+        list[str] | None,
+        typer.Option(
+            "--dispose",
+            help=(
+                "One required-change disposition as "
+                "<id>=applied|not_applicable|declined[:<note>]; repeatable. "
+                "Every required change of the file's task must be disposed."
+            ),
+        ),
+    ] = None,
+    annotations: Annotated[
+        Path | None,
+        typer.Option(
+            "--annotations",
+            help=(
+                "YAML file holding the list of annotated changes (operation, "
+                "original_anchor/adapted_anchor, why, evidence); required for a "
+                "changed submission of an existing file."
+            ),
+        ),
     ] = None,
     new_file: Annotated[
         bool, typer.Option("--new-file", help="The migration introduces this file.")
@@ -1294,6 +1339,8 @@ def run_submit_file(
             change or [],
             new_file=new_file,
             unchanged=unchanged,
+            guidance_dispositions=[_parse_disposition(item) for item in dispose or []],
+            annotated_changes=_load_annotations(annotations) if annotations else None,
         )
     except (RegistryError, ValueError) as exc:
         typer.echo(str(exc), err=True)

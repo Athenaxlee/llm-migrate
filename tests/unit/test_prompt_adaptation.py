@@ -10,7 +10,7 @@ import pytest
 import yaml
 
 from llm_migrate.service import MigrationService
-from tests.unit.adaptation_helpers import dispose_all
+from tests.unit.adaptation_helpers import dispose_all, edit_change, restructure_change
 
 AS_OF = date(2026, 9, 16)
 
@@ -142,6 +142,9 @@ def test_structural_drop_is_rejected_without_allow_restructure(
         allow_restructure=True,
         submitted_on=AS_OF,
         guidance_dispositions=dispose_all(service, run_dir, "prompts/system.txt"),
+        annotated_changes=[
+            restructure_change(why="Flattened the sections after evaluation evidence.")
+        ],
     )
     assert accepted.accepted, accepted.message
     changes = yaml.safe_load(
@@ -168,6 +171,13 @@ def test_structure_preserving_adaptation_is_accepted(
         ["Tightened the correction-rules wording; structure unchanged."],
         submitted_on=AS_OF,
         guidance_dispositions=dispose_all(service, start.paths.run_dir, "prompts/system.txt"),
+        annotated_changes=[
+            edit_change(
+                "Correct a value only when confidence is at least 0.9.",
+                "Correct a value only when confidence is at least 0.9; never lower this threshold.",
+                why="Strengthened the correction threshold per target guidance.",
+            )
+        ],
     )
     assert result.accepted, result.message
 
@@ -284,6 +294,13 @@ def test_unpaired_placeholders_are_not_protected_structure(
         ["Replaced the placeholder tokens with plain wording."],
         submitted_on=AS_OF,
         guidance_dispositions=dispose_all(service, start.paths.run_dir, "prompts/system.txt"),
+        annotated_changes=[
+            edit_change(
+                "Escalate to <ops@example.com> and report dates as <YYYY-MM-DD>.",
+                "Escalate to the operations mailbox and use ISO dates (YYYY-MM-DD).",
+                why="Replaced placeholder tokens with plain wording.",
+            )
+        ],
     )
     assert result.accepted, result.message
 
@@ -551,6 +568,13 @@ def test_validation_runs_on_decoded_values(
         ["Made the extraction scope explicit."],
         submitted_on=AS_OF,
         guidance_dispositions=dispose_all(service, start.paths.run_dir, "prompts/extract.yaml"),
+        annotated_changes=[
+            edit_change(
+                "Extract the fields.",
+                "Extract every field from every row.",
+                why="Made the extraction scope explicit per literal-instruction guidance.",
+            )
+        ],
     )
     assert result.accepted, result.message
     codes = {issue.code for issue in result.validation.issues}
@@ -769,6 +793,13 @@ def test_model_id_swap_in_non_prompt_value_is_sanctioned(
         ["Strengthened the JSON key requirement; swapped the model id."],
         submitted_on=AS_OF,
         guidance_dispositions=dispose_all(service, start.paths.run_dir, "prompts/agent.yaml"),
+        annotated_changes=[
+            edit_change(
+                "Return valid JSON only.",
+                "Return valid JSON only, with every required key present.",
+                why="Strengthened the JSON key requirement for the target model.",
+            )
+        ],
     )
     assert result.accepted, result.message
     assert "updated from the source to the target model id" in result.message
@@ -872,6 +903,23 @@ def test_validation_issues_are_aggregated_not_per_component(
         ["Strengthened key requirements; swapped the model id."],
         submitted_on=AS_OF,
         guidance_dispositions=dispose_all(service, start.paths.run_dir, "prompts/agent.yaml"),
+        annotated_changes=[
+            edit_change(
+                "Return valid JSON only.",
+                "Return valid JSON only, with every required key.",
+                why="Strengthened the JSON key requirement.",
+            ),
+            edit_change(
+                "First question.",
+                "First question, in valid JSON.",
+                why="Made the expected message format explicit.",
+            ),
+            edit_change(
+                "Second question.",
+                "Second question, in valid JSON.",
+                why="Made the expected message format explicit.",
+            ),
+        ],
     )
     assert result.accepted, result.message
     codes = [issue.code for issue in result.validation.issues]
@@ -1058,6 +1106,12 @@ def test_guidance_dispositions_are_fail_closed(
     complete = dispose_all(service, run_dir, "prompts/extract.yaml")
     assert complete, "the task must carry guidance for this test to be meaningful"
 
+    annotation = edit_change(
+        "Extract the fields.",
+        "Extract every field from every row.",
+        why="Made the extraction scope explicit.",
+    )
+
     def submit(dispositions, unchanged=False):  # type: ignore[no-untyped-def]
         return service.submit_adapted_prompt(
             run_dir,
@@ -1068,6 +1122,7 @@ def test_guidance_dispositions_are_fail_closed(
             unchanged=unchanged,
             submitted_on=AS_OF,
             guidance_dispositions=dispositions,
+            annotated_changes=None if unchanged else [annotation],
         )
 
     missing = submit(complete[:-1])

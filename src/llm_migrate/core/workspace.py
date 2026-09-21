@@ -21,6 +21,12 @@ from pydantic import Field, ValidationError
 
 from llm_migrate.analyzers.prompt import structural_sections
 from llm_migrate.core.agent_research import RUN_ID_PATTERN, ModelEndpointIdentity
+from llm_migrate.core.annotations import (
+    AnnotatedChange,
+    annotation_problems,
+    decoded_view,
+    with_change_ids,
+)
 from llm_migrate.core.models import (
     ComparisonSeverity,
     MigrationAdvice,
@@ -155,6 +161,7 @@ class AdaptationEntry(StrictModel):
     submitted_on: date
     unchanged: bool = False
     guidance_dispositions: list[GuidanceDisposition] = Field(default_factory=list)
+    annotated_changes: list[AnnotatedChange] = Field(default_factory=list)
 
 
 def entry_is_unchanged(entry: AdaptationEntry) -> bool:
@@ -169,9 +176,14 @@ def entry_is_unchanged(entry: AdaptationEntry) -> bool:
 
 
 class AdaptationLog(StrictModel):
-    """Reviewable record of every adaptation deliverable in one run."""
+    """Reviewable record of every adaptation deliverable in one run.
 
-    schema_version: Literal["1"] = "1"
+    Schema version 2 entries carry hunk-anchored `annotated_changes`; version
+    1 logs (free-text changes only) still load, and every save writes the
+    current version.
+    """
+
+    schema_version: Literal["1", "2"] = "2"
     run_id: str
     entries: list[AdaptationEntry] = Field(default_factory=list)
 
@@ -195,18 +207,22 @@ class PromptAdaptationTask(StrictModel):
 
 
 class FileAdaptationTask(StrictModel):
-    """One application file the host agent must adapt for the target model."""
+    """One application file the host agent must adapt for the target model.
+
+    Each required change carries a stable id; file submissions dispose them
+    through `guidance_dispositions` exactly like prompt guidance.
+    """
 
     source_path: str
     output_path: str
     status: Literal["pending", "submitted"]
-    required_changes: list[str] = Field(default_factory=list)
+    required_changes: list[GuidanceItem] = Field(default_factory=list)
 
 
 class AdaptationTaskList(StrictModel):
     """Everything still needed to produce a complete adaptation output set."""
 
-    schema_version: Literal["2"] = "2"
+    schema_version: Literal["3"] = "3"
     run_id: str
     source_model: str
     target_model: str
@@ -327,6 +343,7 @@ def load_adaptation_log(run_dir: Path, run_id: str) -> AdaptationLog:
 def _save_adaptation_log(run_dir: Path, log: AdaptationLog) -> None:
     path = Path(run_dir) / "output" / CHANGES_FILENAME
     path.parent.mkdir(parents=True, exist_ok=True)
+    log = log.model_copy(update={"schema_version": "2"})
     path.write_text(
         yaml.safe_dump(log.model_dump(mode="json"), sort_keys=False),
         encoding="utf-8",
@@ -507,7 +524,9 @@ def derive_adaptation_tasks(
             source_path=file,
             output_path=str(Path("output") / "files" / file),
             status=("submitted" if ("file", file) in submitted else "pending"),
-            required_changes=sorted(set(descriptions)),
+            required_changes=[
+                guidance_item(description) for description in sorted(set(descriptions))
+            ],
         )
         for file, descriptions in sorted(changes_by_file.items())
         if file not in prompt_paths and file != "<application>"
@@ -522,9 +541,11 @@ def derive_adaptation_tasks(
                 output_path=str(Path("output") / "files" / file),
                 status=("submitted" if ("file", file) in submitted else "pending"),
                 required_changes=[
-                    "Update every detected coupling in this file for "
-                    f"{config.target.model} on {config.target.platform} "
-                    f"(model id {config.target_model_id})."
+                    guidance_item(
+                        "Update every detected coupling in this file for "
+                        f"{config.target.model} on {config.target.platform} "
+                        f"(model id {config.target_model_id})."
+                    )
                 ],
             )
         )
@@ -600,9 +621,19 @@ def derive_adaptation_tasks(
             "Every prompt submission must dispose EVERY guidance item of its task "
             "(the task's `guidance` plus `shared_prompt_guidance`) by id in "
             "`guidance_dispositions`: applied, not_applicable, or declined (declined "
-            "requires a note). Submissions with missing, unknown, or duplicate "
-            "dispositions are rejected, and an unchanged=true submission cannot "
-            "claim any item as applied.",
+            "requires a note). File submissions dispose their task's "
+            "`required_changes` the same way. Submissions with missing, unknown, or "
+            "duplicate dispositions are rejected, and an unchanged=true submission "
+            "cannot claim any item as applied.",
+            "Every CHANGED submission (prompt or file) must record its edits as "
+            "`annotated_changes`: each entry anchors an exact text span of the "
+            "original and/or adapted content (operation edit/insert/delete/"
+            "restructure), explains in one sentence `why` the target model needs "
+            "it, and cites `evidence` (a plan-carried URL or a reference; kind "
+            "'mechanical' for typo-level fixes needs no citation). Every diff hunk "
+            "must be covered by an annotation and every annotation must match a "
+            "real edit — undocumented or phantom changes are rejected. Anchors are "
+            "matched against the DECODED runtime values.",
             "Prompt submissions must change the DECODED runtime prompt values; "
             "serialization-only, whitespace-only, and case-only edits are rejected, "
             "and validation runs on the decoded values, so encoding tricks cannot "
@@ -741,6 +772,8 @@ def submit_adapted_prompt(
     unchanged: bool = False,
     guidance_dispositions: list[GuidanceDisposition] | None = None,
     tasks: AdaptationTaskList | None = None,
+    annotated_changes: list[AnnotatedChange] | None = None,
+    known_evidence_urls: set[str] | None = None,
 ) -> PromptSubmissionResult:
     """Persist one validated adapted prompt beneath output/prompts/.
 
@@ -751,13 +784,16 @@ def submit_adapted_prompt(
     whitespace style) are not an adaptation and cannot clear validation.
     When `tasks` is provided and lists this prompt, `guidance_dispositions`
     must reconcile every guidance item of the task (see
-    `_disposition_problems`).
+    `_disposition_problems`), and a changed submission must reconcile its
+    `annotated_changes` against the real diff of the decoded runtime values
+    (see `annotation_problems`).
     """
     relative = _safe_relative_path(config, source_path)
     blockers = [
         issue.message for issue in validation.issues if issue.level is ValidationLevel.BLOCKER
     ]
     dispositions = list(guidance_dispositions or [])
+    annotations = list(annotated_changes or [])
     required_guidance: list[GuidanceItem] = []
     if tasks is not None:
         task = next(
@@ -767,6 +803,10 @@ def submit_adapted_prompt(
         if task is not None:
             required_guidance = [*task.guidance, *tasks.shared_prompt_guidance]
     blockers.extend(_disposition_problems(required_guidance, dispositions, unchanged))
+    if unchanged and annotations:
+        blockers.append(
+            "unchanged=true cannot carry annotated_changes; there is no edit to annotate"
+        )
     original = _application_base(config) / relative
     original_text = original.read_text(encoding="utf-8") if original.is_file() else None
     format = STRUCTURED_SUFFIXES.get(relative.suffix.casefold())
@@ -838,6 +878,23 @@ def submit_adapted_prompt(
         elif drops:
             structure_warnings.extend(f"restructure accepted: {drop}" for drop in drops)
         structure_warnings.extend(f"note: {note}" for note in assessment.notes)
+        decoded_original = decoded_view(original_text, format)
+        decoded_adapted = decoded_view(adapted_prompt, format)
+        if decoded_original is None or decoded_adapted is None:
+            if annotations:
+                structure_warnings.append(
+                    "annotated_changes could not be checked against the diff because "
+                    "the document could not be decoded"
+                )
+        else:
+            annotation_issues, annotation_warnings = annotation_problems(
+                decoded_original,
+                decoded_adapted,
+                annotations,
+                known_evidence_urls=known_evidence_urls,
+            )
+            blockers.extend(annotation_issues)
+            structure_warnings.extend(annotation_warnings)
     if not adapted_prompt.strip():
         blockers.append("the adapted prompt is empty")
     if blockers:
@@ -874,6 +931,7 @@ def submit_adapted_prompt(
             item.model_copy(update={"guidance": guidance_texts.get(item.guidance_id, "")})
             for item in dispositions
         ],
+        annotated_changes=with_change_ids(annotations),
     )
     _save_adaptation_log(run_dir, _upsert_entry(load_adaptation_log(run_dir, config.run_id), entry))
     return PromptSubmissionResult(
@@ -901,13 +959,20 @@ def submit_adapted_file(
     submitted_on: date,
     new_file: bool = False,
     unchanged: bool = False,
+    guidance_dispositions: list[GuidanceDisposition] | None = None,
+    tasks: AdaptationTaskList | None = None,
+    annotated_changes: list[AnnotatedChange] | None = None,
+    known_evidence_urls: set[str] | None = None,
 ) -> FileSubmissionResult:
     """Persist one adapted application file beneath output/files/, fail closed.
 
     `unchanged=True` records that the file was reviewed and needs no change
     for the target model: the original content is copied as the deliverable
     (any `adapted_content` is ignored), closing the coverage gap without
-    forcing an invented edit.
+    forcing an invented edit. When `tasks` is provided and lists this file,
+    `guidance_dispositions` must dispose every required change of the task,
+    and a changed submission of an existing file must reconcile its
+    `annotated_changes` against the real diff (see `annotation_problems`).
     """
     relative = _safe_relative_path(config, source_path)
     original_path = _application_base(config) / relative
@@ -920,6 +985,35 @@ def submit_adapted_file(
         problems.append(
             f"{relative.as_posix()} does not exist in the application; pass new_file=true "
             "only when the migration genuinely introduces a new file"
+        )
+    dispositions = list(guidance_dispositions or [])
+    annotations = list(annotated_changes or [])
+    required_changes: list[GuidanceItem] = []
+    if tasks is not None:
+        task = next(
+            (item for item in tasks.file_tasks if item.source_path == relative.as_posix()),
+            None,
+        )
+        if task is not None:
+            required_changes = list(task.required_changes)
+    problems.extend(_disposition_problems(required_changes, dispositions, unchanged))
+    if unchanged and annotations:
+        problems.append(
+            "unchanged=true cannot carry annotated_changes; there is no edit to annotate"
+        )
+    elif not unchanged and original is not None and adapted_content.strip():
+        annotation_issues, annotation_warnings = annotation_problems(
+            original,
+            adapted_content,
+            annotations,
+            known_evidence_urls=known_evidence_urls,
+        )
+        problems.extend(annotation_issues)
+        warnings.extend(annotation_warnings)
+    elif annotations and original is None:
+        warnings.append(
+            "annotated_changes could not be checked against a diff because the file "
+            "has no original in the application"
         )
     if unchanged:
         if original is None:
@@ -958,8 +1052,10 @@ def submit_adapted_file(
             ast.parse(adapted_content)
         except SyntaxError as exc:
             problems.append(f"the adapted Python content does not parse: {exc}")
-    if not changes:
-        problems.append("at least one `changes` entry describing the edit is required")
+    if not changes and not annotations:
+        problems.append(
+            "at least one annotated change (or `changes` entry) describing the edit is required"
+        )
     if problems:
         return FileSubmissionResult(
             accepted=False,
@@ -985,6 +1081,7 @@ def submit_adapted_file(
     output_path = Path(run_dir) / "output" / "files" / relative
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_text(adapted_content, encoding="utf-8")
+    required_texts = {item.id: item.text for item in required_changes}
     entry = AdaptationEntry(
         kind="file",
         source_path=relative.as_posix(),
@@ -996,6 +1093,11 @@ def submit_adapted_file(
         adapted_sha256=_sha256(adapted_content),
         submitted_on=submitted_on,
         unchanged=unchanged,
+        guidance_dispositions=[
+            item.model_copy(update={"guidance": required_texts.get(item.guidance_id, "")})
+            for item in dispositions
+        ],
+        annotated_changes=with_change_ids(annotations),
     )
     _save_adaptation_log(run_dir, _upsert_entry(load_adaptation_log(run_dir, config.run_id), entry))
     return FileSubmissionResult(
@@ -1028,6 +1130,32 @@ _DISPOSITION_LABELS = {
 }
 
 _UNCHANGED_DEFAULT_NOTE = "Reviewed for the target model; no change required."
+
+
+def _render_evidence(change: AnnotatedChange) -> str:
+    parts = []
+    for entry in change.evidence:
+        detail = " ".join(part for part in (entry.url, entry.reference) if part)
+        parts.append(entry.kind + (f" {detail}" if detail else ""))
+    return "; ".join(parts) if parts else "none recorded"
+
+
+def _render_annotated_changes(entry: AdaptationEntry) -> list[str]:
+    """One line of why-plus-evidence per change, with its before/after spans."""
+    lines = ["- What changed:"]
+    for change in entry.annotated_changes:
+        lines.append(
+            f"  - [{change.id}] {change.why} ({change.operation}; "
+            f"evidence: {_render_evidence(change)})"
+        )
+        if change.original_anchor and change.original_anchor.strip():
+            lines.append(f"    - before: {_shorten(change.original_anchor, 200)!r}")
+        if change.adapted_anchor and change.adapted_anchor.strip():
+            lines.append(f"    - after: {_shorten(change.adapted_anchor, 200)!r}")
+    if entry.changes:
+        lines.append("- Notes:")
+        lines.extend(f"  - {change}" for change in entry.changes)
+    return lines
 
 
 def _render_dispositions(entry: AdaptationEntry) -> list[str]:
@@ -1085,13 +1213,20 @@ def render_adaptation_section(log: AdaptationLog, gaps: list[str]) -> str:
                     "",
                     f"- Adapted file: `{entry.output_path}`",
                     f"- Why: {entry.rationale}",
-                    "- What changed:",
-                    *(
-                        [f"  - {change}" for change in entry.changes]
-                        or ["  - (no change descriptions were recorded)"]
-                    ),
                 )
             )
+            if entry.annotated_changes:
+                lines.extend(_render_annotated_changes(entry))
+            else:
+                lines.extend(
+                    (
+                        "- What changed:",
+                        *(
+                            [f"  - {change}" for change in entry.changes]
+                            or ["  - (no change descriptions were recorded)"]
+                        ),
+                    )
+                )
         lines.extend(_render_dispositions(entry))
         if entry.warnings:
             lines.append("- Validation warnings:")
