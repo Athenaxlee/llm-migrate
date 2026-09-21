@@ -53,6 +53,14 @@ from llm_migrate.core.blockers import (
     save_decision_log,
     upsert_decision,
 )
+from llm_migrate.core.change_review import (
+    ChangeDecisionResult,
+    ChangeReviewSet,
+    build_change_review,
+)
+from llm_migrate.core.change_review import (
+    record_change_decision as review_record_change_decision,
+)
 from llm_migrate.core.comparison import compare_models
 from llm_migrate.core.evaluation import (
     CustomEvaluator,
@@ -162,11 +170,13 @@ from llm_migrate.core.workspace import (
     PromptSubmissionResult,
     ResearchNeed,
     coverage_gaps,
+    decision_matches_entry,
     default_run_dir,
     default_run_id,
     derive_adaptation_tasks,
     entry_is_unchanged,
     load_adaptation_log,
+    load_change_decision_log,
     load_run_config,
     read_original_prompt,
     render_adaptation_section,
@@ -1222,6 +1232,12 @@ class MigrationService:
                 "Call finalize_migration(run_dir) to write migration-manifest.yaml, "
                 "migration-report.md, and the adaptation change log under output/; it "
                 "reports any remaining coverage gaps.",
+                "Drive the per-change review: get_change_review(run_dir) lists every "
+                "annotated change with its why, evidence, before/after spans, and "
+                "decision status. Present each pending change VERBATIM and record the "
+                "user's accept or reject with record_change_decision — a rejection "
+                "deterministically regenerates the deliverable from the remaining "
+                "changes, and the user, never you, decides.",
                 "Review everything under output/ with the user before applying any "
                 "change to the application.",
             )
@@ -1661,6 +1677,45 @@ class MigrationService:
             known_evidence_urls=plan_evidence_urls(plan),
         )
 
+    def get_change_review(self, run_dir: Path | str) -> ChangeReviewSet:
+        """Per-deliverable annotated changes paired with their decision state.
+
+        Presents each change (why, evidence, before/after spans) for the user
+        to accept or reject individually; the decoded unified diff of every
+        reviewable deliverable comes along for context. Reviews whose
+        application file drifted since submission are marked stale.
+        """
+        workspace = Path(run_dir)
+        return build_change_review(workspace, load_run_config(workspace))
+
+    def record_change_decision(
+        self,
+        run_dir: Path | str,
+        source_path: str,
+        change_id: str,
+        decision: str,
+        note: str = "",
+        *,
+        decided_on: date | None = None,
+    ) -> ChangeDecisionResult:
+        """Record one accept/reject decision and regenerate the deliverable.
+
+        Decisions are durable in change-decisions.yaml and keyed to the
+        submission fingerprints; the deliverable under output/ is rebuilt
+        deterministically from the original content, the as-submitted
+        content, and every live rejection — or the decision is refused.
+        """
+        workspace = Path(run_dir)
+        return review_record_change_decision(
+            workspace,
+            load_run_config(workspace),
+            source_path,
+            change_id,
+            decision,
+            note=note,
+            decided_on=decided_on,
+        )
+
     def finalize_migration_run(
         self,
         run_dir: Path | str,
@@ -1679,9 +1734,29 @@ class MigrationService:
         )
         tasks = derive_adaptation_tasks(config, plan, workspace, log)
         gaps = coverage_gaps(tasks)
+        change_decisions = load_change_decision_log(workspace, config.run_id)
         report = self.migration_report(plan)
-        report = report.rstrip("\n") + "\n\n" + render_adaptation_section(log, gaps) + "\n"
+        report = (
+            report.rstrip("\n")
+            + "\n\n"
+            + render_adaptation_section(log, gaps, change_decisions)
+            + "\n"
+        )
         Path(paths.report_path).write_text(report, encoding="utf-8")
+        undecided_changes: list[str] = []
+        for entry in log.entries:
+            if entry_is_unchanged(entry) or not entry.annotated_changes:
+                continue
+            decided = {
+                item.change_id
+                for item in change_decisions.decisions
+                if decision_matches_entry(item, entry)
+            }
+            pending = [change.id for change in entry.annotated_changes if change.id not in decided]
+            if pending:
+                undecided_changes.append(
+                    f"{entry.source_path}: {len(pending)} change(s) pending review"
+                )
         adapted_prompts = sum(
             entry.kind == "prompt" and not entry_is_unchanged(entry) for entry in log.entries
         )
@@ -1720,6 +1795,7 @@ class MigrationService:
             adapted_prompts=adapted_prompts,
             adapted_files=adapted_files,
             reviewed_unchanged=reviewed_unchanged,
+            undecided_changes=undecided_changes,
             coverage_gaps=gaps,
             message=(
                 "Migration run finalized. Review output/migration-report.md; "
@@ -1731,6 +1807,13 @@ class MigrationService:
                 + (
                     f"{reviewed_unchanged} deliverable(s) were reviewed and needed no change; "
                     if reviewed_unchanged
+                    else ""
+                )
+                + (
+                    f"{len(undecided_changes)} deliverable(s) have annotated changes "
+                    "awaiting review decisions (get_change_review / "
+                    "record_change_decision); "
+                    if undecided_changes
                     else ""
                 )
                 + blocker_note

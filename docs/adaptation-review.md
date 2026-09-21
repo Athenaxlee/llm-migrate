@@ -7,8 +7,8 @@ diff in clear language with its supporting evidence, let the user accept or
 reject individual changes, and keep the migrated artifact itself clean (no
 explanatory comments inside deliverables).
 
-Status: phases v1.4.0-a and v1.4.0-b implemented; phase v1.4.0-c designed, not
-yet implemented. Designed 2026-09-21.
+Status: all three phases (v1.4.0-a, v1.4.0-b, v1.4.0-c) implemented.
+Designed and implemented 2026-09-21.
 
 ## Problem
 
@@ -193,11 +193,28 @@ serialization-only edits) and enforce:
   `annotated_changes` / `guidance_dispositions` parameters on both
   submission tools.
 
-### v1.4.0-c — change review decisions
+### v1.4.0-c — change review decisions (implemented)
 
 - `get_change_review` / `record_change_decision` (MCP) and `run review` /
-  `run decide-change` (CLI); durable review decision log with sha-keyed
-  staleness.
-- Deterministic regeneration of deliverables from accepted hunks; reject-all
-  reverts to reviewed-unchanged.
-- Finalization reports undecided changes; report shows per-change decisions.
+  `run decide-change` (CLI, `core/change_review.py`): per deliverable, the
+  decoded unified diff plus every annotated change with its why, evidence,
+  before/after spans, and status (pending / accepted / rejected), with
+  verbatim-presentation guidance — the user decides, never the agent.
+- Durable decisions in the run's `change-decisions.yaml`, keyed to the
+  submission fingerprints: a resubmission makes them stale (reported, never
+  silently applied), a log copied from another run is refused, and a review
+  whose application file drifted is frozen until the adaptation is re-run.
+- Deterministic regeneration on every decision: submissions keep an
+  as-submitted copy under `review/submissions/`, and the deliverable under
+  `output/` is rebuilt from (original, submission, live rejections) —
+  rejected regions revert to the original, everything else keeps the
+  submission, structured documents are rebuilt per component with non-prompt
+  values preserved, and a decision whose rejections cannot be applied
+  deterministically (mixed-coverage regions, unmappable anchors, message
+  edits, TOML) is refused rather than recorded. Because the submission is
+  preserved, decisions can be re-made in any order. Rejecting every change
+  leaves no annotated adaptation in the deliverable.
+- Finalization counts undecided changes as their own bucket
+  (`MigrationRunFinalization` schema version 4) without blocking, and the
+  report renders each change's decision (ACCEPTED / REJECTED with the note /
+  pending review) plus a per-file review outcome line.

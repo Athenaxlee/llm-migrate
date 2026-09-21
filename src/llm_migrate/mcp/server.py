@@ -71,7 +71,15 @@ For a full migration, prefer the guided workflow over calling low-level tools ad
    never in the application tree.
 5. finalize_migration(run_dir) — writes migration-manifest.yaml and
    migration-report.md (including per-file changes and rationale) under
-   output/ and reports any remaining coverage gaps.
+   output/ and reports any remaining coverage gaps and undecided changes.
+6. Drive the per-change review: get_change_review(run_dir) lists every
+   annotated change with its why, evidence, before/after spans, and decision
+   status. Present each pending change VERBATIM, one at a time, and record the
+   user's accept or reject with record_change_decision — the user decides,
+   never you. A rejection deterministically regenerates the deliverable from
+   the remaining changes; rejecting every change leaves no annotated
+   adaptation in it. Decisions persist in change-decisions.yaml; a
+   resubmission makes them stale (reported, never silently applied).
 
 Never edit the user's application directly from research results; everything is a
 reviewable deliverable in the run's output/ directory.
@@ -798,6 +806,56 @@ def finalize_migration(run_dir: str, now: str | None = None) -> dict[str, Any]:
         _service().finalize_migration_run(
             run_dir,
             now=datetime.fromisoformat(now) if now else None,
+        )
+    )
+
+
+@mcp.tool()
+def get_change_review(run_dir: str) -> dict[str, Any]:
+    """Per-deliverable annotated changes paired with their decision state.
+
+    For every submitted deliverable of a started run: the decoded unified
+    diff (original versus as-submitted content), and each annotated change
+    with its why, evidence, before/after spans, and status (pending /
+    accepted / rejected). Present each pending change VERBATIM, one at a
+    time; the user accepts or rejects each change — never decide for them.
+    Reviewed-unchanged deliverables have nothing to decide, a review whose
+    application file drifted since submission is marked stale, and decisions
+    that no longer match the current submission are listed under
+    `stale_decisions` (reported, never silently applied).
+    """
+    return _json(_service().get_change_review(run_dir))
+
+
+@mcp.tool()
+def record_change_decision(
+    run_dir: str,
+    source_path: str,
+    change_id: str,
+    decision: str,
+    note: str = "",
+    decided_on: str | None = None,
+) -> dict[str, Any]:
+    """Record the user's accept/reject for one annotated change; durable.
+
+    `change_id` must come from get_change_review. `decision` is "accepted"
+    or "rejected" (an optional `note` records the user's reasoning). Every
+    recorded decision deterministically regenerates the deliverable under
+    output/ from the original content, the as-submitted content, and every
+    live rejection — rejecting every change leaves no annotated adaptation
+    in the deliverable. When the rejections cannot be applied
+    deterministically the decision is refused (NOT recorded) with the exact
+    reason; resubmit an adapted version reflecting the decisions instead.
+    The result lists the change ids still pending review for that file.
+    """
+    return _json(
+        _service().record_change_decision(
+            run_dir,
+            source_path,
+            change_id,
+            decision,
+            note,
+            decided_on=date.fromisoformat(decided_on) if decided_on else None,
         )
     )
 

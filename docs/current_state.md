@@ -591,17 +591,33 @@ source-target `MigrationKnowledge`, not only individual model profiles.
   `--annotations <yaml>` on both submit commands plus `--dispose` on
   `run submit-file`, MCP `annotated_changes`/`guidance_dispositions` on both
   submission tools.
+- Per-change review decisions (2026-09-21, phase v1.4.0-c of
+  `docs/adaptation-review.md`, `core/change_review.py`): `get_change_review`
+  presents, per deliverable, the decoded unified diff plus every annotated
+  change with its why, evidence, before/after spans, and status; the user
+  accepts or rejects each change (`record_change_decision`, CLI
+  `run review` / `run decide-change`), and the agent presents verbatim,
+  never decides. Decisions are durable in `change-decisions.yaml`, keyed to
+  the submission fingerprints — a resubmission makes them stale (reported,
+  never applied), a log from another run is refused, and source drift
+  freezes the review. Every decision deterministically regenerates the
+  deliverable under `output/` from the original content, the preserved
+  as-submitted copy (`review/submissions/`), and the live rejections:
+  rejected regions revert, structured documents are rebuilt per component
+  with non-prompt values preserved, non-deterministic cases (mixed-coverage
+  regions, unmappable rejections, message edits, TOML) refuse the decision
+  rather than record it, and rejecting every change leaves no annotated
+  adaptation. Finalization reports undecided changes as their own bucket
+  (`MigrationRunFinalization` schema version 4) and the report renders each
+  change's decision with a per-file review outcome.
 
 ## Next work
 
-1. Evidence-backed adaptation review phase v1.4.0-c (per-change accept/reject
-   review decisions with durable, sha-keyed records and deterministic
-   regeneration from accepted hunks) per `docs/adaptation-review.md`.
-2. Exercise the V1.2 guided workflow with real coding-agent hosts (Claude Code,
+1. Exercise the V1.2 guided workflow with real coding-agent hosts (Claude Code,
    Copilot) and fold observed friction back into the tool guidance.
-3. Add broader scanners/model families through the existing normalized scanner,
+2. Add broader scanners/model families through the existing normalized scanner,
    reviewed canonical registry, and V1.1 session-overlay boundaries.
-4. Optional V1.1 follow-ups: a persistent content-addressed research cache,
+3. Optional V1.1 follow-ups: a persistent content-addressed research cache,
    concurrent agent execution within recorded limits, and an orchestrated
    arbiter stage.
 

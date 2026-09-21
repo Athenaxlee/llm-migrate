@@ -332,3 +332,83 @@ def plan_evidence_urls(plan: MigrationPlan) -> set[str]:
     for blocker in plan.blockers:
         urls.update(blocker.evidence_urls)
     return urls
+
+
+def apply_decided_changes(
+    original: str,
+    adapted: str,
+    changes: list[AnnotatedChange],
+    rejected_ids: set[str],
+) -> tuple[str | None, list[str], set[str]]:
+    """The adapted content with every rejected change reverted, hunk by hunk.
+
+    Deterministic replay of the submission diff: an edited region covered
+    only by rejected changes takes the original side, every other edited
+    region keeps the adapted side (pending changes stand until rejected).
+    Returns (content, problems, mapped_rejected_ids); content is None when a
+    region is covered by both a rejected and a non-rejected change, which
+    cannot be separated deterministically. `mapped_rejected_ids` are the
+    rejected ids that covered at least one region here — the caller fails
+    closed when a rejected id maps onto nothing, rather than letting a
+    rejection silently change nothing.
+    """
+    original_lines = original.splitlines(keepends=True)
+    adapted_lines = adapted.splitlines(keepends=True)
+    original_offsets = _line_offsets(original_lines)
+    adapted_offsets = _line_offsets(adapted_lines)
+    resolved: list[tuple[AnnotatedChange, list[tuple[int, int]], list[tuple[int, int]], bool]] = []
+    for change in changes:
+        original_anchor = (change.original_anchor or "").strip()
+        adapted_anchor = (change.adapted_anchor or "").strip()
+        global_restructure = (
+            change.operation == "restructure" and not original_anchor and not adapted_anchor
+        )
+        resolved.append(
+            (
+                change,
+                _anchor_spans(original, original_anchor) if original_anchor else [],
+                _anchor_spans(adapted, adapted_anchor) if adapted_anchor else [],
+                global_restructure,
+            )
+        )
+    problems: list[str] = []
+    mapped_rejected: set[str] = set()
+    parts: list[str] = []
+    matcher = SequenceMatcher(None, original_lines, adapted_lines, autojunk=False)
+    for tag, i1, i2, j1, j2 in matcher.get_opcodes():
+        if tag == "equal":
+            parts.append("".join(original_lines[i1:i2]))
+            continue
+        orig_start, orig_end = original_offsets[i1], original_offsets[i2]
+        new_start, new_end = adapted_offsets[j1], adapted_offsets[j2]
+        rejected_here: set[str] = set()
+        kept_here: set[str] = set()
+        for change, original_spans, adapted_spans, global_restructure in resolved:
+            covers = (
+                global_restructure
+                or _overlaps(original_spans, orig_start, orig_end)
+                or _overlaps(adapted_spans, new_start, new_end)
+            )
+            if not covers:
+                continue
+            if change.id in rejected_ids:
+                rejected_here.add(change.id)
+            else:
+                kept_here.add(change.id)
+        if rejected_here and kept_here:
+            problems.append(
+                "one edited region is covered by both rejected ("
+                + ", ".join(sorted(rejected_here))
+                + ") and non-rejected ("
+                + ", ".join(sorted(kept_here))
+                + ") changes; the decisions cannot be applied deterministically — "
+                "resubmit an adapted version that reflects them instead"
+            )
+        mapped_rejected.update(rejected_here)
+        if rejected_here:
+            parts.append("".join(original_lines[i1:i2]))
+        else:
+            parts.append("".join(adapted_lines[j1:j2]))
+    if problems:
+        return None, problems, mapped_rejected
+    return "".join(parts), [], mapped_rejected

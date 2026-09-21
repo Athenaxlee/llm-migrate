@@ -1363,5 +1363,59 @@ def run_finalize(
         raise typer.Exit(2) from exc
 
 
+@run_app.command("review")
+def run_review(
+    run_dir: Path,
+    registry: Annotated[Path | None, typer.Option(help="Registry root.")] = None,
+) -> None:
+    """Show every annotated change with its diff context and decision status.
+
+    Present each pending change verbatim — why, evidence, before/after spans —
+    one at a time, then record each user decision with `run decide-change`.
+    """
+    try:
+        _emit(_service(registry).get_change_review(run_dir))
+    except (RegistryError, ValueError) as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(2) from exc
+
+
+@run_app.command("decide-change")
+def run_decide_change(
+    run_dir: Path,
+    source_path: Annotated[str, typer.Argument(help="Deliverable path from `run review`.")],
+    change_id: Annotated[str, typer.Argument(help="Change id from `run review`.")],
+    decision: Annotated[str, typer.Argument(help="accepted or rejected.")],
+    note: Annotated[
+        str, typer.Option("--note", help="The user's reasoning for the decision.")
+    ] = "",
+    decided_on: Annotated[
+        str | None, typer.Option("--decided-on", help="Fixed ISO decision date.")
+    ] = None,
+    registry: Annotated[Path | None, typer.Option(help="Registry root.")] = None,
+) -> None:
+    """Record one accept/reject decision; the deliverable is regenerated.
+
+    Decisions are durable in change-decisions.yaml, keyed to the submitted
+    content; rejections deterministically revert their edits in the
+    deliverable under output/.
+    """
+    try:
+        result = _service(registry).record_change_decision(
+            run_dir,
+            source_path,
+            change_id,
+            decision,
+            note,
+            decided_on=date.fromisoformat(decided_on) if decided_on else None,
+        )
+    except (RegistryError, ValueError) as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(2) from exc
+    _emit(result)
+    if not result.accepted:
+        raise typer.Exit(1)
+
+
 if __name__ == "__main__":
     app()

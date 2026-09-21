@@ -49,6 +49,7 @@ from llm_migrate.core.prompt_documents import (
 
 RUN_CONFIG_FILENAME = "migration.yaml"
 CHANGES_FILENAME = "changes.yaml"
+CHANGE_DECISIONS_FILENAME = "change-decisions.yaml"
 DEFAULT_RUNS_SUBDIR = Path(".llm-migrate") / "runs"
 
 
@@ -85,6 +86,7 @@ class MigrationRunPaths(StrictModel):
     manifest_path: str
     report_path: str
     changes_path: str
+    change_decisions_path: str
 
 
 class ResearchNeed(StrictModel):
@@ -188,6 +190,80 @@ class AdaptationLog(StrictModel):
     entries: list[AdaptationEntry] = Field(default_factory=list)
 
 
+class ChangeDecision(StrictModel):
+    """One durable user decision on one annotated change.
+
+    The decision is keyed to the submission's content fingerprints, so a
+    resubmission of the file makes it stale (reported, never silently
+    applied) — the same contract blocker decisions follow.
+    """
+
+    source_path: str
+    kind: Literal["prompt", "file"]
+    change_id: str
+    decision: Literal["accepted", "rejected"]
+    note: str = ""
+    decided_on: date
+    source_sha256: str | None = None
+    adapted_sha256: str
+
+
+class ChangeDecisionLog(StrictModel):
+    """Durable record of every change review decision (change-decisions.yaml)."""
+
+    schema_version: Literal["1"] = "1"
+    run_id: str
+    decisions: list[ChangeDecision] = Field(default_factory=list)
+
+
+def load_change_decision_log(run_dir: Path, run_id: str) -> ChangeDecisionLog:
+    """The run's change decision log; a log from another run is refused."""
+    path = Path(run_dir) / CHANGE_DECISIONS_FILENAME
+    if not path.is_file():
+        return ChangeDecisionLog(run_id=run_id)
+    try:
+        log = ChangeDecisionLog.model_validate(yaml.safe_load(path.read_text(encoding="utf-8")))
+    except (yaml.YAMLError, ValidationError) as exc:
+        raise WorkspaceError(f"invalid change decision log {path}: {exc}") from exc
+    if log.run_id != run_id:
+        raise WorkspaceError(
+            f"{path} belongs to run {log.run_id!r}, not {run_id!r}; change decisions "
+            "are never carried between runs"
+        )
+    return log
+
+
+def save_change_decision_log(run_dir: Path, log: ChangeDecisionLog) -> Path:
+    path = Path(run_dir) / CHANGE_DECISIONS_FILENAME
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        yaml.safe_dump(log.model_dump(mode="json"), sort_keys=False),
+        encoding="utf-8",
+    )
+    return path
+
+
+def upsert_change_decision(log: ChangeDecisionLog, decision: ChangeDecision) -> ChangeDecisionLog:
+    """One decision per (source_path, change_id); a new one replaces the old."""
+    kept = [
+        item
+        for item in log.decisions
+        if not (item.source_path == decision.source_path and item.change_id == decision.change_id)
+    ]
+    return log.model_copy(update={"decisions": [*kept, decision]})
+
+
+def decision_matches_entry(decision: ChangeDecision, entry: AdaptationEntry) -> bool:
+    """Whether a recorded decision still applies to the current submission."""
+    return (
+        decision.source_path == entry.source_path
+        and decision.kind == entry.kind
+        and decision.source_sha256 == entry.source_sha256
+        and decision.adapted_sha256 == entry.adapted_sha256
+        and any(change.id == decision.change_id for change in entry.annotated_changes)
+    )
+
+
 class PromptAdaptationTask(StrictModel):
     """One prompt file the host agent must rewrite for the target model.
 
@@ -261,7 +337,7 @@ class MigrationRunFinalization(StrictModel):
     `reviewed_unchanged`, never inflated into the adapted counts.
     """
 
-    schema_version: Literal["3"] = "3"
+    schema_version: Literal["4"] = "4"
     run_id: str
     manifest_path: str
     report_path: str
@@ -272,6 +348,7 @@ class MigrationRunFinalization(StrictModel):
     adapted_prompts: int
     adapted_files: int
     reviewed_unchanged: int = 0
+    undecided_changes: list[str] = Field(default_factory=list)
     coverage_gaps: list[str] = Field(default_factory=list)
     message: str
 
@@ -306,6 +383,7 @@ def run_paths(run_dir: Path) -> MigrationRunPaths:
         manifest_path=str(output / "migration-manifest.yaml"),
         report_path=str(output / "migration-report.md"),
         changes_path=str(output / CHANGES_FILENAME),
+        change_decisions_path=str(run_dir / CHANGE_DECISIONS_FILENAME),
     )
 
 
@@ -361,6 +439,23 @@ def _upsert_entry(log: AdaptationLog, entry: AdaptationEntry) -> AdaptationLog:
 
 def _sha256(text: str) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+def submission_copy_path(run_dir: Path, kind: str, relative: Path | str) -> Path:
+    """Where the as-submitted content of one deliverable is kept.
+
+    The deliverable under output/ is the EFFECTIVE content (review rejections
+    regenerate it); this copy preserves the submission itself so decisions
+    can be re-applied deterministically in any order.
+    """
+    subdir = "prompts" if kind == "prompt" else "files"
+    return Path(run_dir) / "review" / "submissions" / subdir / Path(relative)
+
+
+def _write_submission_copy(run_dir: Path, kind: str, relative: Path, content: str) -> None:
+    path = submission_copy_path(run_dir, kind, relative)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(content, encoding="utf-8")
 
 
 def _application_base(config: MigrationRunConfig) -> Path:
@@ -908,6 +1003,7 @@ def submit_adapted_prompt(
     output_path = Path(run_dir) / "output" / "prompts" / relative
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_text(adapted_prompt, encoding="utf-8")
+    _write_submission_copy(run_dir, "prompt", relative, adapted_prompt)
     guidance_texts = {item.id: item.text for item in required_guidance}
     entry = AdaptationEntry(
         kind="prompt",
@@ -1081,6 +1177,7 @@ def submit_adapted_file(
     output_path = Path(run_dir) / "output" / "files" / relative
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_text(adapted_content, encoding="utf-8")
+    _write_submission_copy(run_dir, "file", relative, adapted_content)
     required_texts = {item.id: item.text for item in required_changes}
     entry = AdaptationEntry(
         kind="file",
@@ -1140,18 +1237,49 @@ def _render_evidence(change: AnnotatedChange) -> str:
     return "; ".join(parts) if parts else "none recorded"
 
 
-def _render_annotated_changes(entry: AdaptationEntry) -> list[str]:
-    """One line of why-plus-evidence per change, with its before/after spans."""
+def _render_annotated_changes(
+    entry: AdaptationEntry, decisions: dict[str, ChangeDecision] | None = None
+) -> list[str]:
+    """One line of why-plus-evidence per change, with its before/after spans.
+
+    With a decision index, each change carries its review status and an
+    all-rejected entry states that the deliverable reverted to the original.
+    """
     lines = ["- What changed:"]
+    counts = {"accepted": 0, "rejected": 0, "pending": 0}
     for change in entry.annotated_changes:
+        decision = decisions.get(change.id) if decisions is not None else None
+        status = ""
+        if decisions is not None:
+            if decision is None:
+                status = " — pending review"
+                counts["pending"] += 1
+            elif decision.decision == "accepted":
+                status = " — ACCEPTED in review"
+                counts["accepted"] += 1
+            else:
+                note = f" (note: {decision.note})" if decision.note.strip() else ""
+                status = f" — REJECTED in review, reverted{note}"
+                counts["rejected"] += 1
         lines.append(
             f"  - [{change.id}] {change.why} ({change.operation}; "
-            f"evidence: {_render_evidence(change)})"
+            f"evidence: {_render_evidence(change)}){status}"
         )
         if change.original_anchor and change.original_anchor.strip():
             lines.append(f"    - before: {_shorten(change.original_anchor, 200)!r}")
         if change.adapted_anchor and change.adapted_anchor.strip():
             lines.append(f"    - after: {_shorten(change.adapted_anchor, 200)!r}")
+    if decisions is not None and (counts["accepted"] or counts["rejected"]):
+        if counts["rejected"] == len(entry.annotated_changes) and entry.annotated_changes:
+            lines.append(
+                "- Review outcome: every change was rejected; no annotated adaptation "
+                "remains in the deliverable."
+            )
+        else:
+            lines.append(
+                f"- Review outcome: {counts['accepted']} accepted, "
+                f"{counts['rejected']} rejected, {counts['pending']} pending."
+            )
     if entry.changes:
         lines.append("- Notes:")
         lines.extend(f"  - {change}" for change in entry.changes)
@@ -1169,8 +1297,17 @@ def _render_dispositions(entry: AdaptationEntry) -> list[str]:
     return lines
 
 
-def render_adaptation_section(log: AdaptationLog, gaps: list[str]) -> str:
-    """Render the per-file adaptation changes and rationale for the report."""
+def render_adaptation_section(
+    log: AdaptationLog,
+    gaps: list[str],
+    decision_log: ChangeDecisionLog | None = None,
+) -> str:
+    """Render the per-file adaptation changes and rationale for the report.
+
+    With a decision log, each annotated change carries its review status;
+    only decisions that still match the entry's submission fingerprints are
+    applied (stale ones are ignored here and surfaced by the review surface).
+    """
     lines = [
         "## Adaptation deliverables",
         "",
@@ -1192,6 +1329,13 @@ def render_adaptation_section(log: AdaptationLog, gaps: list[str]) -> str:
             )
         )
     for entry in sorted(log.entries, key=lambda item: (item.kind, item.source_path)):
+        entry_decisions: dict[str, ChangeDecision] | None = None
+        if decision_log is not None:
+            entry_decisions = {
+                decision.change_id: decision
+                for decision in decision_log.decisions
+                if decision_matches_entry(decision, entry)
+            }
         if entry_is_unchanged(entry):
             review_notes = [change for change in entry.changes if change != _UNCHANGED_DEFAULT_NOTE]
             lines.extend(
@@ -1216,7 +1360,7 @@ def render_adaptation_section(log: AdaptationLog, gaps: list[str]) -> str:
                 )
             )
             if entry.annotated_changes:
-                lines.extend(_render_annotated_changes(entry))
+                lines.extend(_render_annotated_changes(entry, entry_decisions))
             else:
                 lines.extend(
                     (
