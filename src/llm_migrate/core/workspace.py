@@ -105,6 +105,42 @@ class MigrationRunStart(StrictModel):
     next_steps: list[str] = Field(default_factory=list)
 
 
+class GuidanceItem(StrictModel):
+    """One evidence-linked guidance line with a stable content-derived id.
+
+    The id is deterministic over the text (like blocker ids), so the same
+    guidance keeps the same id across worklist regenerations and a recorded
+    disposition keeps matching it; changed guidance gets a new id and must be
+    disposed again.
+    """
+
+    id: str
+    text: str
+
+
+def guidance_item(text: str) -> GuidanceItem:
+    """Build a guidance item with its deterministic stable id."""
+    digest = hashlib.sha256(text.encode("utf-8")).hexdigest()[:10]
+    return GuidanceItem(id=f"g:{digest}", text=text)
+
+
+class GuidanceDisposition(StrictModel):
+    """The submitting agent's explicit verdict on one guidance item.
+
+    Every prompt submission must dispose every guidance item of its task
+    (own guidance plus the worklist's shared prompt guidance): `applied`
+    (the adaptation acts on it), `not_applicable` (it does not apply to this
+    prompt), or `declined` (deliberately not applied — requires a note).
+    `guidance` is the resolved text, filled in at acceptance so the recorded
+    log is self-contained.
+    """
+
+    guidance_id: str
+    disposition: Literal["applied", "not_applicable", "declined"]
+    note: str = ""
+    guidance: str = ""
+
+
 class AdaptationEntry(StrictModel):
     """One submitted, validated adaptation deliverable."""
 
@@ -117,6 +153,19 @@ class AdaptationEntry(StrictModel):
     source_sha256: str | None = None
     adapted_sha256: str
     submitted_on: date
+    unchanged: bool = False
+    guidance_dispositions: list[GuidanceDisposition] = Field(default_factory=list)
+
+
+def entry_is_unchanged(entry: AdaptationEntry) -> bool:
+    """Whether a deliverable is a reviewed no-change copy of its original.
+
+    Entries recorded before the `unchanged` field existed carry only the
+    fingerprints, so equal hashes count as unchanged too.
+    """
+    return entry.unchanged or (
+        entry.source_sha256 is not None and entry.source_sha256 == entry.adapted_sha256
+    )
 
 
 class AdaptationLog(StrictModel):
@@ -128,14 +177,20 @@ class AdaptationLog(StrictModel):
 
 
 class PromptAdaptationTask(StrictModel):
-    """One prompt file the host agent must rewrite for the target model."""
+    """One prompt file the host agent must rewrite for the target model.
+
+    `verbatim_source` is the ORIGINAL prompt content, unmodified (for
+    structured documents, the document rebuilt from its verbatim components).
+    It is the starting point for the agent's own adaptation, never a proposed
+    adaptation, and must never be presented to the user as one.
+    """
 
     source_path: str
     output_path: str
     status: Literal["pending", "submitted"]
-    deterministic_candidate: str
+    verbatim_source: str
     components: list[str] = Field(default_factory=list)
-    guidance: list[str] = Field(default_factory=list)
+    guidance: list[GuidanceItem] = Field(default_factory=list)
     risks: list[str] = Field(default_factory=list)
 
 
@@ -151,7 +206,7 @@ class FileAdaptationTask(StrictModel):
 class AdaptationTaskList(StrictModel):
     """Everything still needed to produce a complete adaptation output set."""
 
-    schema_version: Literal["1"] = "1"
+    schema_version: Literal["2"] = "2"
     run_id: str
     source_model: str
     target_model: str
@@ -160,7 +215,7 @@ class AdaptationTaskList(StrictModel):
     file_tasks: list[FileAdaptationTask] = Field(default_factory=list)
     blockers: list[str] = Field(default_factory=list)
     guidance: list[str] = Field(default_factory=list)
-    shared_prompt_guidance: list[str] = Field(default_factory=list)
+    shared_prompt_guidance: list[GuidanceItem] = Field(default_factory=list)
 
 
 class PromptSubmissionResult(StrictModel):
@@ -186,9 +241,11 @@ class MigrationRunFinalization(StrictModel):
     Blocker state is reported honestly in three buckets: blockers still
     unresolved, blockers resolved by a recorded user decision (with the
     decision), and recorded decisions that no longer match a live blocker.
+    Deliverables that were reviewed and needed no change are counted in
+    `reviewed_unchanged`, never inflated into the adapted counts.
     """
 
-    schema_version: Literal["2"] = "2"
+    schema_version: Literal["3"] = "3"
     run_id: str
     manifest_path: str
     report_path: str
@@ -198,6 +255,7 @@ class MigrationRunFinalization(StrictModel):
     stale_decisions: list[str] = Field(default_factory=list)
     adapted_prompts: int
     adapted_files: int
+    reviewed_unchanged: int = 0
     coverage_gaps: list[str] = Field(default_factory=list)
     message: str
 
@@ -429,9 +487,9 @@ def derive_adaptation_tasks(
                 source_path=source_path,
                 output_path=str(Path("output") / "prompts" / source_path),
                 status=("submitted" if ("prompt", source_path) in submitted else "pending"),
-                deterministic_candidate=candidate,
+                verbatim_source=candidate,
                 components=components,
-                guidance=guidance,
+                guidance=[guidance_item(line) for line in guidance],
                 risks=risks,
             )
         )
@@ -482,7 +540,7 @@ def derive_adaptation_tasks(
                     "guidance": [
                         *task.guidance,
                         *(
-                            f"Required change: {description}"
+                            guidance_item(f"Required change: {description}")
                             for description in sorted(set(changes_by_file[task.source_path]))
                         ),
                     ]
@@ -495,7 +553,7 @@ def derive_adaptation_tasks(
     ]
     # Hoist guidance shared by every prompt task into one shared list, so the
     # task payload the host agent reads does not repeat it per task.
-    shared_prompt_guidance = list(difference_guidance)
+    shared_prompt_guidance = [guidance_item(line) for line in difference_guidance]
     if len(prompt_tasks) > 1:
         shared = [
             line
@@ -528,6 +586,10 @@ def derive_adaptation_tasks(
             "Read each source file from the application, produce the complete adapted "
             "version, and submit it with submit_adapted_file; submit rewritten prompts "
             "with submit_adapted_prompt.",
+            "Each prompt task's `verbatim_source` is the ORIGINAL unmodified content, "
+            "never a proposed adaptation: produce the adapted version yourself from "
+            "it and the guidance, and never present it to the user as the tool's "
+            "suggestion.",
             "Adapt prompts minimally and only with evidence: keep the original wording "
             "and structure except where a listed model difference or evidence-linked "
             "guidance item requires a change, and say in `changes` which evidence "
@@ -535,13 +597,20 @@ def derive_adaptation_tasks(
             "task. Structural drops (removed XML-like sections or components) are "
             "rejected unless the submission sets allow_restructure and records the "
             "justification.",
+            "Every prompt submission must dispose EVERY guidance item of its task "
+            "(the task's `guidance` plus `shared_prompt_guidance`) by id in "
+            "`guidance_dispositions`: applied, not_applicable, or declined (declined "
+            "requires a note). Submissions with missing, unknown, or duplicate "
+            "dispositions are rejected, and an unchanged=true submission cannot "
+            "claim any item as applied.",
             "Prompt submissions must change the DECODED runtime prompt values; "
             "serialization-only, whitespace-only, and case-only edits are rejected, "
             "and validation runs on the decoded values, so encoding tricks cannot "
             "clear a finding.",
             "If a prompt or file genuinely needs no change for the target model, "
             "submit it with unchanged=true (both submission tools support it) "
-            "instead of inventing an edit or leaving a coverage gap.",
+            "instead of inventing an edit or leaving a coverage gap; the final "
+            "report then states explicitly that no change was needed and why.",
             "Call this worklist once and work through it; each submission result "
             "already confirms acceptance, and finalize_migration reports any "
             "remaining gaps, so there is no need to re-list between submissions.",
@@ -609,6 +678,56 @@ def _unchanged_prompt_problems(
     return problems
 
 
+def _shorten(text: str, limit: int = 100) -> str:
+    return text if len(text) <= limit else text[: limit - 1] + "…"
+
+
+def _disposition_problems(
+    required: list[GuidanceItem],
+    dispositions: list[GuidanceDisposition],
+    unchanged: bool,
+) -> list[str]:
+    """Fail-closed reconciliation of dispositions against the task's guidance.
+
+    Every guidance item must be disposed exactly once, a decline must record
+    why, and an unchanged submission cannot claim an item as applied — an
+    applied item implies an edit.
+    """
+    problems: list[str] = []
+    known = {item.id: item.text for item in required}
+    seen: set[str] = set()
+    for disposition in dispositions:
+        if disposition.guidance_id not in known:
+            problems.append(
+                f"disposition references unknown guidance id {disposition.guidance_id!r}; "
+                "ids come from the task's `guidance` and the worklist's "
+                "`shared_prompt_guidance`"
+            )
+            continue
+        if disposition.guidance_id in seen:
+            problems.append(f"guidance id {disposition.guidance_id!r} is disposed more than once")
+            continue
+        seen.add(disposition.guidance_id)
+        if disposition.disposition == "declined" and not disposition.note.strip():
+            problems.append(
+                f"declining guidance {disposition.guidance_id!r} requires a note "
+                "recording why it was deliberately not applied"
+            )
+        if unchanged and disposition.disposition == "applied":
+            problems.append(
+                f"guidance {disposition.guidance_id!r} is marked applied, which "
+                "contradicts unchanged=true; an applied item implies an edit"
+            )
+    missing = [item for item in required if item.id not in seen]
+    if missing:
+        owed = "; ".join(f"{item.id} ({_shorten(item.text)})" for item in missing)
+        problems.append(
+            "every guidance item must be disposed as applied, not_applicable, or "
+            f"declined in `guidance_dispositions`; still owed: {owed}"
+        )
+    return problems
+
+
 def submit_adapted_prompt(
     run_dir: Path,
     config: MigrationRunConfig,
@@ -620,6 +739,8 @@ def submit_adapted_prompt(
     submitted_on: date,
     allow_restructure: bool = False,
     unchanged: bool = False,
+    guidance_dispositions: list[GuidanceDisposition] | None = None,
+    tasks: AdaptationTaskList | None = None,
 ) -> PromptSubmissionResult:
     """Persist one validated adapted prompt beneath output/prompts/.
 
@@ -628,11 +749,24 @@ def submit_adapted_prompt(
     submission whose DECODED runtime prompt values equal the original's is
     rejected — byte-level or serialization changes (escapes, quoting,
     whitespace style) are not an adaptation and cannot clear validation.
+    When `tasks` is provided and lists this prompt, `guidance_dispositions`
+    must reconcile every guidance item of the task (see
+    `_disposition_problems`).
     """
     relative = _safe_relative_path(config, source_path)
     blockers = [
         issue.message for issue in validation.issues if issue.level is ValidationLevel.BLOCKER
     ]
+    dispositions = list(guidance_dispositions or [])
+    required_guidance: list[GuidanceItem] = []
+    if tasks is not None:
+        task = next(
+            (item for item in tasks.prompt_tasks if item.source_path == relative.as_posix()),
+            None,
+        )
+        if task is not None:
+            required_guidance = [*task.guidance, *tasks.shared_prompt_guidance]
+    blockers.extend(_disposition_problems(required_guidance, dispositions, unchanged))
     original = _application_base(config) / relative
     original_text = original.read_text(encoding="utf-8") if original.is_file() else None
     format = STRUCTURED_SUFFIXES.get(relative.suffix.casefold())
@@ -717,6 +851,7 @@ def submit_adapted_prompt(
     output_path = Path(run_dir) / "output" / "prompts" / relative
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_text(adapted_prompt, encoding="utf-8")
+    guidance_texts = {item.id: item.text for item in required_guidance}
     entry = AdaptationEntry(
         kind="prompt",
         source_path=relative.as_posix(),
@@ -734,6 +869,11 @@ def submit_adapted_prompt(
         source_sha256=source_sha,
         adapted_sha256=_sha256(adapted_prompt),
         submitted_on=submitted_on,
+        unchanged=unchanged,
+        guidance_dispositions=[
+            item.model_copy(update={"guidance": guidance_texts.get(item.guidance_id, "")})
+            for item in dispositions
+        ],
     )
     _save_adaptation_log(run_dir, _upsert_entry(load_adaptation_log(run_dir, config.run_id), entry))
     return PromptSubmissionResult(
@@ -855,6 +995,7 @@ def submit_adapted_file(
         source_sha256=_sha256(original) if original is not None else None,
         adapted_sha256=_sha256(adapted_content),
         submitted_on=submitted_on,
+        unchanged=unchanged,
     )
     _save_adaptation_log(run_dir, _upsert_entry(load_adaptation_log(run_dir, config.run_id), entry))
     return FileSubmissionResult(
@@ -880,6 +1021,26 @@ def coverage_gaps(tasks: AdaptationTaskList) -> list[str]:
     return sorted(task.source_path for task in pending if task.status == "pending")
 
 
+_DISPOSITION_LABELS = {
+    "applied": "applied",
+    "not_applicable": "not applicable",
+    "declined": "declined",
+}
+
+_UNCHANGED_DEFAULT_NOTE = "Reviewed for the target model; no change required."
+
+
+def _render_dispositions(entry: AdaptationEntry) -> list[str]:
+    if not entry.guidance_dispositions:
+        return []
+    lines = ["- Guidance dispositions:"]
+    for item in entry.guidance_dispositions:
+        text = item.guidance or item.guidance_id
+        note = f" (note: {item.note})" if item.note.strip() else ""
+        lines.append(f"  - {_DISPOSITION_LABELS[item.disposition]} — {text}{note}")
+    return lines
+
+
 def render_adaptation_section(log: AdaptationLog, gaps: list[str]) -> str:
     """Render the per-file adaptation changes and rationale for the report."""
     lines = [
@@ -892,20 +1053,46 @@ def render_adaptation_section(log: AdaptationLog, gaps: list[str]) -> str:
     ]
     if not log.entries:
         lines.append("- No adaptation deliverables were submitted for this run.")
-    for entry in sorted(log.entries, key=lambda item: (item.kind, item.source_path)):
+    else:
+        adapted_count = sum(not entry_is_unchanged(entry) for entry in log.entries)
+        unchanged_count = len(log.entries) - adapted_count
         lines.extend(
             (
-                f"### `{entry.source_path}` ({entry.kind})",
+                f"{adapted_count} file(s) adapted; {unchanged_count} reviewed with "
+                "no change needed.",
                 "",
-                f"- Adapted file: `{entry.output_path}`",
-                f"- Why: {entry.rationale}",
-                "- What changed:",
-                *(
-                    [f"  - {change}" for change in entry.changes]
-                    or ["  - (no change descriptions were recorded)"]
-                ),
             )
         )
+    for entry in sorted(log.entries, key=lambda item: (item.kind, item.source_path)):
+        if entry_is_unchanged(entry):
+            review_notes = [change for change in entry.changes if change != _UNCHANGED_DEFAULT_NOTE]
+            lines.extend(
+                (
+                    f"### `{entry.source_path}` ({entry.kind}) — no change needed",
+                    "",
+                    "- Reviewed for the target model; no adaptation was required. "
+                    "The deliverable is the original content.",
+                    f"- Why no change: {entry.rationale}",
+                )
+            )
+            if review_notes:
+                lines.append("- Review notes:")
+                lines.extend(f"  - {note}" for note in review_notes)
+        else:
+            lines.extend(
+                (
+                    f"### `{entry.source_path}` ({entry.kind})",
+                    "",
+                    f"- Adapted file: `{entry.output_path}`",
+                    f"- Why: {entry.rationale}",
+                    "- What changed:",
+                    *(
+                        [f"  - {change}" for change in entry.changes]
+                        or ["  - (no change descriptions were recorded)"]
+                    ),
+                )
+            )
+        lines.extend(_render_dispositions(entry))
         if entry.warnings:
             lines.append("- Validation warnings:")
             lines.extend(f"  - {warning}" for warning in entry.warnings)

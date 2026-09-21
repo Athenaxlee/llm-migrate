@@ -38,6 +38,7 @@ from llm_migrate.core.models import (
     RecommendationConstraints,
 )
 from llm_migrate.core.registry import RegistryError
+from llm_migrate.core.workspace import GuidanceDisposition
 from llm_migrate.service import MigrationService
 
 app = typer.Typer(help="Plan local, provider-neutral LLM application migrations.")
@@ -1165,6 +1166,27 @@ def run_decide(
         raise typer.Exit(1)
 
 
+def _parse_disposition(value: str) -> GuidanceDisposition:
+    """Parse one `--dispose` value: `<guidance-id>=<disposition>[:<note>]`."""
+    guidance_id, separator, rest = value.partition("=")
+    if not separator or not guidance_id.strip() or not rest.strip():
+        raise ValueError(
+            f"invalid --dispose value {value!r}; expected "
+            "<guidance-id>=applied|not_applicable|declined[:<note>]"
+        )
+    disposition, _, note = rest.partition(":")
+    if disposition not in ("applied", "not_applicable", "declined"):
+        raise ValueError(
+            f"invalid disposition {disposition!r} in --dispose value {value!r}; "
+            "expected applied, not_applicable, or declined"
+        )
+    return GuidanceDisposition(
+        guidance_id=guidance_id.strip(),
+        disposition=disposition,  # type: ignore[arg-type]
+        note=note.strip(),
+    )
+
+
 @run_app.command("submit-prompt")
 def run_submit_prompt(
     run_dir: Path,
@@ -1177,6 +1199,17 @@ def run_submit_prompt(
     change: Annotated[
         list[str] | None,
         typer.Option("--change", help="One change description; repeatable."),
+    ] = None,
+    dispose: Annotated[
+        list[str] | None,
+        typer.Option(
+            "--dispose",
+            help=(
+                "One guidance disposition as "
+                "<guidance-id>=applied|not_applicable|declined[:<note>]; repeatable. "
+                "Every guidance item of the prompt's task must be disposed."
+            ),
+        ),
     ] = None,
     allow_restructure: Annotated[
         bool,
@@ -1210,6 +1243,7 @@ def run_submit_prompt(
             change or [],
             allow_restructure=allow_restructure,
             unchanged=unchanged,
+            guidance_dispositions=[_parse_disposition(item) for item in dispose or []],
         )
     except (RegistryError, ValueError) as exc:
         typer.echo(str(exc), err=True)

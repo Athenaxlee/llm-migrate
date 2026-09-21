@@ -17,6 +17,7 @@ from llm_migrate.core.models import (
 )
 from llm_migrate.scanners import scan_application
 from llm_migrate.service import MigrationService
+from tests.unit.adaptation_helpers import dispose_all
 
 AS_OF = date(2026, 9, 15)
 
@@ -274,12 +275,13 @@ def test_run_workspace_groups_structured_prompt_tasks(
     task = by_path["prompt_lib/claude_prompt.yaml"]
     assert task.components == ["sys_prompt", "user_prompt"]
     all_guidance = [*task.guidance, *tasks.shared_prompt_guidance]
-    assert any("structured prompt document" in item.casefold() for item in all_guidance)
+    assert any("structured prompt document" in item.text.casefold() for item in all_guidance)
+    assert all(item.id.startswith("g:") for item in all_guidance)
     # Guidance shared by every prompt task is hoisted once instead of repeated.
     shared = set(tasks.shared_prompt_guidance)
     assert shared
     assert all(not shared & set(item.guidance) for item in tasks.prompt_tasks)
-    candidate = yaml.safe_load(task.deterministic_candidate)
+    candidate = yaml.safe_load(task.verbatim_source)
     assert candidate["temperature"] == 0.2
     assert candidate["metadata"] == {"owner": "team-a"}
     assert set(candidate) == {"temperature", "sys_prompt", "user_prompt", "metadata"}
@@ -304,6 +306,7 @@ def test_structured_prompt_submission_preserves_format(
         "Adapted for the target model.",
         ["Rewrote both prompt components."],
         submitted_on=AS_OF,
+        guidance_dispositions=dispose_all(service, run_dir, "prompt_lib/claude_prompt.yaml"),
     )
     assert accepted.accepted, accepted.message
     assert accepted.output_path is not None

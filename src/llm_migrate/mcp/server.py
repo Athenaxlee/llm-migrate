@@ -57,10 +57,14 @@ For a full migration, prefer the guided workflow over calling low-level tools ad
    every plan regeneration; each decision result says exactly what to do next.
 4. Work through the tasks: adapt prompts minimally (keep wording and structure
    except where a listed model difference or evidence-linked guidance line
-   requires a change) and submit via submit_adapted_prompt; write complete
-   adapted files and submit via submit_adapted_file, or pass unchanged=true
-   for files that need no change. Submissions are validated and stored under
-   <run>/output/, never in the application tree.
+   requires a change; each task's `verbatim_source` is the UNMODIFIED original,
+   never a proposed adaptation) and submit via submit_adapted_prompt with a
+   guidance_dispositions entry for EVERY guidance item (applied /
+   not_applicable / declined with a note); write complete adapted files and
+   submit via submit_adapted_file, or pass unchanged=true for prompts or files
+   that need no change — the report then states explicitly that no change was
+   needed and why. Submissions are validated and stored under <run>/output/,
+   never in the application tree.
 5. finalize_migration(run_dir) — writes migration-manifest.yaml and
    migration-report.md (including per-file changes and rationale) under
    output/ and reports any remaining coverage gaps.
@@ -597,11 +601,15 @@ def list_adaptation_tasks(run_dir: str, now: str | None = None) -> dict[str, Any
 
     Derived from the run's migration plan (using its session overlay when one
     was built). `shared_prompt_guidance` applies to every prompt task; each
-    task carries only its own guidance. Adapt each prompt minimally per that
-    guidance and call submit_adapted_prompt; write each complete adapted file
-    and call submit_adapted_file (or pass unchanged=true when no change is
-    needed). Submission results confirm acceptance, so re-listing between
-    submissions is unnecessary; finalize_migration reports remaining gaps.
+    task carries only its own guidance, and every guidance item has a stable
+    id for guidance_dispositions. Each prompt task's `verbatim_source` is the
+    ORIGINAL unmodified content — never a proposed adaptation, never to be
+    presented as one. Adapt each prompt minimally per the guidance and call
+    submit_adapted_prompt (disposing every guidance item); write each complete
+    adapted file and call submit_adapted_file (or pass unchanged=true when no
+    change is needed). Submission results confirm acceptance, so re-listing
+    between submissions is unnecessary; finalize_migration reports remaining
+    gaps.
     """
     return _json(
         _service().list_adaptation_tasks(
@@ -672,25 +680,33 @@ def submit_adapted_prompt(
     changes: list[str] | None = None,
     allow_restructure: bool = False,
     unchanged: bool = False,
+    guidance_dispositions: list[dict[str, str]] | None = None,
 ) -> dict[str, Any]:
     """Validate and store one refined prompt for the target model.
 
     Adapt minimally: keep the original wording and structure except where a
     listed model difference or evidence-linked guidance item requires a
-    change, and cite that evidence in `changes`. Validation runs on the
-    DECODED runtime prompt values, and a submission whose decoded values
-    equal the original's — or differ only by whitespace or letter case — is
-    rejected: serialization tricks, escapes, quoting and cosmetic edits are
-    never an adaptation. If the prompt needs no change, pass `unchanged=true`
-    with an EMPTY `adapted_prompt` (combining it with content is an error)
-    to record a reviewed no-change deliverable; the claim is refused when the
-    prompt's decoded values still reference the source model. Blockers are
-    rejected, and a submission that drops the original's structural sections
-    (XML-like tags or prompt components) is rejected unless
-    `allow_restructure` is true and the justification is recorded in
-    `changes`. Accepted prompts are written beneath `<run>/output/prompts/`
-    mirroring the application layout, and the rationale/changes appear
-    verbatim in the final migration report.
+    change, and cite that evidence in `changes`. `guidance_dispositions`
+    must dispose EVERY guidance item of this prompt's task (its `guidance`
+    plus the worklist's `shared_prompt_guidance`) exactly once, each entry
+    `{"guidance_id": ..., "disposition": "applied" | "not_applicable" |
+    "declined", "note": ...}` (a decline requires the note); missing or
+    unknown ids are rejected. Validation runs on the DECODED runtime prompt
+    values, and a submission whose decoded values equal the original's — or
+    differ only by whitespace or letter case — is rejected: serialization
+    tricks, escapes, quoting and cosmetic edits are never an adaptation. If
+    the prompt needs no change, pass `unchanged=true` with an EMPTY
+    `adapted_prompt` (combining it with content is an error) to record a
+    reviewed no-change deliverable — the final report then states explicitly
+    that no change was needed and why; the claim is refused when the prompt's
+    decoded values still reference the source model, and it cannot mark any
+    guidance item as applied. Blockers are rejected, and a submission that
+    drops the original's structural sections (XML-like tags or prompt
+    components) is rejected unless `allow_restructure` is true and the
+    justification is recorded in `changes`. Accepted prompts are written
+    beneath `<run>/output/prompts/` mirroring the application layout, and the
+    rationale/changes/dispositions appear verbatim in the final migration
+    report.
     """
     return _json(
         _service().submit_adapted_prompt(
@@ -701,6 +717,7 @@ def submit_adapted_prompt(
             changes,
             allow_restructure=allow_restructure,
             unchanged=unchanged,
+            guidance_dispositions=guidance_dispositions,
         )
     )
 
@@ -743,9 +760,11 @@ def submit_adapted_file(
 def finalize_migration(run_dir: str, now: str | None = None) -> dict[str, Any]:
     """Write the run's manifest, report, and adaptation change log under output/.
 
-    The report includes, per adapted file, what changed and why, plus the
-    affected files that still lack an adaptation deliverable. Re-run it any
-    time; it always reflects the current submissions.
+    The report includes, per adapted file, what changed and why; deliverables
+    reviewed with no change needed are stated explicitly with their reasoning
+    (and counted separately as `reviewed_unchanged`); plus the affected files
+    that still lack an adaptation deliverable. Re-run it any time; it always
+    reflects the current submissions.
     """
     return _json(
         _service().finalize_migration_run(

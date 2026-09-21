@@ -11,6 +11,7 @@ import yaml
 
 from llm_migrate.core.workspace import load_run_config
 from llm_migrate.service import MigrationService
+from tests.unit.adaptation_helpers import dispose_all
 
 AS_OF = date(2026, 9, 15)
 
@@ -222,6 +223,17 @@ def test_submit_adapted_prompt_validates_and_records(
     )
     assert not empty.accepted
 
+    undisposed = service.submit_adapted_prompt(
+        run_dir,
+        "prompts/system.txt",
+        "Return a concise weather report for the requested city.",
+        "Sonnet 5 follows short direct instructions without scaffolding.",
+        ["Tightened the instruction to one sentence."],
+        submitted_on=AS_OF,
+    )
+    assert not undisposed.accepted
+    assert "every guidance item must be disposed" in undisposed.message
+
     result = service.submit_adapted_prompt(
         run_dir,
         "prompts/system.txt",
@@ -229,6 +241,7 @@ def test_submit_adapted_prompt_validates_and_records(
         "Sonnet 5 follows short direct instructions without scaffolding.",
         ["Tightened the instruction to one sentence."],
         submitted_on=AS_OF,
+        guidance_dispositions=dispose_all(service, run_dir, "prompts/system.txt"),
     )
     assert result.accepted
     assert result.output_path is not None
@@ -256,6 +269,7 @@ def test_submit_adapted_prompt_accepts_multi_endpoint_bedrock_target(
         "Sonnet 5 needs the tool policy stated explicitly.",
         ["Added an explicit tool-use instruction."],
         submitted_on=AS_OF,
+        guidance_dispositions=dispose_all(service, start.paths.run_dir, "prompts/system.txt"),
     )
     assert result.accepted, result.message
     assert not any(issue.code == "ambiguous_target_platform" for issue in result.validation.issues)
@@ -305,3 +319,66 @@ def test_workspace_is_excluded_from_scanning(service: MigrationService, bedrock_
     )
     analysis = service.scan_application(bedrock_app)
     assert analysis.files_scanned == 1
+
+
+def test_unchanged_deliverables_are_reported_explicitly(
+    service: MigrationService, anthropic_app: Path
+) -> None:
+    """A reviewed no-change prompt must be stated in the report, never silent."""
+    start = service.start_migration_run(
+        anthropic_app,
+        "claude-sonnet-4-6",
+        "claude-sonnet-5",
+        source_platform="anthropic-api",
+        target_platform="anthropic-api",
+        as_of=AS_OF,
+    )
+    assert start.paths is not None
+    run_dir = start.paths.run_dir
+    result = service.submit_adapted_prompt(
+        run_dir,
+        "prompts/system.txt",
+        "",
+        "The prompt is already short, direct, and format-neutral for the target.",
+        [],
+        unchanged=True,
+        submitted_on=AS_OF,
+        guidance_dispositions=dispose_all(
+            service, run_dir, "prompts/system.txt", disposition="not_applicable"
+        ),
+    )
+    assert result.accepted, result.message
+    # The deliverable stays clean: the original bytes, no annotations inside.
+    original = (anthropic_app / "prompts" / "system.txt").read_text(encoding="utf-8")
+    output = Path(run_dir) / "output" / "prompts" / "prompts" / "system.txt"
+    assert output.read_text(encoding="utf-8") == original
+
+    final = service.finalize_migration_run(run_dir)
+    assert final.adapted_prompts == 0
+    assert final.reviewed_unchanged == 1
+    assert "reviewed and needed no change" in final.message
+    report = Path(final.report_path).read_text(encoding="utf-8")
+    assert "### `prompts/system.txt` (prompt) — no change needed" in report
+    assert "Why no change: The prompt is already short" in report
+    assert "- Guidance dispositions:" in report
+    assert "  - not applicable — " in report
+    assert "0 file(s) adapted; 1 reviewed with no change needed." in report
+
+
+def test_worklist_names_verbatim_source_and_disposition_rules(
+    service: MigrationService, anthropic_app: Path
+) -> None:
+    start = service.start_migration_run(
+        anthropic_app,
+        "claude-sonnet-4-6",
+        "claude-sonnet-5",
+        source_platform="anthropic-api",
+        target_platform="anthropic-api",
+        as_of=AS_OF,
+    )
+    assert start.paths is not None
+    tasks = service.list_adaptation_tasks(start.paths.run_dir)
+    assert tasks.schema_version == "2"
+    assert tasks.prompt_tasks[0].verbatim_source
+    assert any("verbatim_source` is the ORIGINAL" in line for line in tasks.guidance)
+    assert any("dispose EVERY guidance item" in line for line in tasks.guidance)

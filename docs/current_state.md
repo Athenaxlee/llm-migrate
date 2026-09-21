@@ -548,14 +548,39 @@ source-target `MigrationKnowledge`, not only individual model profiles.
   submissions to make a blocker disappear. Decision results carry the
   remaining unresolved blockers and the exact next step, so there are no
   re-listing loops.
+- Adaptation report honesty and guidance accountability (2026-09-21, phase
+  v1.4.0-a of the evidence-backed adaptation review design in
+  `docs/adaptation-review.md`): the prompt worklist field is renamed
+  `verbatim_source` (`AdaptationTaskList` schema version 2) and every surface
+  states it is the ORIGINAL unmodified content, never a proposed adaptation —
+  closing the path where a host presented the input as the tool's output.
+  Every guidance item carries a stable content-derived id (`GuidanceItem`,
+  blocker-id scheme), and prompt submissions must dispose every item of the
+  task (own `guidance` plus `shared_prompt_guidance`) exactly once as
+  `applied` / `not_applicable` / `declined` (a decline requires a note);
+  missing, unknown, or duplicate dispositions are rejected fail-closed with
+  the exact ids and texts still owed, and an `unchanged=true` submission
+  cannot claim any item as applied. Dispositions and the `unchanged` flag are
+  recorded in `changes.yaml` (with resolved guidance text, so the log is
+  self-contained), reviewed-no-change deliverables render under an explicit
+  "no change needed" heading with their reasoning, the adaptation section
+  opens with an adapted/no-change count summary, and finalization counts
+  `reviewed_unchanged` separately from the adapted counts
+  (`MigrationRunFinalization` schema version 3). Surfaces: CLI
+  `run submit-prompt --dispose <id>=<disposition>[:<note>]`, MCP
+  `submit_adapted_prompt(guidance_dispositions=...)`, and updated worklist,
+  start, and MCP-instruction guidance.
 
 ## Next work
 
-1. Exercise the V1.2 guided workflow with real coding-agent hosts (Claude Code,
+1. Evidence-backed adaptation review phases v1.4.0-b (hunk-anchored annotated
+   changes validated against the real diff) and v1.4.0-c (per-change
+   accept/reject review decisions) per `docs/adaptation-review.md`.
+2. Exercise the V1.2 guided workflow with real coding-agent hosts (Claude Code,
    Copilot) and fold observed friction back into the tool guidance.
-2. Add broader scanners/model families through the existing normalized scanner,
+3. Add broader scanners/model families through the existing normalized scanner,
    reviewed canonical registry, and V1.1 session-overlay boundaries.
-3. Optional V1.1 follow-ups: a persistent content-addressed research cache,
+4. Optional V1.1 follow-ups: a persistent content-addressed research cache,
    concurrent agent execution within recorded limits, and an orchestrated
    arbiter stage.
 

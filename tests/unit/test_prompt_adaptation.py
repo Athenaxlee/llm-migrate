@@ -10,6 +10,7 @@ import pytest
 import yaml
 
 from llm_migrate.service import MigrationService
+from tests.unit.adaptation_helpers import dispose_all
 
 AS_OF = date(2026, 9, 16)
 
@@ -93,17 +94,19 @@ def test_prompt_tasks_carry_structure_and_evidence_guidance(
     assert start.status == "ready" and start.paths is not None
     tasks = service.list_adaptation_tasks(start.paths.run_dir)
     task = next(item for item in tasks.prompt_tasks if item.source_path == "prompts/system.txt")
-    assert task.deterministic_candidate == STRUCTURED_PROMPT
+    assert task.verbatim_source == STRUCTURED_PROMPT
     assert any(
-        "<correction_rules>" in line and "<validation_before_response>" in line
-        for line in task.guidance
+        "<correction_rules>" in item.text and "<validation_before_response>" in item.text
+        for item in task.guidance
     )
     knowledge_lines = [
-        line for line in tasks.shared_prompt_guidance if line.startswith("Model difference (")
+        item.text
+        for item in tasks.shared_prompt_guidance
+        if item.text.startswith("Model difference (")
     ]
     assert knowledge_lines, "migration-knowledge differences must reach the prompt tasks"
     assert any("(evidence: https://" in line for line in knowledge_lines)
-    assert any("(evidence: https://" in line for line in task.guidance)
+    assert any("(evidence: https://" in item.text for item in task.guidance)
     assert any("Adapt prompts minimally" in line for line in tasks.guidance)
 
 
@@ -138,6 +141,7 @@ def test_structural_drop_is_rejected_without_allow_restructure(
         ["Flattened the XML sections after evaluation evidence."],
         allow_restructure=True,
         submitted_on=AS_OF,
+        guidance_dispositions=dispose_all(service, run_dir, "prompts/system.txt"),
     )
     assert accepted.accepted, accepted.message
     changes = yaml.safe_load(
@@ -163,6 +167,7 @@ def test_structure_preserving_adaptation_is_accepted(
         "Strengthened the correction threshold per target guidance.",
         ["Tightened the correction-rules wording; structure unchanged."],
         submitted_on=AS_OF,
+        guidance_dispositions=dispose_all(service, start.paths.run_dir, "prompts/system.txt"),
     )
     assert result.accepted, result.message
 
@@ -265,7 +270,7 @@ def test_unpaired_placeholders_are_not_protected_structure(
     assert start.paths is not None
     tasks = service.list_adaptation_tasks(start.paths.run_dir)
     task = next(item for item in tasks.prompt_tasks if item.source_path == "prompts/system.txt")
-    section_lines = [line for line in task.guidance if "Preserve the structural" in line]
+    section_lines = [item.text for item in task.guidance if "Preserve the structural" in item.text]
     assert section_lines and "<rules>" in section_lines[0]
     assert "<ops" not in section_lines[0] and "<YYYY-MM-DD>" not in section_lines[0]
     adapted = (
@@ -278,6 +283,7 @@ def test_unpaired_placeholders_are_not_protected_structure(
         "Reworded placeholders; structure unchanged.",
         ["Replaced the placeholder tokens with plain wording."],
         submitted_on=AS_OF,
+        guidance_dispositions=dispose_all(service, start.paths.run_dir, "prompts/system.txt"),
     )
     assert result.accepted, result.message
 
@@ -544,6 +550,7 @@ def test_validation_runs_on_decoded_values(
         "Clarified scope per literal-instruction guidance.",
         ["Made the extraction scope explicit."],
         submitted_on=AS_OF,
+        guidance_dispositions=dispose_all(service, start.paths.run_dir, "prompts/extract.yaml"),
     )
     assert result.accepted, result.message
     codes = {issue.code for issue in result.validation.issues}
@@ -573,6 +580,9 @@ def test_unchanged_prompt_and_cosmetic_only_rejection(
         [],
         unchanged=True,
         submitted_on=AS_OF,
+        guidance_dispositions=dispose_all(
+            service, run_dir, "prompts/extract.yaml", disposition="not_applicable"
+        ),
     )
     assert unchanged.accepted, unchanged.message
     # Whitespace/case-only edits are no-ops in disguise and are rejected, so
@@ -615,7 +625,11 @@ def test_in_prompt_findings_reach_the_task_guidance(
     assert start.paths is not None
     tasks = service.list_adaptation_tasks(start.paths.run_dir)
     task = next(item for item in tasks.prompt_tasks if item.source_path == "prompts/extract.yaml")
-    findings = [line for line in task.guidance if line.startswith("[sys_prompt] In-prompt finding")]
+    findings = [
+        item.text
+        for item in task.guidance
+        if item.text.startswith("[sys_prompt] In-prompt finding")
+    ]
     assert any("duplicated_requirements" in line for line in findings)
     assert any("json_only_prompting" in line for line in findings)
 
@@ -754,6 +768,7 @@ def test_model_id_swap_in_non_prompt_value_is_sanctioned(
         "Adapted the output contract and pointed the document at the target model.",
         ["Strengthened the JSON key requirement; swapped the model id."],
         submitted_on=AS_OF,
+        guidance_dispositions=dispose_all(service, start.paths.run_dir, "prompts/agent.yaml"),
     )
     assert result.accepted, result.message
     assert "updated from the source to the target model id" in result.message
@@ -856,6 +871,7 @@ def test_validation_issues_are_aggregated_not_per_component(
         "Adapted for the bedrock target.",
         ["Strengthened key requirements; swapped the model id."],
         submitted_on=AS_OF,
+        guidance_dispositions=dispose_all(service, start.paths.run_dir, "prompts/agent.yaml"),
     )
     assert result.accepted, result.message
     codes = [issue.code for issue in result.validation.issues]
@@ -1018,3 +1034,77 @@ def test_dynamic_request_surfaces_as_unknown_and_native_use_blocks(
         for blocker in plan.blockers
     )
     assert plan.migration_complexity == "blocked"
+
+
+def test_guidance_dispositions_are_fail_closed(
+    service: MigrationService, json_prompt_app: Path
+) -> None:
+    """Every guidance item must be disposed, honestly, exactly once."""
+    start = service.start_migration_run(
+        json_prompt_app,
+        "claude-sonnet-4-6",
+        "claude-sonnet-5",
+        source_platform="anthropic-api",
+        target_platform="anthropic-api",
+        as_of=AS_OF,
+        research="skip",
+    )
+    assert start.paths is not None
+    run_dir = start.paths.run_dir
+    adapted = (
+        'sys_prompt: "Extract every field from every row.\\n'
+        'Return valid JSON only, with all required keys."\n'
+    )
+    complete = dispose_all(service, run_dir, "prompts/extract.yaml")
+    assert complete, "the task must carry guidance for this test to be meaningful"
+
+    def submit(dispositions, unchanged=False):  # type: ignore[no-untyped-def]
+        return service.submit_adapted_prompt(
+            run_dir,
+            "prompts/extract.yaml",
+            "" if unchanged else adapted,
+            "Adapted per guidance.",
+            ["Made the extraction scope explicit."] if not unchanged else [],
+            unchanged=unchanged,
+            submitted_on=AS_OF,
+            guidance_dispositions=dispositions,
+        )
+
+    missing = submit(complete[:-1])
+    assert not missing.accepted
+    assert "every guidance item must be disposed" in missing.message
+    assert complete[-1].guidance_id in missing.message
+
+    unknown = submit([*complete, complete[0].model_copy(update={"guidance_id": "g:0000000000"})])
+    assert not unknown.accepted
+    assert "unknown guidance id 'g:0000000000'" in unknown.message
+
+    duplicated = submit([*complete, complete[0]])
+    assert not duplicated.accepted
+    assert "disposed more than once" in duplicated.message
+
+    no_note = submit(
+        [
+            complete[0].model_copy(update={"disposition": "declined", "note": ""}),
+            *complete[1:],
+        ]
+    )
+    assert not no_note.accepted
+    assert "requires a note" in no_note.message
+
+    contradiction = submit(complete, unchanged=True)
+    assert not contradiction.accepted
+    assert "contradicts unchanged=true" in contradiction.message
+
+    accepted = submit(complete)
+    assert accepted.accepted, accepted.message
+    changes = yaml.safe_load(
+        (Path(run_dir) / "output" / "changes.yaml").read_text(encoding="utf-8")
+    )
+    entry = next(
+        item for item in changes["entries"] if item["source_path"] == "prompts/extract.yaml"
+    )
+    recorded = entry["guidance_dispositions"]
+    assert {item["guidance_id"] for item in recorded} == {item.guidance_id for item in complete}
+    assert all(item["guidance"] for item in recorded), "resolved text must be recorded"
+    assert entry["unchanged"] is False

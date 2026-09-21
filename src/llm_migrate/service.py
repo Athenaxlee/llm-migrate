@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any, Literal
 
 import yaml
+from pydantic import ValidationError
 
 from llm_migrate.adapters.evaluation import BuiltinEvaluationExecutor
 from llm_migrate.adapters.evidence import (
@@ -153,6 +154,7 @@ from llm_migrate.core.session import (
 from llm_migrate.core.workspace import (
     AdaptationTaskList,
     FileSubmissionResult,
+    GuidanceDisposition,
     MigrationRunConfig,
     MigrationRunFinalization,
     MigrationRunStart,
@@ -162,6 +164,7 @@ from llm_migrate.core.workspace import (
     default_run_dir,
     default_run_id,
     derive_adaptation_tasks,
+    entry_is_unchanged,
     load_adaptation_log,
     load_run_config,
     read_original_prompt,
@@ -1182,10 +1185,14 @@ class MigrationService:
                 "behalf, and never retry submissions to make a blocker disappear — "
                 "recorded decisions are the only way a blocker is resolved.",
                 "For every prompt task, adapt the prompt minimally using its "
-                "evidence-linked guidance and call submit_adapted_prompt; for every "
-                "file task, write the complete adapted file and call "
+                "evidence-linked guidance (each task's verbatim_source is the "
+                "UNMODIFIED original, never a proposed adaptation) and call "
+                "submit_adapted_prompt with a guidance_dispositions entry for every "
+                "guidance item (applied / not_applicable / declined with a note); "
+                "for every file task, write the complete adapted file and call "
                 "submit_adapted_file, or pass unchanged=true when the file needs no "
-                "change for the target model.",
+                "change for the target model — the report then states explicitly "
+                "that no change was needed and why.",
                 "Call finalize_migration(run_dir) to write migration-manifest.yaml, "
                 "migration-report.md, and the adaptation change log under output/; it "
                 "reports any remaining coverage gaps.",
@@ -1522,9 +1529,17 @@ class MigrationService:
         *,
         allow_restructure: bool = False,
         unchanged: bool = False,
+        guidance_dispositions: Sequence[GuidanceDisposition | Mapping[str, Any]] | None = None,
         submitted_on: date | None = None,
+        now: datetime | None = None,
     ) -> PromptSubmissionResult:
-        """Validate and persist one adapted prompt beneath the run's output/prompts/."""
+        """Validate and persist one adapted prompt beneath the run's output/prompts/.
+
+        `guidance_dispositions` must dispose every guidance item of the
+        prompt's task (its own guidance plus the worklist's shared prompt
+        guidance) as applied / not_applicable / declined (with a note);
+        submissions that leave guidance undisposed are rejected.
+        """
         workspace = Path(run_dir)
         config = load_run_config(workspace)
         if unchanged and adapted_prompt.strip():
@@ -1532,6 +1547,15 @@ class MigrationService:
                 "unchanged=true cannot be combined with adapted content; omit the "
                 "content or drop unchanged"
             )
+        dispositions: list[GuidanceDisposition] = []
+        for item in guidance_dispositions or []:
+            if isinstance(item, GuidanceDisposition):
+                dispositions.append(item)
+                continue
+            try:
+                dispositions.append(GuidanceDisposition.model_validate(item))
+            except ValidationError as exc:
+                raise ValueError(f"invalid guidance disposition {item!r}: {exc}") from exc
         if unchanged:
             original = read_original_prompt(config, source_path)
             if original is not None:
@@ -1543,6 +1567,8 @@ class MigrationService:
         validation = downgrade_accepted_prompt_issues(
             validation, load_decision_log(workspace, config.run_id)
         )
+        plan = self._plan_for_run(config, workspace, now=now)
+        tasks = derive_adaptation_tasks(config, plan, workspace)
         return workspace_submit_adapted_prompt(
             workspace,
             config,
@@ -1554,6 +1580,8 @@ class MigrationService:
             submitted_on or date.today(),
             allow_restructure=allow_restructure,
             unchanged=unchanged,
+            guidance_dispositions=dispositions,
+            tasks=tasks,
         )
 
     def submit_adapted_file(
@@ -1608,8 +1636,13 @@ class MigrationService:
         report = self.migration_report(plan)
         report = report.rstrip("\n") + "\n\n" + render_adaptation_section(log, gaps) + "\n"
         Path(paths.report_path).write_text(report, encoding="utf-8")
-        adapted_prompts = sum(entry.kind == "prompt" for entry in log.entries)
-        adapted_files = sum(entry.kind == "file" for entry in log.entries)
+        adapted_prompts = sum(
+            entry.kind == "prompt" and not entry_is_unchanged(entry) for entry in log.entries
+        )
+        adapted_files = sum(
+            entry.kind == "file" and not entry_is_unchanged(entry) for entry in log.entries
+        )
+        reviewed_unchanged = sum(entry_is_unchanged(entry) for entry in log.entries)
         # Superseded retarget/correction decisions were honored and later
         # replaced; they belong with the resolved history, never stale alarms.
         resolved = [
@@ -1640,6 +1673,7 @@ class MigrationService:
             stale_decisions=stale,
             adapted_prompts=adapted_prompts,
             adapted_files=adapted_files,
+            reviewed_unchanged=reviewed_unchanged,
             coverage_gaps=gaps,
             message=(
                 "Migration run finalized. Review output/migration-report.md; "
@@ -1647,6 +1681,11 @@ class MigrationService:
                     f"{len(gaps)} affected file(s) still lack an adaptation deliverable; "
                     if gaps
                     else "every affected file has an adaptation deliverable; "
+                )
+                + (
+                    f"{reviewed_unchanged} deliverable(s) were reviewed and needed no change; "
+                    if reviewed_unchanged
+                    else ""
                 )
                 + blocker_note
             ),

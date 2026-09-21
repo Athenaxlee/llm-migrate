@@ -14,6 +14,7 @@ from llm_migrate.core.blockers import load_decision_log
 from llm_migrate.core.models import ResolutionKind
 from llm_migrate.core.workspace import load_run_config
 from llm_migrate.service import MigrationService
+from tests.unit.adaptation_helpers import dispose_all
 
 AS_OF = date(2026, 9, 18)
 
@@ -469,6 +470,9 @@ def test_accepted_prompt_blocker_no_longer_rejects_submission(
         "Reviewed; the user accepted the context-window risk explicitly.",
         unchanged=True,
         submitted_on=AS_OF,
+        guidance_dispositions=dispose_all(
+            service, run_dir, "prompt.txt", disposition="not_applicable"
+        ),
     )
     assert submitted.accepted, submitted.message
     assert any(
@@ -496,8 +500,8 @@ def test_redesign_on_prompt_blocker_reaches_the_prompt_task(
     tasks = service.list_adaptation_tasks(run_dir)
     prompt_task = next(task for task in tasks.prompt_tasks if task.source_path == "prompt.txt")
     assert any(
-        "Required change:" in line and "Reduce the prompt content" in line
-        for line in prompt_task.guidance
+        "Required change:" in item.text and "Reduce the prompt content" in item.text
+        for item in prompt_task.guidance
     ), prompt_task.guidance
 
 
