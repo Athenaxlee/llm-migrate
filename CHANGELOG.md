@@ -5,6 +5,38 @@ versioning.
 
 ## Unreleased
 
+- Evidence-backed adaptation review: every changed submission documents each
+  edit as an anchored, evidence-linked annotated change (operation, exact
+  original/adapted spans, a one-sentence why, and evidence entries — a
+  `mechanical` kind covers typo-level fixes), reconciled fail-closed against
+  the real diff of the decoded runtime values: undocumented edits, phantom
+  claims, duplicate annotations, unresolved anchors, and missing evidence are
+  rejected, and evidence URLs are checked against the plan's known sources.
+  Guidance accountability: every prompt-task guidance item and file-task
+  required change carries a stable content-derived id and must be disposed
+  per submission (applied / not applicable / declined with a note);
+  `deterministic_candidate` is renamed `verbatim_source` and every surface
+  states it is the unmodified original, never a proposed adaptation.
+  Deliverables reviewed with `unchanged=true` render under an explicit
+  "no change needed" heading with their reasoning, and finalization counts
+  `reviewed_unchanged` separately.
+- Per-change review decisions: new `get_change_review` /
+  `record_change_decision` MCP tools and `llm-migrate run review` /
+  `run decide-change` CLI commands present, per deliverable, the decoded
+  unified diff plus every annotated change with its why, evidence,
+  before/after spans, and status; the user accepts or rejects each change
+  individually and the agent presents verbatim, never decides. Decisions are
+  durable in the run's `change-decisions.yaml`, keyed to the submission
+  fingerprints (a resubmission makes them stale — reported, never silently
+  applied — and an identical resubmission re-applies the still-live
+  rejections); every decision deterministically regenerates the deliverable
+  from the original content, the preserved as-submitted copy, and the live
+  rejections, refusing non-deterministic cases instead of recording them.
+  Finalization reports undecided changes as their own bucket and the report
+  renders each change's decision with a per-file review outcome.
+  Schema versions: `changes.yaml` 2 (version-1 logs still load),
+  `AdaptationTaskList` 3, `MigrationRunFinalization` 4.
+
 - Interactive blocker resolution: blockers are structured `MigrationBlocker`
   records (stable deterministic id, code, category, message, registry evidence
   URLs, source locations) — `MigrationPlan` is schema version 4 and
