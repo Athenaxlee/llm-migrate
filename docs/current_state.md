@@ -27,18 +27,23 @@ real V1.2 migration run where configuration-driven prompt loading
 "Prompt changes: None" despite real prompt migration work. See the V1.3 section
 below and `docs/project_phases.md` §12.2.
 
-V1.4: Interactive Blocker Resolution — implemented on 2026-09-18, built in
-response to blocked V1.3 runs being honest dead ends: blockers were detected
-and reported, but there was no guided, recorded path from `blocked` to a
-shippable plan. Every blocker now yields a user-facing question with
+V1.4: Interactive Blocker Resolution and Evidence-Backed Adaptation Review —
+complete and released as `v1.4.0` on 2026-09-21. Blocker resolution
+(implemented 2026-09-18) was built in response to blocked V1.3 runs being
+honest dead ends: every blocker now yields a user-facing question with
 evidence-backed options, and explicit recorded decisions (retarget, redesign,
-correction, accept-with-rationale) reshape the plan durably. See the V1.4
-section below and `docs/project_phases.md` §12.3.
+correction, accept-with-rationale) reshape the plan durably. The adaptation
+review (implemented 2026-09-21) was built in response to a real run where an
+unadapted prompt shipped with no explanation: every edit is now an anchored,
+evidence-linked annotated change, no-change deliverables are reported
+explicitly, and each change is individually accepted or rejected with
+deterministic deliverable regeneration. See the V1.4 section below,
+`docs/adaptation-review.md`, and `docs/project_phases.md` §12.3.
 
 ## Released foundation
 
-- Git tag `v1.3.0` is the current stable release; `v1.2.0`, `v1.1.0`,
-  `v1.0.0`, and `v0.1.0` remain prior recorded release tags.
+- Git tag `v1.4.0` is the current stable release; `v1.3.0`, `v1.2.0`,
+  `v1.1.0`, `v1.0.0`, and `v0.1.0` remain prior recorded release tags.
 - The V0.1 reviewed registry, proposal workflow, provenance, freshness, model
   profiles, and directional Claude migration knowledge remain intact.
 - Every non-fixture provider profile has exactly one checked-in proposal

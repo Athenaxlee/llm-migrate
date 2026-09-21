@@ -3,7 +3,7 @@
 All notable changes are documented here. The project follows semantic
 versioning.
 
-## Unreleased
+## 1.4.0 — 2026-09-21
 
 - Evidence-backed adaptation review: every changed submission documents each
   edit as an anchored, evidence-linked annotated change (operation, exact
