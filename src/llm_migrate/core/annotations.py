@@ -224,6 +224,40 @@ def _evidence_problems(
     return problems, warnings
 
 
+def _duplicate_problems(changes: list[AnnotatedChange]) -> list[str]:
+    """Identical annotations would share one content-derived id; refuse them."""
+    counts: dict[str, int] = {}
+    for change in changes:
+        identity = change_id(change)
+        counts[identity] = counts.get(identity, 0) + 1
+    return [
+        f"{count} identical annotated changes would share the id {identity}; "
+        "merge them into one entry"
+        for identity, count in sorted(counts.items())
+        if count > 1
+    ]
+
+
+def standalone_annotation_problems(
+    changes: list[AnnotatedChange],
+    known_evidence_urls: set[str] | None = None,
+) -> tuple[list[str], list[str]]:
+    """Shape, evidence, and duplicate checks without a diff to reconcile against.
+
+    Used for deliverables that have no original to diff (new files): anchors
+    cannot be resolved, but the why/evidence/operation rules still hold.
+    """
+    problems: list[str] = list(_duplicate_problems(changes))
+    warnings: list[str] = []
+    known_urls = known_evidence_urls or set()
+    for change in changes:
+        problems.extend(_shape_problems(change))
+        evidence_problems, evidence_warnings = _evidence_problems(change, known_urls)
+        problems.extend(evidence_problems)
+        warnings.extend(evidence_warnings)
+    return problems, warnings
+
+
 def annotation_problems(
     original: str,
     adapted: str,
@@ -240,6 +274,7 @@ def annotation_problems(
     problems: list[str] = []
     warnings: list[str] = []
     known_urls = known_evidence_urls or set()
+    problems.extend(_duplicate_problems(changes))
     hunks = _hunks(original, adapted)
     covered = [False] * len(hunks)
     global_restructure = False

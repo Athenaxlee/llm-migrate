@@ -25,6 +25,7 @@ from llm_migrate.core.annotations import (
     AnnotatedChange,
     annotation_problems,
     decoded_view,
+    standalone_annotation_problems,
     with_change_ids,
 )
 from llm_migrate.core.models import (
@@ -708,8 +709,9 @@ def derive_adaptation_tasks(
             "suggestion.",
             "Adapt prompts minimally and only with evidence: keep the original wording "
             "and structure except where a listed model difference or evidence-linked "
-            "guidance item requires a change, and say in `changes` which evidence "
-            "motivated each edit. `shared_prompt_guidance` applies to every prompt "
+            "guidance item requires a change, and record each edit in "
+            "`annotated_changes` with the evidence that motivated it. "
+            "`shared_prompt_guidance` applies to every prompt "
             "task. Structural drops (removed XML-like sections or components) are "
             "rejected unless the submission sets allow_restructure and records the "
             "justification.",
@@ -1107,6 +1109,11 @@ def submit_adapted_file(
         problems.extend(annotation_issues)
         warnings.extend(annotation_warnings)
     elif annotations and original is None:
+        standalone_problems, standalone_warnings = standalone_annotation_problems(
+            annotations, known_evidence_urls
+        )
+        problems.extend(standalone_problems)
+        warnings.extend(standalone_warnings)
         warnings.append(
             "annotated_changes could not be checked against a diff because the file "
             "has no original in the application"

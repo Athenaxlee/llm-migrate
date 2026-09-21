@@ -433,3 +433,63 @@ def test_mcp_review_tools_wrap_the_shared_workflow(
     )
     assert recorded["accepted"] is True
     assert len(recorded["pending_change_ids"]) == 1
+
+
+def test_identical_resubmission_keeps_live_rejections_applied(
+    service: MigrationService, file_app: Path
+) -> None:
+    """Review-hardening: an idempotent resubmit must not undo applied rejections."""
+    start = _start(service, file_app)
+    assert start.paths is not None
+    run_dir = start.paths.run_dir
+    adapted = ORIGINAL_APP.replace("claude-sonnet-4-6", "claude-sonnet-5").replace(
+        "MAX_TOKENS = 100", "MAX_TOKENS = 130"
+    )
+    assert _submit_file(service, run_dir, adapted).accepted
+    review = service.get_change_review(run_dir)
+    budget = next(
+        item.change.id for item in review.files[0].changes if "30 percent" in item.change.why
+    )
+    assert service.record_change_decision(
+        run_dir, "app.py", budget, "rejected", "No.", decided_on=AS_OF
+    ).accepted
+    deliverable = Path(run_dir) / "output" / "files" / "app.py"
+    assert "MAX_TOKENS = 130" not in deliverable.read_text(encoding="utf-8")
+
+    resubmitted = _submit_file(service, run_dir, adapted)
+    assert resubmitted.accepted, resubmitted.message
+    assert "re-applied to the deliverable" in resubmitted.message
+    assert "MAX_TOKENS = 130" not in deliverable.read_text(encoding="utf-8")
+    review = service.get_change_review(run_dir)
+    budget_item = next(item for item in review.files[0].changes if item.change.id == budget)
+    assert budget_item.status == "rejected"
+
+
+def test_annotation_less_entries_are_marked_unreviewable(
+    service: MigrationService, file_app: Path
+) -> None:
+    """A pre-annotation entry must not masquerade as a fully reviewed file."""
+    from llm_migrate.core.workspace import (
+        _save_adaptation_log,  # type: ignore[attr-defined]
+        load_adaptation_log,
+    )
+
+    start = _start(service, file_app)
+    assert start.paths is not None
+    run_dir = Path(start.paths.run_dir)
+    adapted = ORIGINAL_APP.replace("claude-sonnet-4-6", "claude-sonnet-5").replace(
+        "MAX_TOKENS = 100", "MAX_TOKENS = 130"
+    )
+    assert _submit_file(service, run_dir, adapted).accepted
+    log = load_adaptation_log(run_dir, start.run.run_id)  # type: ignore[union-attr]
+    stripped = log.model_copy(
+        update={
+            "entries": [entry.model_copy(update={"annotated_changes": []}) for entry in log.entries]
+        }
+    )
+    _save_adaptation_log(run_dir, stripped)
+
+    review = service.get_change_review(run_dir)
+    file_review = next(item for item in review.files if item.source_path == "app.py")
+    assert file_review.stale_reason is not None
+    assert "no annotated changes" in file_review.stale_reason

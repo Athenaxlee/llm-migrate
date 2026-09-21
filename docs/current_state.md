@@ -610,6 +610,18 @@ source-target `MigrationKnowledge`, not only individual model profiles.
   adaptation. Finalization reports undecided changes as their own bucket
   (`MigrationRunFinalization` schema version 4) and the report renders each
   change's decision with a per-file review outcome.
+- Review-hardened (2026-09-21) against its own review findings: a resubmission
+  with identical fingerprints re-applies the still-live rejections to the
+  deliverable instead of silently reverting it to the full submission (the
+  result says so); identical annotations that would share one content-derived
+  change id are rejected as duplicates; new-file submissions still face the
+  annotation shape/evidence/duplicate checks even though there is no diff to
+  reconcile; an entry submitted without annotations is marked unreviewable in
+  the review surface instead of masquerading as fully reviewed; and the
+  worklist guidance points evidence at `annotated_changes`, not the legacy
+  free-text `changes` list. Known accepted costs: each submission derives the
+  plan (one scan per call, matching the blocker loop), and a rejection revert
+  is not re-validated (it moves toward the already-validated original).
 
 ## Next work
 

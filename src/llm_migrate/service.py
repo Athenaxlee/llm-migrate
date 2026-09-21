@@ -57,6 +57,7 @@ from llm_migrate.core.change_review import (
     ChangeDecisionResult,
     ChangeReviewSet,
     build_change_review,
+    reapply_change_decisions,
 )
 from llm_migrate.core.change_review import (
     record_change_decision as review_record_change_decision,
@@ -194,6 +195,7 @@ from llm_migrate.core.workspace import (
 from llm_migrate.scanners import scan_application
 
 _ModelT = TypeVar("_ModelT", bound=BaseModel)
+_SubmissionResultT = TypeVar("_SubmissionResultT", PromptSubmissionResult, FileSubmissionResult)
 
 
 def _coerced_models(
@@ -1609,7 +1611,7 @@ class MigrationService:
         )
         plan = self._plan_for_run(config, workspace, now=now)
         tasks = derive_adaptation_tasks(config, plan, workspace)
-        return workspace_submit_adapted_prompt(
+        result = workspace_submit_adapted_prompt(
             workspace,
             config,
             source_path,
@@ -1625,6 +1627,7 @@ class MigrationService:
             annotated_changes=annotations,
             known_evidence_urls=plan_evidence_urls(plan),
         )
+        return self._with_reapplied_decisions(workspace, config, result)
 
     def submit_adapted_file(
         self,
@@ -1657,7 +1660,7 @@ class MigrationService:
         config = load_run_config(workspace)
         plan = self._plan_for_run(config, workspace, now=now)
         tasks = derive_adaptation_tasks(config, plan, workspace)
-        return workspace_submit_adapted_file(
+        result = workspace_submit_adapted_file(
             workspace,
             config,
             source_path,
@@ -1676,6 +1679,40 @@ class MigrationService:
             ),
             known_evidence_urls=plan_evidence_urls(plan),
         )
+        return self._with_reapplied_decisions(workspace, config, result)
+
+    def _with_reapplied_decisions(
+        self,
+        workspace: Path,
+        config: MigrationRunConfig,
+        result: _SubmissionResultT,
+    ) -> _SubmissionResultT:
+        """Keep the deliverable consistent with live rejections after a submit.
+
+        A resubmission with identical content fingerprints keeps its recorded
+        change decisions live; the freshly written deliverable must re-apply
+        those rejections instead of silently reverting to the full submission.
+        """
+        if not result.accepted:
+            return result
+        applied, problems = reapply_change_decisions(workspace, config, result.source_path)
+        if applied:
+            return result.model_copy(
+                update={
+                    "message": result.message
+                    + f" {applied} previously recorded rejection(s) for this file "
+                    "still apply and were re-applied to the deliverable."
+                }
+            )
+        if problems:
+            return result.model_copy(
+                update={
+                    "message": result.message
+                    + " WARNING: previously recorded rejections could not be "
+                    "re-applied to the deliverable: " + "; ".join(problems)
+                }
+            )
+        return result
 
     def get_change_review(self, run_dir: Path | str) -> ChangeReviewSet:
         """Per-deliverable annotated changes paired with their decision state.

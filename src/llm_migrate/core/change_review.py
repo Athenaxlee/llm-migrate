@@ -220,6 +220,11 @@ def build_change_review(run_dir: Path, config: MigrationRunConfig) -> ChangeRevi
             )
             continue
         original, submission, stale_reason = _entry_staleness(run_dir, config, entry)
+        if stale_reason is None and not entry.annotated_changes:
+            stale_reason = (
+                "the submission carries no annotated changes (submitted before "
+                "per-change review); resubmit the adaptation to enable review"
+            )
         items = [
             ChangeReviewItem(
                 change=change,
@@ -473,3 +478,40 @@ def record_change_decision(
         reverted_to_original=reverted,
         message=message,
     )
+
+
+def reapply_change_decisions(
+    run_dir: Path,
+    config: MigrationRunConfig,
+    source_path: str,
+) -> tuple[int, list[str]]:
+    """Re-apply live rejections to one deliverable after a (re)submission.
+
+    A resubmission whose content fingerprints match the previous submission
+    keeps its recorded decisions live, so the deliverable under output/ must
+    keep reflecting them instead of silently reverting to the full
+    submission. Returns (applied_rejections, problems).
+    """
+    log = load_adaptation_log(run_dir, config.run_id)
+    entries = [entry for entry in log.entries if entry.source_path == source_path]
+    if len(entries) != 1 or entry_is_unchanged(entries[0]):
+        return 0, []
+    entry = entries[0]
+    decision_log = load_change_decision_log(run_dir, config.run_id)
+    rejected_ids = {
+        item.change_id
+        for item in decision_log.decisions
+        if item.decision == "rejected" and decision_matches_entry(item, entry)
+    }
+    if not rejected_ids:
+        return 0, []
+    original, submission, stale_reason = _entry_staleness(Path(run_dir), config, entry)
+    if stale_reason is not None or original is None or submission is None:
+        return 0, [stale_reason or "the review state for this file is unavailable"]
+    content, problems = _regenerate_content(entry, original, submission, rejected_ids)
+    if problems or content is None:
+        return 0, problems
+    deliverable = Path(run_dir) / entry.output_path
+    deliverable.parent.mkdir(parents=True, exist_ok=True)
+    deliverable.write_text(content, encoding="utf-8")
+    return len(rejected_ids), []

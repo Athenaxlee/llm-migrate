@@ -328,3 +328,33 @@ def test_file_submission_requires_dispositions_and_annotations(
     assert entry["guidance_dispositions"]
     assert entry["guidance_dispositions"][0]["guidance"], "resolved text must be recorded"
     assert entry["annotated_changes"][0]["id"].startswith("c:")
+
+
+def test_duplicate_annotations_are_rejected() -> None:
+    duplicate = edit_change("Return JSON only.", "Return JSON only, with every required key.")
+    problems, _ = annotation_problems(ORIGINAL, ADAPTED, [duplicate, duplicate])
+    assert any("identical annotated changes would share the id" in item for item in problems)
+
+
+def test_new_file_annotations_still_face_shape_and_evidence_checks(
+    service: MigrationService, simple_app: Path
+) -> None:
+    start = _start(service, simple_app)
+    assert start.paths is not None
+    bogus = AnnotatedChange(
+        operation="insert",
+        adapted_anchor="NEW_CONSTANT = 1",
+        why="Added a helper constant.",
+    )
+    rejected = service.submit_adapted_file(
+        start.paths.run_dir,
+        "helpers.py",
+        "NEW_CONSTANT = 1\n",
+        "Introduces a helper module for the migration.",
+        [],
+        new_file=True,
+        submitted_on=AS_OF,
+        annotated_changes=[bogus],
+    )
+    assert not rejected.accepted
+    assert any("carries no evidence entry" in problem for problem in rejected.problems)
