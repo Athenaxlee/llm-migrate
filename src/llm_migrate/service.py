@@ -178,6 +178,7 @@ from llm_migrate.core.session import (
     registry_content_sha256,
 )
 from llm_migrate.core.snapshot import (
+    SNAPSHOT_FILENAME,
     WorklistSnapshot,
     load_snapshot,
     save_snapshot,
@@ -2395,6 +2396,10 @@ class MigrationService:
         """
         workspace = Path(run_dir)
         config = load_run_config(workspace)
+        # A pre-existing snapshot means the run already moved past the
+        # research question (list_adaptation_tasks was called); the status
+        # must not pin research_pending over live blockers and tasks.
+        moved_past_research = (workspace / SNAPSHOT_FILENAME).is_file()
         tasks, _, reused = self._tasks_for_run(config, workspace, now=now)
         log = load_adaptation_log(workspace, config.run_id)
         change_decisions = load_change_decision_log(workspace, config.run_id)
@@ -2413,6 +2418,7 @@ class MigrationService:
         if (
             (workspace / "request.yaml").is_file()
             and not (workspace / "session-manifest.yaml").is_file()
+            and not moved_past_research
             and not log.entries
         ):
             pack = self.get_research_prompts(workspace)

@@ -163,15 +163,14 @@ def _value_kind(key: str, value: Any) -> ConfigValueKind | None:
         value, str
     ):
         return "model_id"
-    if lowered in _SAMPLING_KEYS and isinstance(value, (int, float)):
+    numeric = isinstance(value, (int, float)) and not isinstance(value, bool)
+    if lowered in _SAMPLING_KEYS and numeric:
         return "sampling"
-    if lowered in _TOKEN_BUDGET_KEYS and isinstance(value, int):
+    if lowered in _TOKEN_BUDGET_KEYS and numeric and isinstance(value, int):
         return "token_budget"
     if lowered in _REGION_KEYS and isinstance(value, str):
         return "region"
-    if any(marker in lowered for marker in _PRICING_KEY_MARKERS) and isinstance(
-        value, (int, float)
-    ):
+    if any(marker in lowered for marker in _PRICING_KEY_MARKERS) and numeric:
         return "pricing"
     return None
 

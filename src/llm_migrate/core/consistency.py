@@ -14,6 +14,7 @@ turns them into blockers.
 
 from __future__ import annotations
 
+import hashlib
 from pathlib import Path
 from typing import Literal
 
@@ -189,8 +190,16 @@ def check_cross_surface_consistency(
             )
         if entry.kind == "file" and not entry_is_unchanged(entry):
             original = _original_content(config, entry)
+            drifted = (
+                original is None
+                or entry.source_sha256 is None
+                or hashlib.sha256(original.encode("utf-8")).hexdigest() != entry.source_sha256
+            )
             for marker, label in sorted(markers_by_file.get(entry.source_path, {}).items()):
-                if original is None or marker not in original:
+                if drifted or original is None or marker not in original:
+                    # A drifted source belongs to the review-staleness surface,
+                    # not to a marker check against content the submission
+                    # never saw.
                     continue
                 if marker in effective or _disposed(entry, marker):
                     continue

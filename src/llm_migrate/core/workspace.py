@@ -1267,6 +1267,14 @@ def prepare_adapted_prompt(
         decoded_adapted = decoded_view(adapted_prompt, format)
         if decoded_original is None or decoded_adapted is None:
             if annotations:
+                # No diff to reconcile against, but the shape, evidence, and
+                # duplicate rules (including strict evidence) still hold.
+                standalone_issues, standalone_warnings = standalone_annotation_problems(
+                    annotations, known_evidence_urls, strict_evidence=config.strict
+                )
+                blockers.extend(standalone_issues)
+                format_problems.extend(standalone_issues)
+                structure_warnings.extend(standalone_warnings)
                 structure_warnings.append(
                     "annotated_changes could not be checked against the diff because "
                     "the document could not be decoded"
