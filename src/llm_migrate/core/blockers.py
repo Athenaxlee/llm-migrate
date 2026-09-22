@@ -937,7 +937,10 @@ def build_blocker_resolutions(
             specific = _invocation_options(registry, config, blocker, run_dir)
         else:
             specific = []
-        options = [*specific[:4], _accept_option(run_dir, blocker)]
+        # Invocation blockers offer every reviewed selector: truncating them
+        # would hide a legitimate deployment choice.
+        cap = len(specific) if blocker.category is BlockerCategory.INVOCATION else 4
+        options = [*specific[:cap], _accept_option(run_dir, blocker)]
         no_option_reason = None
         if not specific:
             no_option_reason = (
@@ -996,7 +999,11 @@ def apply_decisions(
             side = "target" if decision.target_change is not None else "source"
             identity = config.target if side == "target" else config.source
             change = decision.target_change if side == "target" else decision.source_change
-            superseded = any(later.kind is decision.kind for later in log.decisions[index + 1 :])
+            superseded = any(
+                later.kind is decision.kind
+                and (later.target_change is not None) == (decision.target_change is not None)
+                for later in log.decisions[index + 1 :]
+            )
             recorded_selector = (
                 config.target_invocation_selector
                 if side == "target"

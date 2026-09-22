@@ -659,7 +659,7 @@ def list_adaptation_tasks(run_dir: str, now: str | None = None) -> dict[str, Any
 def get_blocker_resolutions(run_dir: str, now: str | None = None) -> dict[str, Any]:
     """Questions plus evidence-backed options for every unresolved blocker.
 
-    Each blocker carries the question to ask the user and 2-5 registry-backed
+    Each blocker carries the question to ask the user and registry-backed
     options with consequences, evidence URLs, and the exact
     record_blocker_decision call. Present them VERBATIM, one blocker at a
     time; never choose on the user's behalf.

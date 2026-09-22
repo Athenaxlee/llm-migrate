@@ -38,6 +38,16 @@ _SELECTORS = [
 ]
 
 
+def test_selector_id_must_differ_from_the_bare_platform_id() -> None:
+    with pytest.raises(ValidationError, match="must differ from the platform's"):
+        _platform(
+            invocation={
+                "bare_on_demand_supported": False,
+                "selectors": [{"name": "self", "model_id": "anthropic.claude-sonnet-5"}],
+            }
+        )
+
+
 def test_invocation_schema_fails_closed() -> None:
     with pytest.raises(ValidationError, match="selector names must be unique"):
         PlatformInvocation.model_validate(
@@ -80,6 +90,8 @@ def test_derive_invocation_rules() -> None:
 
     assert selector_for_spelling(facts, "us.anthropic.claude-sonnet-5") is not None
     assert selector_for_spelling(facts, "anthropic.claude-sonnet-5") is None
+    # A selector prefix in front of some OTHER identifier never seeds a selector.
+    assert selector_for_spelling(facts, "us.some-other-model") is None
     assert platform_spelling_set(facts) == [
         "anthropic.claude-sonnet-5",
         "us.anthropic.claude-sonnet-5",
@@ -230,6 +242,84 @@ def test_legacy_run_without_selector_gets_blocker_with_selector_options(
     final = service.finalize_migration_run(run_dir)
     assert not final.unresolved_blockers
     assert not final.stale_decisions
+
+
+def test_invocation_blocker_offers_every_selector_uncapped(
+    service: MigrationService, bedrock_app: Path
+) -> None:
+    """A 5-selector target (claude-sonnet-4-6) must not lose options to the cap."""
+    from llm_migrate.core.blockers import _invocation_options
+    from llm_migrate.core.models import BlockerCategory, migration_blocker
+
+    start = service.start_migration_run(
+        bedrock_app,
+        "us.anthropic.claude-sonnet-4-6",
+        "us.anthropic.claude-sonnet-4-6",
+        source_platform="amazon-bedrock",
+        target_platform="amazon-bedrock",
+        target_endpoint="bedrock-runtime",
+        as_of=AS_OF,
+        research="skip",
+    )
+    assert start.status == "ready" and start.run is not None
+    blocker = migration_blocker(
+        code="invocation_selector_required",
+        category=BlockerCategory.INVOCATION,
+        message="test",
+    )
+    options = _invocation_options(service.registry, start.run, blocker, "run")
+    assert [option.id for option in options] == [
+        "selector-us",
+        "selector-eu",
+        "selector-au",
+        "selector-jp",
+        "selector-global",
+    ]
+    assert all(option.evidence_urls for option in options)
+
+
+def test_prompt_submission_rejects_forbidden_bare_target_reference(
+    service: MigrationService, bedrock_app: Path
+) -> None:
+    """The prompt path enforces the same bare-id invocation gate as files."""
+    (bedrock_app / "prompts").mkdir()
+    (bedrock_app / "prompts" / "profile.yaml").write_text(NATIVE_PROMPT_DOC, encoding="utf-8")
+    start = service.start_migration_run(
+        bedrock_app,
+        "us.anthropic.claude-sonnet-4-6",
+        "us.anthropic.claude-sonnet-5",
+        source_platform="amazon-bedrock",
+        target_platform="amazon-bedrock",
+        target_endpoint="bedrock-runtime",
+        as_of=AS_OF,
+        research="skip",
+        prompt_sources=["prompts/profile.yaml"],
+    )
+    assert start.status == "ready" and start.paths is not None
+    run_dir = start.paths.run_dir
+    from tests.unit.adaptation_helpers import dispose_all, edit_change
+
+    bare_swap = NATIVE_PROMPT_DOC.replace(
+        "us.anthropic.claude-sonnet-4-6", "anthropic.claude-sonnet-5"
+    ).replace("careful assistant", "careful assistant for Claude Sonnet 5")
+    rejected = service.submit_adapted_prompt(
+        run_dir,
+        "prompts/profile.yaml",
+        bare_swap,
+        "Adapted for Sonnet 5 on Bedrock.",
+        ["Updated the model id and refreshed the prompt."],
+        guidance_dispositions=dispose_all(service, run_dir, "prompts/profile.yaml"),
+        annotated_changes=[
+            edit_change(
+                "careful assistant",
+                "careful assistant for Claude Sonnet 5",
+                why="Names the target model explicitly.",
+            )
+        ],
+        submitted_on=AS_OF,
+    )
+    assert not rejected.accepted
+    assert "not invocable on demand" in rejected.message
 
 
 NATIVE_PROMPT_DOC = textwrap.dedent(

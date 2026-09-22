@@ -127,6 +127,16 @@ class PlatformAvailability(StrictModel):
     invocation: PlatformInvocation | None = None
     sources: list[SourceReference] = Field(default_factory=list)
 
+    @model_validator(mode="after")
+    def validate_selectors_differ_from_bare_id(self) -> PlatformAvailability:
+        if self.invocation is not None and any(
+            selector.model_id == self.model_id for selector in self.invocation.selectors
+        ):
+            raise ValueError(
+                "an invocation selector model id must differ from the platform's bare model id"
+            )
+        return self
+
 
 class LifecycleStatus(StrEnum):
     ACTIVE = "active"

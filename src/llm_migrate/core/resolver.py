@@ -95,11 +95,16 @@ def resolve_model(
         IdentifierMatchType.PLATFORM_MODEL_ID,
         IdentifierMatchType.INVOCATION_SELECTOR,
     }
-    implied_platforms = [
-        item[2]
-        for item in profile_matches
-        if item[1] in platform_match_types and item[2] is not None
-    ]
+    # Deduped by identity: one representation matched through both its bare id
+    # and a selector id must still count as exactly one implied platform.
+    implied_platforms: list[PlatformAvailability] = []
+    for item in profile_matches:
+        if (
+            item[1] in platform_match_types
+            and item[2] is not None
+            and all(existing is not item[2] for existing in implied_platforms)
+        ):
+            implied_platforms.append(item[2])
     candidates = [
         item
         for item in profile.platforms

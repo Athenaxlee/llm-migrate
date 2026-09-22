@@ -3,6 +3,27 @@
 All notable changes are documented here. The project follows semantic
 versioning.
 
+## Unreleased
+
+- Invocation identity (v1.5.0-a): the registry now separates canonical
+  identity (which model this is) from the invocation selector (which id the
+  platform accepts for an on-demand call). `PlatformAvailability` gains an
+  optional reviewed `invocation` block (`bare_on_demand_supported`, named
+  evidence-linked selectors carrying full inference-profile ids) — fail-open
+  when absent, fail-closed schema validation when stated. Runs record the
+  selector-qualified invocation id (seeded from the user's original spelling,
+  confirmed with selector candidates at start, or driven through a new
+  `invocation_selector_required` blocker with one evidence-linked option per
+  selector), selector ids resolve as exact registry identifiers, worklist
+  guidance instructs the invocation id, prompt and file submissions reject
+  bare-id references the reviewed profile forbids, identity checks match on
+  the full reviewed spelling set (unchanged-claim guards, source/target
+  reference warnings, the sanctioned structured-config model-id swap), and
+  the report records the invocation identity or warns when invocation facts
+  are unknown. The canonical Anthropic Bedrock representations record their
+  cross-region inference profiles; the direct Anthropic/OpenAI APIs record
+  bare invocability; all proposal bundles carry the evidence.
+
 ## 1.4.1 — 2026-09-22
 
 Immediate relief from a real v1.4.0 production migration run. No schema or

@@ -1052,6 +1052,27 @@ def submit_adapted_prompt(
             structure_warnings.extend(annotation_warnings)
     if not adapted_prompt.strip():
         blockers.append("the adapted prompt is empty")
+    selector_ids = [item for item in target_spellings(config) if item != config.target_model_id]
+    if (
+        not unchanged
+        and config.target_invocation_requires_selector
+        and selector_ids
+        and adapted_prompt.strip()
+    ):
+        # Check the raw text AND the decoded values, so serialization tricks
+        # cannot hide a forbidden bare-id reference (same gate as file
+        # submissions: the reviewed profile says the bare id is not invocable).
+        views = [adapted_prompt]
+        decoded = decoded_view(adapted_prompt, format)
+        if decoded is not None:
+            views.append(decoded)
+        if any(references_bare_alone(view, config.target_model_id, selector_ids) for view in views):
+            blockers.append(
+                f"the adapted prompt references the bare platform model id "
+                f"{config.target_model_id!r}, which the reviewed profile states is not "
+                "invocable on demand; reference an invocation selector id instead: "
+                + ", ".join(selector_ids)
+            )
     if blockers:
         return PromptSubmissionResult(
             accepted=False,

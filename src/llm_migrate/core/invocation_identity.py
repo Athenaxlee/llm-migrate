@@ -20,7 +20,7 @@ from llm_migrate.core.models import (
     PlatformAvailability,
     StrictModel,
 )
-from llm_migrate.core.resolver import normalize_identifier
+from llm_migrate.core.resolver import normalize_identifier, strip_identifier_decorations
 
 
 class InvocationChoice(StrictModel):
@@ -46,17 +46,22 @@ def selector_for_spelling(
     """The selector the user's original spelling names, if any.
 
     A spelling selects a selector when it equals the selector's full model id
-    (up to punctuation/spacing normalization) or starts with the selector's
-    `<name>.` prefix.
+    (up to punctuation/spacing normalization), or when it is the selector's
+    `<name>.` prefix followed by a spelling of this platform's own model id —
+    a prefix in front of some OTHER identifier never seeds a selector.
     """
     if not spelling or platform.invocation is None:
         return None
     normalized = normalize_identifier(spelling)
     text = spelling.strip().casefold()
+    bare = normalize_identifier(strip_identifier_decorations(platform.model_id))
     for selector in platform.invocation.selectors:
         if normalized == normalize_identifier(selector.model_id):
             return selector
-        if text.startswith(f"{selector.name.casefold()}."):
+        prefix = f"{selector.name.casefold()}."
+        if text.startswith(prefix) and (
+            normalize_identifier(strip_identifier_decorations(text[len(prefix) :])) == bare
+        ):
             return selector
     return None
 
@@ -179,24 +184,8 @@ def qualify_bare_references(
 def references_bare_alone(text: str, bare_id: str, qualified_ids: list[str]) -> bool:
     """Whether `text` references `bare_id` outside every selector-qualified form.
 
-    Each occurrence of the bare id is checked against the qualified ids that
-    contain it; an occurrence not covered by any of them is a bare reference.
+    An occurrence of the bare id not covered by any selector-qualified spelling
+    is a bare reference — exactly the occurrences `qualify_bare_references`
+    would rewrite.
     """
-    covering = [
-        (qualified, qualified.find(bare_id))
-        for qualified in qualified_ids
-        if bare_id in qualified and qualified != bare_id
-    ]
-    start = 0
-    while True:
-        index = text.find(bare_id, start)
-        if index == -1:
-            return False
-        covered = any(
-            text[index - offset : index - offset + len(qualified)] == qualified
-            for qualified, offset in covering
-            if index - offset >= 0
-        )
-        if not covered:
-            return True
-        start = index + 1
+    return qualify_bare_references(text, bare_id, qualified_ids, "\x00") != text
