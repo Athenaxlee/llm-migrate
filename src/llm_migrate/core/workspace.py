@@ -71,7 +71,10 @@ class MigrationRunConfig(StrictModel):
     `*_invocation_model_id` is the id the platform accepts for an on-demand
     call (selector-qualified when a selector was chosen). The invocation
     fields are additive: schema version stays "1" and configs written before
-    v1.5.0-a still load, behaving exactly as before.
+    v1.5.0-a still load, behaving exactly as before. `*_model_spellings` are
+    the invocable spellings; `*_model_reference_spellings` (additive, v1.5.1)
+    also carry the reviewed canonical name and aliases and back
+    reference-detection only.
     """
 
     schema_version: Literal["1"] = "1"
@@ -88,6 +91,8 @@ class MigrationRunConfig(StrictModel):
     target_invocation_requires_selector: bool = False
     source_model_spellings: list[str] = Field(default_factory=list)
     target_model_spellings: list[str] = Field(default_factory=list)
+    source_model_reference_spellings: list[str] = Field(default_factory=list)
+    target_model_reference_spellings: list[str] = Field(default_factory=list)
     strict: bool = False
     created_on: date
     prompt_sources: list[str] = Field(default_factory=list)
@@ -101,6 +106,38 @@ def source_spellings(config: MigrationRunConfig) -> list[str]:
 def target_spellings(config: MigrationRunConfig) -> list[str]:
     """Every reviewed spelling that names the target model on its platform."""
     return config.target_model_spellings or [config.target_model_id]
+
+
+def source_reference_spellings(config: MigrationRunConfig) -> list[str]:
+    """Every reviewed spelling that REFERENCES the source model.
+
+    The invocable platform spellings plus the reviewed canonical name and
+    aliases. Detection-only: aliases are never invocation ids.
+    """
+    return config.source_model_reference_spellings or source_spellings(config)
+
+
+def target_reference_spellings(config: MigrationRunConfig) -> list[str]:
+    """Every reviewed spelling that REFERENCES the target model (see source)."""
+    return config.target_model_reference_spellings or target_spellings(config)
+
+
+def source_detection_spellings(config: MigrationRunConfig) -> list[str]:
+    """Source reference spellings that are safe to search for in content.
+
+    A spelling that equals — or is contained in — a reviewed target reference
+    spelling is excluded, so content that names only the target is never
+    flagged as a lingering source reference (for example a cross-platform
+    migration of the same model, where the source platform id is a substring
+    of the target's selector-qualified id).
+    """
+    targets = target_reference_spellings(config)
+    target_set = set(targets)
+    return [
+        spelling
+        for spelling in source_reference_spellings(config)
+        if spelling not in target_set and not any(spelling in item for item in targets)
+    ]
 
 
 def effective_target_id(config: MigrationRunConfig) -> str:
@@ -978,10 +1015,10 @@ def _unchanged_prompt_problems(
     problems: list[str] = []
     if not rationale.strip():
         problems.append("unchanged=true requires a rationale recording the review")
-    target_forms = {*target_spellings(config), config.target.model}
+    target_forms = {*target_reference_spellings(config), config.target.model}
     needles = [
         needle
-        for needle in (*source_spellings(config), config.source.model)
+        for needle in (*source_detection_spellings(config), config.source.model)
         if needle and needle not in target_forms
     ]
     mentioned = sorted(
@@ -1227,7 +1264,7 @@ def prepare_adapted_prompt(
             original_text,
             adapted_prompt,
             format,
-            source_model_ids=source_spellings(config),
+            source_model_ids=source_reference_spellings(config),
             target_model_ids=target_spellings(config),
         )
         blockers.extend(assessment.problems)
@@ -1503,12 +1540,22 @@ def prepare_adapted_file(
             "annotated_changes could not be checked against a diff because the file "
             "has no original in the application"
         )
+    elif not unchanged and new_file and original is None:
+        # A new file is entirely an edit: without at least one evidence-linked
+        # annotated change there is nothing for the user's change review to
+        # decide, and invented content would enter the deliverable set
+        # unreviewed.
+        format_problems.append(
+            "a new file must document its content with at least one annotated change "
+            "carrying evidence (an insert or restructure annotation with no anchors "
+            "claims the whole file)"
+        )
     unchanged_source_mention = (
         next(
             (
                 spelling
-                for spelling in source_spellings(config)
-                if spelling not in set(target_spellings(config)) and spelling in (original or "")
+                for spelling in source_detection_spellings(config)
+                if spelling in (original or "")
             ),
             None,
         )
@@ -1580,8 +1627,8 @@ def prepare_adapted_file(
             ),
             None,
         )
-    target_forms = target_spellings(config)
-    source_forms = [item for item in source_spellings(config) if item not in set(target_forms)]
+    target_forms = target_reference_spellings(config)
+    source_forms = source_detection_spellings(config)
     remaining = [item for item in source_forms if item in adapted_content]
     # Report the most specific spelling only (a bare id is a substring of its
     # selector-qualified forms and would double-report).

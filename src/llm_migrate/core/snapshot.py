@@ -33,6 +33,23 @@ from llm_migrate.core.workspace import (
 from llm_migrate.scanners.python import scannable_files
 
 SNAPSHOT_FILENAME = "worklist-snapshot.yaml"
+WORKLIST_MARKER_FILENAME = "worklist-requested"
+
+
+def mark_worklist_requested(run_dir: Path) -> None:
+    """Record that the host explicitly requested the adaptation worklist.
+
+    Only `list_adaptation_tasks` writes this marker. The run-status state
+    machine must not infer "moved past research" from the snapshot file:
+    every worklist-consulting call (including `get_run_status` itself)
+    persists the snapshot as a cache, so its existence proves nothing about
+    what the host asked for.
+    """
+    atomic_write_text(Path(run_dir) / WORKLIST_MARKER_FILENAME, "requested\n")
+
+
+def worklist_requested(run_dir: Path) -> bool:
+    return (Path(run_dir) / WORKLIST_MARKER_FILENAME).is_file()
 
 
 class WorklistSnapshot(StrictModel):

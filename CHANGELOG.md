@@ -3,6 +3,40 @@
 All notable changes are documented here. The project follows semantic
 versioning.
 
+## 1.5.1 — 2026-09-22
+
+Review-fix patch: a same-day multi-axis review of v1.5.0 confirmed three
+high-severity defects by reproduction; this release closes them and brings
+the documentation current.
+
+- Alias-aware reference detection: the run identity additively records
+  source/target reference spellings — the invocable platform spellings plus
+  the reviewed canonical name and registry aliases. Unchanged-claim guards,
+  lingering-source warnings, the cross-surface consistency gate, and the
+  generated contract test now detect registry aliases of the source model;
+  invocable enforcement (bare-id rejection, sanctioned-swap targets,
+  selector lists) still uses only platform spellings, so an alias can never
+  masquerade as an invocation id. Detection excludes source spellings
+  contained in a target spelling, so a cross-platform migration of the same
+  model is never falsely flagged.
+- New files face review: a `new_file` submission must document its content
+  with at least one evidence-linked annotated change (an anchor-less
+  insert/restructure claims the whole file). Invented content can no longer
+  enter the deliverable set with nothing for change review to decide; the
+  rejection uses the submission-format tone.
+- Read-only run status: `get_run_status` no longer infers "moved past
+  research" from the worklist snapshot its own call persists as a cache.
+  The signal is an explicit marker written only by `list_adaptation_tasks`,
+  a recorded blocker decision, or a submission — a second status call
+  cannot silently steer the host past the research question.
+- Documentation currency pass: the architecture document gains the
+  adaptation-review and v1.5 sections and an updated guided-run flow, the
+  project context documents the 19-tool guided surface with the guided path
+  as the expected agent workflow, milestone records and schema-version notes
+  are corrected, and the README covers strict mode, invocation-selector
+  confirmation, batching, run status, the validation disposition, and the
+  consistency-gated finalize.
+
 ## 1.5.0 — 2026-09-22
 
 Deployment fidelity and workflow economics, driven by the audit of a real

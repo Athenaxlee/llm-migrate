@@ -632,10 +632,10 @@ This remains the only tool that proposes writes to the shared canonical
 registry, and it writes review artifacts rather than canonical registry
 records. V1.1 session-overlay construction writes only user-local run artifacts.
 
-### Planned V1.1 researched migration
+### V1.1 researched migration (shipped 2026-08-29)
 
-V1.1 adds bounded stage operations rather than embedding a provider-specific
-agent runtime in the core package. The intended conceptual operations are:
+V1.1 added bounded stage operations rather than embedding a provider-specific
+agent runtime in the core package:
 
 ```text
 create_migration_research_request
@@ -646,9 +646,10 @@ build_session_registry
 generate_migration_plan
 ```
 
-The final public names may be consolidated during implementation, but each
-stage must remain callable through shared Python services and thin CLI/MCP
-interfaces. Codex, Claude Code, or another agent host orchestrates the stages
+Each stage is callable through shared Python services and thin CLI/MCP
+interfaces (V1.4.1 added path-based `validate_research_artifact` so agents
+validate researcher/reviewer YAML in place instead of resending it).
+Codex, Claude Code, or another agent host orchestrates the stages
 using the user's configured models and tools. An optional injected `AgentRunner`
 may support headless workflows, but no agent provider is mandatory for core
 operation.
@@ -704,9 +705,9 @@ optimize_migration
 propose_registry_update
 ```
 
-### Planned V1.1 agent-facing surface
+### V1.1 agent-facing surface (shipped 2026-08-29)
 
-V1.1 extends rather than renames the stable V1 operations. It will expose typed
+V1.1 extends rather than renames the stable V1 operations: typed
 research/review/session stages suitable for an agent host and one integrated
 user workflow equivalent to:
 
@@ -726,6 +727,46 @@ research, carry retrieval/freshness metadata, and expire according to local
 policy. Users may explicitly persist a run for audit or export its proposal
 bundle for upstream maintainer review.
 
+### Guided run workspace surface (V1.2, extended through V1.5)
+
+The recommended agent entry point is the guided run workspace: one workspace
+per migration under `<application>/.llm-migrate/runs/<run-id>/`, every
+deliverable under its `output/`, and the application tree never mutated.
+`LLM_MIGRATE_TOOLSET=guided` exposes exactly these 19 tools for hosts with
+tight inline-tool budgets (the full surface stays the default):
+
+```text
+resolve_model
+get_model_profile
+
+start_migration                  (V1.2; --strict since V1.5)
+get_research_prompts             (V1.2)
+validate_research_artifact       (V1.4.1)
+build_session_registry           (V1.1)
+
+get_run_status                   (V1.5)
+list_adaptation_tasks            (V1.2)
+get_blocker_resolutions          (V1.4)
+record_blocker_decision          (V1.4)
+
+submit_adapted_prompt            (V1.2)
+submit_adapted_file              (V1.2)
+submit_adaptations               (V1.5, batched)
+confirm_unaffected               (V1.5)
+
+get_change_review                (V1.4)
+record_change_decision           (V1.4)
+record_change_decisions          (V1.5, batched)
+
+record_validation_disposition    (V1.5)
+finalize_migration               (V1.2; cross-surface consistency gate and
+                                  strict finalization since V1.5)
+```
+
+The tool derives worklists, validates fail-closed, and reports; the host
+agent writes adaptations and presents questions and reviews verbatim; the
+user decides.
+
 ---
 
 ## 12. Example End-to-End User Experience
@@ -742,6 +783,29 @@ Do not change files yet.
 ```
 
 ### Expected agent workflow
+
+Since V1.2 the recommended path is the guided run workspace:
+
+```text
+start_migration  (matches both models registry-first, scans, decides whether
+                  research is needed, writes migration.yaml, returns next steps)
+      ↓
+[optional research: get_research_prompts → host agents research/review →
+ validate_research_artifact → build_session_registry]
+      ↓
+get_run_status / list_adaptation_tasks
+      ↓
+get_blocker_resolutions → user decides → record_blocker_decision
+      ↓
+submit_adaptations / submit_adapted_prompt / submit_adapted_file
+ + confirm_unaffected
+      ↓
+get_change_review → user decides → record_change_decisions
+      ↓
+record_validation_disposition → finalize_migration
+```
+
+The low-level operations remain available and composable:
 
 ```text
 scan_application

@@ -15,8 +15,7 @@ from llm_migrate.core.models import CompatibilityState, InvocationMigrationSpec
 from llm_migrate.core.workspace import (
     MigrationRunConfig,
     effective_target_id,
-    source_spellings,
-    target_spellings,
+    source_detection_spellings,
 )
 
 CONTRACT_TEST_RELATIVE_PATH = "output/validation/test_target_invocation.py"
@@ -33,11 +32,7 @@ def render_contract_test(config: MigrationRunConfig, spec: InvocationMigrationSp
     target = spec.target
     expected_model_id = effective_target_id(config)
     forbidden = sorted(
-        {
-            spelling
-            for spelling in source_spellings(config)
-            if spelling not in set(target_spellings(config))
-        }
+        set(source_detection_spellings(config))
         | (
             {config.target_model_id}
             if config.target_invocation_requires_selector

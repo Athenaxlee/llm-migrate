@@ -754,7 +754,9 @@ comparison, prompt, and invocation services:
 ApplicationAnalysis + resolved source/target + ModelComparison
         + PromptMigrationSpec[] + InvocationMigrationSpec
                               ↓
-                    MigrationPlan schema v2
+              MigrationPlan (schema v4 today: v2 added the
+              integrated planner, v3 prompt discovery, v4
+              structured blockers)
                        ├── migration-manifest.yaml
                        └── Markdown migration report
 ```
@@ -984,6 +986,70 @@ exists is reported stale, never silently applied. The tool never chooses: the
 host agent presents each question with its options and evidence verbatim, and
 the user decides. Complexity stays `blocked` only for unresolved blockers.
 
+### V1.4 adaptation-review operations
+
+Every changed submission documents each edit as an `AnnotatedChange` — an
+exact-span anchor in the decoded runtime content, a one-sentence why, and
+evidence entries — reconciled deterministically and fail-closed against the
+real diff (`core/annotations.py`): every hunk needs a covering annotation,
+every annotation must match a real hunk, and a new file must carry at least
+one evidence-linked annotation (v1.5.1) so invented content never enters the
+deliverable set unreviewed. Guidance items and required changes carry stable
+content-derived ids and must each be disposed exactly once
+(`applied` / `not_applicable` / `declined`). The user then reviews per change
+(`core/change_review.py`):
+
+```text
+get_change_review          (run review)
+record_change_decision     (run decide-change)
+record_change_decisions    (batched; v1.5)
+```
+
+Decisions are durable in `change-decisions.yaml`, keyed to submission
+fingerprints (a resubmission makes them stale, reported never applied), and
+every decision deterministically regenerates the deliverable from the
+original, the preserved as-submitted copy under `review/submissions/`, and
+the live rejections. Run-state durability lives in `core/runstate.py`
+(atomic writes plus an OS-level per-run advisory lock around every
+read-modify-write) and UTC boundary normalization in `core/moments.py`.
+
+### V1.5 invocation identity, snapshot, consistency gate, strict mode
+
+Canonical identity and the invocation selector are different facts.
+`PlatformAvailability.invocation` records reviewed invocation facts
+(bare-id invocability plus named, evidence-linked selectors); derivation,
+spelling sets, and bare-reference detection live in
+`core/invocation_identity.py`, and the run records the chosen
+selector-qualified invocation id in `migration.yaml`. Invocable spellings
+(bare + selectors) back enforcement; reference spellings (plus the reviewed
+canonical name and aliases, v1.5.1) back source-reference detection only.
+
+The derived worklist persists as a snapshot (`core/snapshot.py`) keyed by a
+complete staleness hash — application content, `migration.yaml`, blocker
+decisions, session manifest, registry — so submissions and status checks stop
+re-deriving the plan; task statuses are always recomputed at read time.
+Finalization runs a cross-surface consistency gate (`core/consistency.py`)
+over the whole effective deliverable set: lingering source references,
+forbidden bare target ids, mixed selectors, missing target attribution, and
+undisposed dropped-coupling markers. Opt-in strict mode
+(`MigrationRunConfig.strict`) rejects unknown evidence URLs, blocks on
+missing invocation facts and incomplete prompt coverage, and refuses to
+finalize cleanly while gaps, findings, undecided changes, or a missing
+validation disposition remain; the emitted request-shape contract test
+(`core/validation_deliverable.py`) stays a deliverable the user runs
+themselves.
+
+```text
+submit_adaptations             (batched per-item submissions, one locked write)
+confirm_unaffected             (run confirm-unaffected)
+get_run_status                 (run status; read-only state machine + next action)
+record_validation_disposition  (run record-validation)
+validate_research_artifact     (research validate-artifact; v1.4.1)
+```
+
+`LLM_MIGRATE_TOOLSET=guided` exposes only the 19 guided-workflow MCP tools
+for hosts with tight inline-tool budgets; the full surface stays the default.
+
 ---
 
 ## 12. Key Data Flows
@@ -1055,32 +1121,48 @@ canonical registry update       deterministic consensus
                               active migration plan
 ```
 
-### D2. Guided migration run (V1.2)
+### D2. Guided migration run (V1.2, extended through V1.5)
 
 One workspace per migration, defaulting to
 `<application>/.llm-migrate/runs/<run-id>/`, drives flows A–D through a single
-entry point and collects reviewable deliverables:
+entry point and collects reviewable deliverables. `get_run_status` reports the
+state machine position and the single next action at any point:
 
 ```text
-start_migration
+start_migration [--strict]
  ↓ (lenient registry-first match_model; unresolved identifiers return
-    candidates for user confirmation and write nothing)
+    candidates for user confirmation and write nothing; a bare target id on
+    a selector-requiring platform returns selector candidates first)
 run workspace: migration.yaml [+ bounded request.yaml when knowledge is
 missing or stale]
  ↓
 optional research stages using deterministic, scope-isolated generated
 prompts (get_research_prompts) → session overlay
  ↓
-list_adaptation_tasks (per-file worklist from the migration plan)
+list_adaptation_tasks (snapshot-backed per-file worklist; incidental files
+land under unaffected_files)
  ↓
-host agent writes complete adapted prompts/files
+blockers? → get_blocker_resolutions → user decides →
+record_blocker_decision (durable in decisions.yaml, re-applied on every
+plan regeneration)
  ↓
-submit_adapted_prompt / submit_adapted_file
+host agent writes complete adapted prompts/files with guidance
+dispositions and evidence-linked annotated changes
+ ↓
+submit_adaptations (batched) / submit_adapted_prompt / submit_adapted_file
  (deterministic validation; stored under output/prompts/ and output/files/)
+ + confirm_unaffected (per-file reviewed no-change entries in one call)
  ↓
-finalize_migration → output/migration-manifest.yaml,
+get_change_review → user accepts/rejects each change →
+record_change_decision(s) (deterministic deliverable regeneration)
+ ↓
+record_validation_disposition (how the migration was validated)
+ ↓
+finalize_migration (cross-surface consistency gate; strict runs refuse to
+finalize cleanly over gaps, findings, undecided changes, or a missing
+validation disposition) → output/migration-manifest.yaml,
 output/migration-report.md (per-file changes + rationale + coverage gaps),
-output/changes.yaml
+output/changes.yaml, output/validation/test_target_invocation.py
 ```
 
 Semantic rewriting stays with the host agent; the toolkit derives worklists,

@@ -84,6 +84,11 @@ Gate each artifact before spending review tokens:
 llm-migrate research validate-result <run-dir>/research/<scope>.yaml <run-dir>/request.yaml
 ```
 
+In a guided run workspace, `llm-migrate research validate-artifact <run-dir>
+<scope>` (MCP `validate_research_artifact`) validates the researcher and
+reviewer YAML in place with the same deterministic gates — the generated
+prompts point agents at it so full artifacts are never resent through MCP.
+
 ### 3. Run the independent review (host-owned, different agent)
 
 Give a different agent the research artifact — not the researcher's context —

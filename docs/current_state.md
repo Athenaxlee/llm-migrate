@@ -5,16 +5,16 @@
 V1: Stable End-to-End LLM Migration Toolkit — complete and released as
 `v1.0.0` on 2026-08-29.
 
-V1.1: On-Demand Agent-Researched Migration — complete and released as
-`v1.1.0` on 2026-08-30. Typed contracts,
+V1.1: On-Demand Agent-Researched Migration — accepted and implemented on
+2026-08-29 on the `codex/v1.1-agent-research` branch. Typed contracts,
 deterministic review/consensus rules, the session registry overlay, the
 fake-agent end-to-end workflow, CLI/MCP stage operations, the agent-host
 workflow, and bounded cited-source refetching are complete and tested; see
 `docs/project_phases.md` for the milestone detail and deliberate deferrals.
 
 V1.2: Guided Migration Run Workspace — complete and released as `v1.2.0` on
-2026-09-15, built in
-direct response to observed coding-agent host friction (vague identifiers
+2026-09-15, built in direct response to observed coding-agent host friction
+(vague identifiers
 triggering unnecessary research, self-invented colliding research prompts,
 scattered outputs, and no adapted-prompt/file deliverables). See the V1.2
 section below and `docs/project_phases.md` §12.1.
@@ -57,6 +57,14 @@ at start, or driven through an `invocation_selector_required` blocker), and
 every downstream surface enforces the invocable id through reviewed spelling
 sets. See the V1.5.0-a section below and `docs/project_phases.md` §12.5.
 
+V1.5.1: Review-Fix Patch — released as `v1.5.1` on 2026-09-22, closing the
+three high-severity defects a same-day review of v1.5.0 confirmed:
+registry aliases of the source model were invisible to every
+source-reference guard, a `new_file` submission could enter the deliverable
+set with nothing for change review to decide, and a second `get_run_status`
+call silently steered the host past the research question. See the V1.5.1
+section below and `docs/project_phases.md` §12.9.
+
 V1.5.0-b/-c/-d — implemented on 2026-09-22, completing the v1.5.0 release:
 semantic config couplings with anchoring guardrails, one difference-propagation
 mechanism, the worklist diet with `confirm_unaffected`, and the cross-surface
@@ -68,9 +76,9 @@ contract-test deliverable (§12.8).
 
 ## Released foundation
 
-- Git tag `v1.4.1` is the current stable release; `v1.4.0`, `v1.3.0`,
-  `v1.2.0`, `v1.1.0`, `v1.0.0`, and `v0.1.0` remain prior recorded release
-  tags.
+- Git tag `v1.5.1` is the current stable release; `v1.5.0`, `v1.4.1`,
+  `v1.4.0`, `v1.3.0`, `v1.2.0`, `v1.1.0`, `v1.0.0`, and `v0.1.0` remain
+  prior recorded release tags.
 - The V0.1 reviewed registry, proposal workflow, provenance, freshness, model
   profiles, and directional Claude migration knowledge remain intact.
 - Every non-fixture provider profile has exactly one checked-in proposal
@@ -652,8 +660,10 @@ source-target `MigrationKnowledge`, not only individual model profiles.
   the review surface instead of masquerading as fully reviewed; and the
   worklist guidance points evidence at `annotated_changes`, not the legacy
   free-text `changes` list. Known accepted costs: each submission derives the
-  plan (one scan per call, matching the blocker loop), and a rejection revert
-  is not re-validated (it moves toward the already-validated original).
+  plan (one scan per call, matching the blocker loop — superseded for
+  submissions by the v1.5.0-c worklist snapshot; the blocker loop still pays
+  it), and a rejection revert is not re-validated (it moves toward the
+  already-validated original).
 
 ## V1.4.1 completed capabilities
 
@@ -670,8 +680,9 @@ source-target `MigrationKnowledge`, not only individual model profiles.
 - Tool-surface diet (2026-09-22): guided-workflow tool descriptions cut ~40%
   and the MCP server instructions 31% with the safety invariants kept
   (verbatim presentation, the user decides, no-evidence-no-rewrite);
-  `LLM_MIGRATE_TOOLSET=guided` exposes only the 14 guided-workflow tools for
-  hosts with tight inline-tool budgets.
+  `LLM_MIGRATE_TOOLSET=guided` exposes only the guided-workflow tools for
+  hosts with tight inline-tool budgets (14 at v1.4.1; 19 since the
+  v1.5.0 additions).
 - Submission-format rejection tone (2026-09-22): disposition/annotation
   rejections state explicitly that they are format requirements of the tool
   and not judgements on the adaptation content, so host agents repair the
@@ -746,6 +757,31 @@ source-target `MigrationKnowledge`, not only individual model profiles.
   `record_validation_disposition` records how the migration was validated,
   and finalize emits a deterministic request-shape contract test under
   `output/validation/` that the user runs themselves.
+
+## V1.5.1 completed capabilities
+
+- Alias-aware reference detection (2026-09-22): `migration.yaml` additively
+  records source/target reference spellings — the invocable platform
+  spellings plus the reviewed canonical name and registry aliases. The
+  unchanged-claim guards, lingering-source warnings, the cross-surface
+  consistency gate, and the generated contract test detect aliases of the
+  source model; invocable enforcement (bare-id rejection, sanctioned-swap
+  targets, selector lists) still uses only platform spellings, so an alias
+  can never masquerade as an invocation id. Detection excludes source
+  spellings contained in a target spelling, so a cross-platform migration
+  of the same model is never falsely flagged.
+- New files face review (2026-09-22): a `new_file` submission must document
+  its content with at least one evidence-linked annotated change (an
+  anchor-less insert/restructure claims the whole file), closing the path
+  where invented content entered the deliverable set with nothing for the
+  user's change review to decide. The rejection is a submission-format
+  requirement, matching the existing tone rule.
+- Read-only run status (2026-09-22): `get_run_status` no longer infers
+  "moved past research" from the worklist snapshot its own call persists as
+  a cache; the signal is an explicit marker written only by
+  `list_adaptation_tasks`, a recorded blocker decision, or a submission —
+  a second status call can no longer silently steer the host past the
+  research question.
 
 ## Next work
 

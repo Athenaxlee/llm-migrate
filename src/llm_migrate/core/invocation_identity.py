@@ -17,6 +17,7 @@ from pydantic import Field
 
 from llm_migrate.core.models import (
     InvocationSelector,
+    ModelIdentity,
     PlatformAvailability,
     StrictModel,
 )
@@ -146,6 +147,21 @@ def platform_spelling_set(platform: PlatformAvailability) -> list[str]:
             for selector in platform.invocation.selectors
             if selector.model_id not in spellings
         )
+    return spellings
+
+
+def model_reference_spellings(identity: ModelIdentity, platform: PlatformAvailability) -> list[str]:
+    """Every reviewed spelling that REFERENCES this model, not only invocable ids.
+
+    The invocable platform spellings plus the reviewed canonical name and
+    aliases. Reference spellings back source-reference detection (unchanged
+    claims, lingering-source warnings, the consistency gate); only
+    `platform_spelling_set` entries are valid invocation ids.
+    """
+    spellings = platform_spelling_set(platform)
+    for name in (identity.canonical_name, *identity.aliases):
+        if name and name not in spellings:
+            spellings.append(name)
     return spellings
 
 

@@ -44,6 +44,7 @@ from llm_migrate.core.agent_research import (
 from llm_migrate.core.annotations import AnnotatedChange, plan_evidence_urls
 from llm_migrate.core.artifacts import write_proposal_artifacts
 from llm_migrate.core.blockers import (
+    DECISIONS_FILENAME,
     RESOLUTION_GUIDANCE,
     BlockerDecisionResult,
     BlockerResolutionSet,
@@ -98,6 +99,7 @@ from llm_migrate.core.intelligence import check_model_lifecycle, estimate_migrat
 from llm_migrate.core.invocation_identity import (
     InvocationChoice,
     derive_invocation,
+    model_reference_spellings,
     platform_spelling_set,
 )
 from llm_migrate.core.knowledge import (
@@ -178,11 +180,12 @@ from llm_migrate.core.session import (
     registry_content_sha256,
 )
 from llm_migrate.core.snapshot import (
-    SNAPSHOT_FILENAME,
     WorklistSnapshot,
     load_snapshot,
+    mark_worklist_requested,
     save_snapshot,
     snapshot_key,
+    worklist_requested,
 )
 from llm_migrate.core.validation_deliverable import (
     CONTRACT_TEST_RELATIVE_PATH,
@@ -1443,6 +1446,12 @@ class MigrationService:
             target_invocation_requires_selector=target_choice.requires_selector,
             source_model_spellings=platform_spelling_set(source_resolution.platform),
             target_model_spellings=platform_spelling_set(target_resolution.platform),
+            source_model_reference_spellings=model_reference_spellings(
+                source_resolution.identity, source_resolution.platform
+            ),
+            target_model_reference_spellings=model_reference_spellings(
+                target_resolution.identity, target_resolution.platform
+            ),
             strict=strict,
             created_on=as_of,
             prompt_sources=list(prompt_sources or []),
@@ -1761,6 +1770,7 @@ class MigrationService:
         workspace = Path(run_dir)
         config = load_run_config(workspace)
         tasks, _, _ = self._tasks_for_run(config, workspace, now=now)
+        mark_worklist_requested(workspace)
         return tasks
 
     @staticmethod
@@ -1989,6 +1999,9 @@ class MigrationService:
                 f"{side}_invocation_model_id": invocation_id,
                 f"{side}_invocation_selector": selector_chosen,
                 f"{side}_model_spellings": platform_spelling_set(resolved.platform),
+                f"{side}_model_reference_spellings": model_reference_spellings(
+                    resolved.identity, resolved.platform
+                ),
             }
             if side == "target":
                 update["target_invocation_requires_selector"] = (
@@ -2396,10 +2409,15 @@ class MigrationService:
         """
         workspace = Path(run_dir)
         config = load_run_config(workspace)
-        # A pre-existing snapshot means the run already moved past the
-        # research question (list_adaptation_tasks was called); the status
-        # must not pin research_pending over live blockers and tasks.
-        moved_past_research = (workspace / SNAPSHOT_FILENAME).is_file()
+        # The run moved past the research question only on explicit host
+        # activity: the worklist was requested (list_adaptation_tasks writes
+        # the marker), a blocker decision was recorded, or a submission
+        # landed (the log check below). The snapshot file proves nothing —
+        # this very call persists it as a cache, and inferring from it made
+        # a second status call silently steer past research (v1.5.0 defect).
+        moved_past_research = (
+            worklist_requested(workspace) or (workspace / DECISIONS_FILENAME).is_file()
+        )
         tasks, _, reused = self._tasks_for_run(config, workspace, now=now)
         log = load_adaptation_log(workspace, config.run_id)
         change_decisions = load_change_decision_log(workspace, config.run_id)

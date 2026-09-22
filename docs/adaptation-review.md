@@ -123,7 +123,9 @@ serialization-only edits) and enforce:
   applying only accepted hunks to the original. Rejecting every change reverts
   the deliverable to a reviewed-unchanged entry.
 - `finalize_migration` reports undecided changes as their own bucket alongside
-  coverage gaps but does not block on them; review may follow finalization.
+  coverage gaps but does not block on them by default; review may follow
+  finalization. A strict run (V1.5) refuses to finalize cleanly while
+  undecided changes remain.
 
 ### Reporting
 
@@ -153,7 +155,9 @@ serialization-only edits) and enforce:
 
 - Rename the worklist field `deterministic_candidate` to `verbatim_source`
   (`AdaptationTaskList` schema version 2) and state in the task guidance that
-  it is the unmodified input, never a proposed adaptation.
+  it is the unmodified input, never a proposed adaptation. (Schema is
+  version 4 today: v3 added file-task `required_changes` ids, v4 the V1.5
+  `unaffected_files` bucket.)
 - Give every prompt-task guidance item a stable content-derived id
   (`GuidanceItem`), covering both per-task `guidance` and
   `shared_prompt_guidance`.
@@ -167,7 +171,9 @@ serialization-only edits) and enforce:
   (`changes.yaml`), render reviewed-unchanged deliverables under an explicit
   "no change needed" heading with their reasoning and dispositions, and
   count `reviewed_unchanged` separately in `MigrationRunFinalization`
-  (schema version 3).
+  (schema version 3 then; version 5 today — v4 added the undecided-changes
+  bucket, v5 the V1.5 consistency findings, unconfirmed unaffected files,
+  validation disposition, and strict violations).
 
 ### v1.4.0-b — annotated, hunk-anchored changes (implemented)
 
@@ -176,6 +182,9 @@ serialization-only edits) and enforce:
   anchors, one-sentence `why`, evidence entries, and a content-derived
   stable id filled at acceptance; `changes.yaml` schema version 2 (version 1
   logs still load).
+- A `new_file` submission must carry at least one evidence-linked annotated
+  change (v1.5.1): an anchor-less insert/restructure claims the whole file,
+  and without annotations there is nothing for change review to decide.
 - Diff computation over the decoded runtime values in both submit paths
   (structured prompt documents decode to their component values, so
   serialization tricks change nothing): every hunk must be covered by an
@@ -215,6 +224,7 @@ serialization-only edits) and enforce:
   preserved, decisions can be re-made in any order. Rejecting every change
   leaves no annotated adaptation in the deliverable.
 - Finalization counts undecided changes as their own bucket
-  (`MigrationRunFinalization` schema version 4) without blocking, and the
+  (`MigrationRunFinalization` schema version 4 at the time) without blocking
+  by default, and the
   report renders each change's decision (ACCEPTED / REJECTED with the note /
   pending review) plus a per-file review outcome line.

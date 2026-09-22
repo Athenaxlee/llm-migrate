@@ -1494,8 +1494,8 @@ plans and reports.
 
 ## Current status
 
-Accepted on 2026-08-29 and released as `v1.1.0` on 2026-08-30, on top of the
-`v1.0.0` baseline.
+Accepted on 2026-08-29 and implemented on the `codex/v1.1-agent-research`
+branch the same day, on top of the `v1.0.0` baseline.
 
 Implemented: the typed `MigrationResearchRequest`, `EvidenceReview`,
 `ResearchConsensus`, `SessionRegistryManifest`, and `OrchestrationRun`
@@ -1720,8 +1720,9 @@ configuration coupling.
 - Tool-surface diet: the long guided-workflow tool descriptions were cut
   ~40% (submit_adapted_prompt alone from 2.4k to 1.0k chars, server
   instructions -31%) without losing the safety invariants, and the opt-in
-  `LLM_MIGRATE_TOOLSET=guided` exposes only the 14 guided-workflow tools for
-  hosts with tight inline-tool budgets. (F10)
+  `LLM_MIGRATE_TOOLSET=guided` exposes only the guided-workflow tools for
+  hosts with tight inline-tool budgets (14 at v1.4.1; 19 since the
+  v1.5.0 additions). (F10)
 - Rejection-message tone: disposition/annotation rejections state explicitly
   that they are submission-format requirements of the tool, not judgements
   on the adaptation content, so host agents fix the payload instead of
@@ -1805,7 +1806,8 @@ widen the "no source configuration remains" checks.
 
 ## Current status
 
-Implemented on 2026-09-22: schema and validators, the
+Implemented on 2026-09-22 and released as `v1.5.0` the same day: schema
+and validators, the
 `core/invocation_identity.py` derivation/spelling/bare-reference machinery,
 resolver selector matching, run-identity seeding and the confirmation flow,
 the `invocation_selector_required` blocker with selector-correction options,
@@ -1858,7 +1860,8 @@ full submission round-trip each.
 
 ## Current status
 
-Implemented on 2026-09-22 with scan/v04/v05/v11 goldens regenerated and unit
+Implemented on 2026-09-22 and released as `v1.5.0` the same day, with
+scan/v04/v05/v11 goldens regenerated and unit
 coverage for anchoring rules, usage anchoring, the pricing guardrail, the
 unaffected bucket and its confirmation flow, difference propagation, and the
 consistency gate's revert/mixed-selector/dropped-marker findings.
@@ -1900,7 +1903,8 @@ retries, and per-item disposition costs.
 
 ## Current status
 
-Implemented on 2026-09-22 with unit coverage for snapshot reuse and every
+Implemented on 2026-09-22 and released as `v1.5.0` the same day, with unit
+coverage for snapshot reuse and every
 staleness input, read-time statuses, batch per-item semantics, default
 expansion and report marking, shared-guidance once-per-run, and the state
 machine walk.
@@ -1942,10 +1946,61 @@ application execution, no provider calls, no host-identity attestation.
 
 ## Current status
 
-Implemented on 2026-09-22 with unit coverage for the strict flag, the
+Implemented on 2026-09-22 and released as `v1.5.0` the same day, with unit
+coverage for the strict flag, the
 missing-invocation-facts and incomplete-coverage blockers, strict evidence
 rejection, the validation disposition lifecycle, strict finalization
 violations, and the generated contract test's shape.
+
+---
+
+# 12.9. V1.5.1: Review-Fix Patch
+
+## Purpose
+
+Close the three high-severity defects a same-day multi-axis review of the
+released v1.5.0 confirmed by reproduction, before hosts build on the broken
+behavior.
+
+## Scope
+
+- Alias-aware reference detection: `migration.yaml` additively records
+  source/target REFERENCE spellings (invocable platform spellings plus the
+  reviewed canonical name and registry aliases). Source-reference detection —
+  unchanged-claim guards, lingering-source warnings, the cross-surface
+  consistency gate, the generated contract test's forbidden ids — uses
+  reference spellings; invocable enforcement (bare-id rejection,
+  sanctioned-swap targets, selector candidate lists) keeps using only
+  platform spellings. Detection excludes source spellings contained in a
+  target spelling so cross-platform same-model migrations are never falsely
+  flagged.
+- Reviewed new files: a `new_file` submission requires at least one
+  evidence-linked annotated change (an anchor-less insert/restructure claims
+  the whole file), so invented content cannot enter the deliverable set with
+  nothing for the user's change review to decide. The rejection is a
+  submission-format requirement.
+- Read-only run status: "moved past research" is an explicit signal — a
+  marker written only by `list_adaptation_tasks`, a recorded blocker
+  decision, or a submission — never the existence of the worklist snapshot,
+  which `get_run_status` itself persists as a cache.
+
+## Exit criteria
+
+- A file naming only a registry alias of the source model cannot be recorded
+  `unchanged=true`, and the consistency gate reports the alias.
+- Aliases never appear in invocable spelling sets, selector candidate lists,
+  or sanctioned-swap targets.
+- A `new_file` submission without annotated changes is rejected with the
+  format-requirement tone; one with an evidence-linked annotation is
+  accepted and reviewable.
+- Two consecutive `get_run_status` calls on a research-pending run both
+  report `research_pending`; `list_adaptation_tasks` (or a submission or a
+  blocker decision) moves the state on.
+
+## Current status
+
+Implemented on 2026-09-22 and released as `v1.5.1` the same day, with unit
+coverage for every exit criterion (`tests/unit/test_v151_review_fixes.py`).
 
 ---
 
@@ -2050,6 +2105,10 @@ When working from this roadmap, Codex should:
 | V1.1 | Bounded user-side agent research with independently reviewed session registry overlays |
 | V1.2 | Guided migration run workspace: lenient matching, generated research prompts, adaptation deliverables |
 | V1.3 | Prompt provenance discovery: config-driven prompt sources, structured prompt documents, coverage reporting |
+| V1.4 | Interactive blocker resolution and evidence-backed per-change adaptation review |
+| V1.4.1 | Deployment-run immediate relief: durable run state, UTC boundaries, tool-surface diet |
+| V1.5 | Invocation identity, semantic config couplings, worklist snapshot, consistency gate, strict production mode |
+| V1.5.1 | Review-fix patch: alias-aware reference detection, reviewed new files, read-only run status |
 
 The critical sequencing rule is:
 

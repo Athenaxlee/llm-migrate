@@ -15,7 +15,7 @@ import yaml
 from llm_migrate.core.agent_research import artifact_sha256
 from llm_migrate.core.workspace import load_adaptation_log
 from llm_migrate.service import MigrationService
-from tests.unit.adaptation_helpers import dispose_all, edit_change
+from tests.unit.adaptation_helpers import dispose_all, edit_change, insert_change
 from tests.unit.v11_scenarios import (
     NOW,
     standard_host,
@@ -65,6 +65,7 @@ def test_parallel_submissions_never_lose_adaptation_log_entries(
             ["Added the helper module."],
             submitted_on=AS_OF,
             new_file=True,
+            annotated_changes=[insert_change(f"VALUE = {source_path!r}", why="New helper module.")],
         )
         if not result.accepted:
             failures.append(result.message)

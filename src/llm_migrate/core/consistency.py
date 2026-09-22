@@ -28,7 +28,8 @@ from llm_migrate.core.workspace import (
     MigrationRunConfig,
     effective_target_id,
     entry_is_unchanged,
-    source_spellings,
+    source_detection_spellings,
+    target_reference_spellings,
     target_spellings,
 )
 
@@ -120,9 +121,9 @@ def check_cross_surface_consistency(
 ) -> list[ConsistencyFinding]:
     """Deterministic checks over ALL deliverables and unchanged claims together."""
     findings: list[ConsistencyFinding] = []
-    target_forms = target_spellings(config)
-    source_forms = [item for item in source_spellings(config) if item not in set(target_forms)]
-    selector_ids = [item for item in target_forms if item != config.target_model_id]
+    target_forms = target_reference_spellings(config)
+    source_forms = source_detection_spellings(config)
+    selector_ids = [item for item in target_spellings(config) if item != config.target_model_id]
     markers_by_file = _coupling_markers(analysis)
     model_coupled_files = {
         finding.location.path
