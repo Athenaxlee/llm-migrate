@@ -37,6 +37,7 @@ from llm_migrate.core.models import (
     MigrationWorkload,
     RecommendationConstraints,
 )
+from llm_migrate.core.moments import utc_moment
 from llm_migrate.core.registry import RegistryError
 from llm_migrate.core.workspace import GuidanceDisposition
 from llm_migrate.service import MigrationService
@@ -108,7 +109,7 @@ def _apply_session_overlay(
         return service, []
     from llm_migrate.core.session import manifest_summary_lines
 
-    moment = datetime.fromisoformat(session_as_of) if session_as_of else datetime.now(UTC)
+    moment = utc_moment(session_as_of) or datetime.now(UTC)
     try:
         overlay_service, manifest = service.load_session_service(session, as_of=moment)
     except (RegistryError, ValueError) as exc:
@@ -939,6 +940,23 @@ def research_validate_review(
         raise typer.Exit(1)
 
 
+@research_app.command("validate-artifact")
+def research_validate_artifact(
+    run_dir: Path,
+    scope: str,
+    registry: Annotated[Path | None, typer.Option(help="Registry root.")] = None,
+) -> None:
+    """Validate one scope's research artifacts directly from the run workspace."""
+    try:
+        result = _service(registry).validate_research_artifact(run_dir, scope)
+    except ValueError as exc:
+        typer.echo(f"Unable to validate the research artifact: {exc}", err=True)
+        raise typer.Exit(2) from exc
+    _emit(result)
+    if not result.valid:
+        raise typer.Exit(1)
+
+
 @research_app.command("consensus")
 def research_consensus(
     research_result: Path,
@@ -993,7 +1011,7 @@ def research_build_session(
             err=True,
         )
         raise typer.Exit(2)
-    moment = datetime.fromisoformat(now) if now else datetime.now(UTC)
+    moment = utc_moment(now) or datetime.now(UTC)
     try:
         outcome = _service(registry).run_agent_research(
             request,

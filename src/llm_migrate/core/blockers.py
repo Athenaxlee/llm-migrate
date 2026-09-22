@@ -47,6 +47,7 @@ from llm_migrate.core.models import (
 from llm_migrate.core.recommendation import recommend_models
 from llm_migrate.core.registry import ModelRegistry, RegistryError
 from llm_migrate.core.resolver import effective_capabilities
+from llm_migrate.core.runstate import atomic_write_text
 from llm_migrate.core.workspace import MigrationRunConfig, WorkspaceError
 
 DECISIONS_FILENAME = "decisions.yaml"
@@ -152,11 +153,7 @@ def load_decision_log(run_dir: Path, run_id: str) -> DecisionLog:
 
 def save_decision_log(run_dir: Path, log: DecisionLog) -> Path:
     path = Path(run_dir) / DECISIONS_FILENAME
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(
-        yaml.safe_dump(log.model_dump(mode="json"), sort_keys=False),
-        encoding="utf-8",
-    )
+    atomic_write_text(path, yaml.safe_dump(log.model_dump(mode="json"), sort_keys=False))
     return path
 
 

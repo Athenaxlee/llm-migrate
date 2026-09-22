@@ -225,6 +225,10 @@ The agent host must provide its own generative model and web/search capability.
 The `llm-migrate` MCP server does not contain an embedded model or general web
 search tool.
 
+Hosts with tight inline-tool budgets can set the environment variable
+`LLM_MIGRATE_TOOLSET=guided` on the server process to expose only the 14
+guided-workflow tools; the default (`full`) exposes everything.
+
 ## First migration with an agent
 
 Open the application repository in your MCP-capable agent and give it exact
@@ -290,6 +294,7 @@ available for manual or partial use.
 | --- | --- | --- |
 | `start_migration` | Begin any full migration | Matches both models registry-first (candidates for confirmation instead of hard failures), scans the application, reports whether research is needed and why, creates the run workspace, and returns ordered next steps |
 | `get_research_prompts` | The run recommends research and the user agrees | Renders one bounded, scope-isolated researcher and reviewer prompt pair per remaining scope from `request.yaml`, with per-scope status so completed stages are never re-run |
+| `validate_research_artifact` | A researcher or reviewer wrote its YAML artifact | Reads `research/<scope>.yaml` (and `review/<scope>.yaml` when present) directly from the run workspace and runs the deterministic scope/policy and review-integrity gates — no artifact resends through the payload |
 | `list_adaptation_tasks` | The plan (canonical or session-backed) is ready | Derives the per-file worklist: prompts to rewrite with guidance and risks, and files to adapt with their required changes |
 | `get_blocker_resolutions` | The worklist reports blockers | Returns, per blocker, the question to ask the user plus 2–5 registry-backed options (retarget to a capable endpoint or model, an evidence-linked redesign task, an exact source correction, or an explicit accept) with consequences and evidence URLs — the agent presents them verbatim and never chooses |
 | `record_blocker_decision` | The user has chosen an option | Records the decision durably in the run's `decisions.yaml` (accepts require the user's own rationale); retarget/correction decisions update the run identity registry-first, redesign decisions inject the required evidence-linked task, and stale decisions are reported, never silently applied |

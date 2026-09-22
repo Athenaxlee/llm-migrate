@@ -445,6 +445,15 @@ def test_v11_research_stage_commands_drive_the_file_protocol(
     )
     assert reviewed.exit_code == 0, reviewed.output
 
+    by_path = runner.invoke(
+        app,
+        ["research", "validate-artifact", str(run_dir), "target"],
+    )
+    assert by_path.exit_code == 0, by_path.output
+    by_path_payload = json.loads(by_path.stdout)
+    assert by_path_payload["valid"] is True
+    assert by_path_payload["review_checked"] is True
+
     consensus = runner.invoke(
         app,
         [

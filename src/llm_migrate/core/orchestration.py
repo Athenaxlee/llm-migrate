@@ -39,6 +39,7 @@ from llm_migrate.core.knowledge import MigrationKnowledge, ResearchResult
 from llm_migrate.core.models import ModelProfile, StrictModel
 from llm_migrate.core.proposals import propose_registry_update
 from llm_migrate.core.registry import ModelRegistry
+from llm_migrate.core.runstate import atomic_write_text
 from llm_migrate.core.session import (
     SessionRegistryManifest,
     build_session_manifest,
@@ -180,11 +181,7 @@ _DEFAULT_OVERLAY_TTL = timedelta(days=7)
 
 
 def _write_yaml(path: Path, artifact: BaseModel) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(
-        yaml.safe_dump(artifact.model_dump(mode="json"), sort_keys=False),
-        encoding="utf-8",
-    )
+    atomic_write_text(path, yaml.safe_dump(artifact.model_dump(mode="json"), sort_keys=False))
 
 
 ModelT = TypeVar("ModelT", bound=BaseModel)
@@ -454,7 +451,7 @@ def run_agent_research_workflow(
                 return fail(record, StoppingReason.STAGE_FAILED)
             _write_yaml(artifact_path, produced)
             if produced_agent:
-                artifact_path.with_suffix(".agent").write_text(produced_agent, encoding="utf-8")
+                atomic_write_text(artifact_path.with_suffix(".agent"), produced_agent)
             if isinstance(produced, ResearchResult):
                 research_by_scope[scope] = produced
                 if produced_agent:

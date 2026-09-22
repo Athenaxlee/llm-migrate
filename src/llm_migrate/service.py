@@ -31,6 +31,7 @@ from llm_migrate.core.agent_research import (
     ExecutionLimits,
     MigrationResearchRequest,
     ModelEndpointIdentity,
+    ResearchArtifactValidation,
     ResearchConsensus,
     ResearchScope,
     ResearchTopic,
@@ -128,6 +129,7 @@ from llm_migrate.core.models import (
     ValidationLevel,
     migration_blocker,
 )
+from llm_migrate.core.moments import utc_moment
 from llm_migrate.core.orchestration import (
     AgentRunner,
     WorkflowOutcome,
@@ -154,6 +156,7 @@ from llm_migrate.core.resolver import (
     matching_canonical_names,
     resolve_model,
 )
+from llm_migrate.core.runstate import atomic_write_text, run_state_lock
 from llm_migrate.core.session import (
     SessionRegistryManifest,
     build_session_registry,
@@ -903,6 +906,101 @@ class MigrationService:
             problems.append(f"verdict references unknown claim {unknown!r}")
         return problems
 
+    def validate_research_artifact(
+        self,
+        run_dir: Path | str,
+        scope: str,
+    ) -> ResearchArtifactValidation:
+        """Validate one scope's research artifacts directly from the run workspace.
+
+        Reads `<run_dir>/request.yaml`, the researcher artifact at
+        `research/<scope>.yaml`, and — when it already exists — the reviewer
+        artifact at `review/<scope>.yaml`, then runs the same deterministic
+        gates as `validate_research_result` / `validate_evidence_review`.
+        Nothing has to be resent through the transport payload.
+        """
+        workspace = Path(run_dir)
+        request_path = workspace / "request.yaml"
+        if not request_path.is_file():
+            raise ValueError(
+                f"{request_path} does not exist; create the bounded research request first"
+            )
+        try:
+            request = MigrationResearchRequest.model_validate(
+                yaml.safe_load(request_path.read_text(encoding="utf-8"))
+            )
+        except (yaml.YAMLError, ValidationError) as exc:
+            raise ValueError(f"invalid research request {request_path}: {exc}") from exc
+        try:
+            scope_value = ResearchScope(scope)
+        except ValueError:
+            valid_scopes = ", ".join(item.value for item in ResearchScope)
+            return ResearchArtifactValidation(
+                run_id=request.run_id,
+                scope=scope,
+                valid=False,
+                problems=[f"unknown scope {scope!r}; valid scopes: {valid_scopes}"],
+                message=f"Invalid: unknown scope {scope!r}.",
+            )
+        research_path = workspace / "research" / f"{scope_value.value}.yaml"
+        review_path = workspace / "review" / f"{scope_value.value}.yaml"
+        result = ResearchArtifactValidation(
+            run_id=request.run_id,
+            scope=scope_value.value,
+            research_path=str(research_path),
+            review_path=str(review_path),
+            valid=False,
+            message="",
+        )
+        problems: list[str] = []
+        if scope_value not in request.scopes:
+            problems.append(
+                f"scope {scope_value.value!r} is not part of this run's research request; "
+                "requested scopes: " + ", ".join(item.value for item in request.scopes)
+            )
+        research: ResearchResult | None = None
+        if not research_path.is_file():
+            problems.append(
+                f"research artifact {research_path} does not exist; write the "
+                "researcher's YAML output there first"
+            )
+        else:
+            try:
+                research = ResearchResult.model_validate(
+                    yaml.safe_load(research_path.read_text(encoding="utf-8"))
+                )
+            except (yaml.YAMLError, ValidationError) as exc:
+                problems.append(f"research artifact {research_path} is invalid: {exc}")
+        review_status = "review artifact not written yet (validate it here once it is)"
+        review: EvidenceReview | None = None
+        if research is not None:
+            problems.extend(self.validate_research_result(research, request))
+            result = result.model_copy(update={"research_checked": True})
+            if review_path.is_file():
+                try:
+                    review = EvidenceReview.model_validate(
+                        yaml.safe_load(review_path.read_text(encoding="utf-8"))
+                    )
+                except (yaml.YAMLError, ValidationError) as exc:
+                    problems.append(f"review artifact {review_path} is invalid: {exc}")
+                else:
+                    problems.extend(self.validate_evidence_review(review, research))
+                    result = result.model_copy(update={"review_checked": True})
+                review_status = "review artifact checked"
+        valid = not problems
+        checked = "research artifact checked" if result.research_checked else "research not checked"
+        return result.model_copy(
+            update={
+                "valid": valid,
+                "problems": problems,
+                "message": (
+                    ("Valid" if valid else "Invalid")
+                    + f" ({checked}; {review_status})."
+                    + ("" if valid else " Fix only the reported problems and re-validate.")
+                ),
+            }
+        )
+
     def build_research_consensus(
         self,
         research: ResearchResult,
@@ -964,7 +1062,10 @@ class MigrationService:
 
         The overlay is hash-verified, must be unexpired and
         `session_agent_reviewed`, and never mutates checked-in registry files.
+        `as_of` is normalized to aware UTC (naive means UTC), so host-supplied
+        timestamps never hit an aware/naive comparison error.
         """
+        as_of = utc_moment(as_of)
         manifest, candidates, knowledge = load_session_overlay(Path(run_dir))
         if self.registry_root is not None:
             current = registry_content_sha256(self.registry_root)
@@ -1086,10 +1187,8 @@ class MigrationService:
         request_path: str | None = None
         if write_request:
             path = run_dir / "request.yaml"
-            path.parent.mkdir(parents=True, exist_ok=True)
-            path.write_text(
-                yaml.safe_dump(request.model_dump(mode="json"), sort_keys=False),
-                encoding="utf-8",
+            atomic_write_text(
+                path, yaml.safe_dump(request.model_dump(mode="json"), sort_keys=False)
             )
             request_path = str(path)
         return ResearchNeed(
@@ -1488,8 +1587,9 @@ class MigrationService:
             )
             write_run_config(workspace, config)
             config_updated = True
-        log = upsert_decision(load_decision_log(workspace, config.run_id), decision)
-        save_decision_log(workspace, log)
+        with run_state_lock(workspace):
+            log = upsert_decision(load_decision_log(workspace, config.run_id), decision)
+            save_decision_log(workspace, log)
         plan = self._plan_for_run(
             config, workspace, now=now, run_service=run_service, analysis=analysis
         )
@@ -1766,9 +1866,7 @@ class MigrationService:
         log = load_adaptation_log(workspace, config.run_id)
         paths = run_paths(workspace)
         Path(paths.output_dir).mkdir(parents=True, exist_ok=True)
-        Path(paths.manifest_path).write_text(
-            self.migration_manifest_as_yaml(plan), encoding="utf-8"
-        )
+        atomic_write_text(paths.manifest_path, self.migration_manifest_as_yaml(plan))
         tasks = derive_adaptation_tasks(config, plan, workspace, log)
         gaps = coverage_gaps(tasks)
         change_decisions = load_change_decision_log(workspace, config.run_id)
@@ -1779,7 +1877,7 @@ class MigrationService:
             + render_adaptation_section(log, gaps, change_decisions)
             + "\n"
         )
-        Path(paths.report_path).write_text(report, encoding="utf-8")
+        atomic_write_text(paths.report_path, report)
         undecided_changes: list[str] = []
         for entry in log.entries:
             if entry_is_unchanged(entry) or not entry.annotated_changes:

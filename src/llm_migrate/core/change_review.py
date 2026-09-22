@@ -34,6 +34,7 @@ from llm_migrate.core.prompt_documents import (
     extract_prompt_components,
     parse_structured_document,
 )
+from llm_migrate.core.runstate import atomic_write_text, run_state_lock
 from llm_migrate.core.workspace import (
     AdaptationEntry,
     ChangeDecision,
@@ -426,36 +427,36 @@ def record_change_decision(
             problems=[stale_reason or "the review state for this file is unavailable"],
             message="Rejected: " + (stale_reason or "review unavailable."),
         )
-    decision_log = load_change_decision_log(run_dir, config.run_id)
-    candidate = ChangeDecision(
-        source_path=entry.source_path,
-        kind=entry.kind,
-        change_id=change_id,
-        decision=decision,  # type: ignore[arg-type]
-        note=note,
-        decided_on=decided_on or date.today(),
-        source_sha256=entry.source_sha256,
-        adapted_sha256=entry.adapted_sha256,
-    )
-    updated_log = upsert_change_decision(decision_log, candidate)
-    rejected_ids = {
-        item.change_id
-        for item in updated_log.decisions
-        if item.decision == "rejected" and decision_matches_entry(item, entry)
-    }
-    content, problems = _regenerate_content(entry, original, submission, rejected_ids)
-    if problems or content is None:
-        return ChangeDecisionResult(
-            accepted=False,
-            source_path=source_path,
+    with run_state_lock(run_dir):
+        decision_log = load_change_decision_log(run_dir, config.run_id)
+        candidate = ChangeDecision(
+            source_path=entry.source_path,
+            kind=entry.kind,
             change_id=change_id,
-            problems=problems,
-            message="Rejected (decision NOT recorded): " + "; ".join(problems),
+            decision=decision,  # type: ignore[arg-type]
+            note=note,
+            decided_on=decided_on or date.today(),
+            source_sha256=entry.source_sha256,
+            adapted_sha256=entry.adapted_sha256,
         )
-    save_change_decision_log(run_dir, updated_log)
-    deliverable = Path(run_dir) / entry.output_path
-    deliverable.parent.mkdir(parents=True, exist_ok=True)
-    deliverable.write_text(content, encoding="utf-8")
+        updated_log = upsert_change_decision(decision_log, candidate)
+        rejected_ids = {
+            item.change_id
+            for item in updated_log.decisions
+            if item.decision == "rejected" and decision_matches_entry(item, entry)
+        }
+        content, problems = _regenerate_content(entry, original, submission, rejected_ids)
+        if problems or content is None:
+            return ChangeDecisionResult(
+                accepted=False,
+                source_path=source_path,
+                change_id=change_id,
+                problems=problems,
+                message="Rejected (decision NOT recorded): " + "; ".join(problems),
+            )
+        save_change_decision_log(run_dir, updated_log)
+        deliverable = Path(run_dir) / entry.output_path
+        atomic_write_text(deliverable, content)
     decided = {
         item.change_id for item in updated_log.decisions if decision_matches_entry(item, entry)
     }
@@ -492,26 +493,26 @@ def reapply_change_decisions(
     keep reflecting them instead of silently reverting to the full
     submission. Returns (applied_rejections, problems).
     """
-    log = load_adaptation_log(run_dir, config.run_id)
-    entries = [entry for entry in log.entries if entry.source_path == source_path]
-    if len(entries) != 1 or entry_is_unchanged(entries[0]):
-        return 0, []
-    entry = entries[0]
-    decision_log = load_change_decision_log(run_dir, config.run_id)
-    rejected_ids = {
-        item.change_id
-        for item in decision_log.decisions
-        if item.decision == "rejected" and decision_matches_entry(item, entry)
-    }
-    if not rejected_ids:
-        return 0, []
-    original, submission, stale_reason = _entry_staleness(Path(run_dir), config, entry)
-    if stale_reason is not None or original is None or submission is None:
-        return 0, [stale_reason or "the review state for this file is unavailable"]
-    content, problems = _regenerate_content(entry, original, submission, rejected_ids)
-    if problems or content is None:
-        return 0, problems
-    deliverable = Path(run_dir) / entry.output_path
-    deliverable.parent.mkdir(parents=True, exist_ok=True)
-    deliverable.write_text(content, encoding="utf-8")
-    return len(rejected_ids), []
+    with run_state_lock(run_dir):
+        log = load_adaptation_log(run_dir, config.run_id)
+        entries = [entry for entry in log.entries if entry.source_path == source_path]
+        if len(entries) != 1 or entry_is_unchanged(entries[0]):
+            return 0, []
+        entry = entries[0]
+        decision_log = load_change_decision_log(run_dir, config.run_id)
+        rejected_ids = {
+            item.change_id
+            for item in decision_log.decisions
+            if item.decision == "rejected" and decision_matches_entry(item, entry)
+        }
+        if not rejected_ids:
+            return 0, []
+        original, submission, stale_reason = _entry_staleness(Path(run_dir), config, entry)
+        if stale_reason is not None or original is None or submission is None:
+            return 0, [stale_reason or "the review state for this file is unavailable"]
+        content, problems = _regenerate_content(entry, original, submission, rejected_ids)
+        if problems or content is None:
+            return 0, problems
+        deliverable = Path(run_dir) / entry.output_path
+        atomic_write_text(deliverable, content)
+        return len(rejected_ids), []

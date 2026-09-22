@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+from collections.abc import Callable
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from typing import Any, Literal
@@ -29,6 +30,7 @@ from llm_migrate.core.evaluation_models import (
 from llm_migrate.core.evaluator_registry import configure_evaluators
 from llm_migrate.core.knowledge import ResearchResult
 from llm_migrate.core.models import MigrationPlan, MigrationWorkload, RecommendationConstraints
+from llm_migrate.core.moments import utc_moment
 from llm_migrate.core.orchestration import NullAgentRunner
 from llm_migrate.core.session import manifest_summary_lines
 from llm_migrate.service import MigrationService
@@ -36,56 +38,78 @@ from llm_migrate.service import MigrationService
 _WORKFLOW_INSTRUCTIONS = """\
 llm-migrate plans LLM application migrations locally and deterministically.
 
-For a full migration, prefer the guided workflow over calling low-level tools ad hoc:
-1. start_migration(application_path, source, target, ...) — registry-first model
+For a full migration, use the guided workflow (LLM_MIGRATE_TOOLSET=guided
+exposes only its tools):
+1. start_migration(application_path, source, target, ...) — registry-first
    matching (asks for user confirmation when identifiers are vague), scans the
-   application, creates the run workspace (default
-   <application>/.llm-migrate/runs/<run-id>/), and reports whether research helps.
+   application, creates the run workspace, and reports whether research helps.
 2. If research is recommended and the user agrees: get_research_prompts(run_dir),
    run each researcher/reviewer prompt with a separate agent, validate each
-   artifact, then build_session_registry(run_dir).
-3. list_adaptation_tasks(run_dir) — call it ONCE: the per-file worklist, with
-   `shared_prompt_guidance` that applies to every prompt task. Do not re-list
-   between submissions; each submission result confirms acceptance.
-3b. If the worklist reports blockers: get_blocker_resolutions(run_dir), then
-   present each blocker's question with its options, consequences, and
-   evidence VERBATIM to the user, ONE blocker at a time, and record each
-   answer with record_blocker_decision. The user is the decision maker: never
-   pick an option for them, never invent options, and never retry submissions
-   to make a blocker disappear. Accepting a blocker requires the user's own
-   rationale. Decisions persist in the run's decisions.yaml and re-apply on
-   every plan regeneration; each decision result says exactly what to do next.
-4. Work through the tasks: adapt prompts minimally (keep wording and structure
-   except where a listed model difference or evidence-linked guidance line
-   requires a change; each task's `verbatim_source` is the UNMODIFIED original,
-   never a proposed adaptation) and submit via submit_adapted_prompt with a
-   guidance_dispositions entry for EVERY guidance item (applied /
-   not_applicable / declined with a note); write complete adapted files and
-   submit via submit_adapted_file with a guidance_dispositions entry for every
-   required change, or pass unchanged=true for prompts or files that need no
-   change — the report then states explicitly that no change was needed and
-   why. Every CHANGED submission must document each edit in annotated_changes:
-   exact original/adapted text anchors, a one-sentence why, and evidence
-   (kind 'mechanical' for typo-level fixes); undocumented or phantom changes
-   are rejected. Submissions are validated and stored under <run>/output/,
-   never in the application tree.
-5. finalize_migration(run_dir) — writes migration-manifest.yaml and
-   migration-report.md (including per-file changes and rationale) under
-   output/ and reports any remaining coverage gaps and undecided changes.
-6. Drive the per-change review: get_change_review(run_dir) lists every
-   annotated change with its why, evidence, before/after spans, and decision
-   status. Present each pending change VERBATIM, one at a time, and record the
-   user's accept or reject with record_change_decision — the user decides,
-   never you. A rejection deterministically regenerates the deliverable from
-   the remaining changes; rejecting every change leaves no annotated
-   adaptation in it. Decisions persist in change-decisions.yaml; a
-   resubmission makes them stale (reported, never silently applied).
+   artifact with validate_research_artifact(run_dir, scope), then
+   build_session_registry(run_dir).
+3. list_adaptation_tasks(run_dir) — call it ONCE; `shared_prompt_guidance`
+   applies to every prompt task, and submission results confirm acceptance, so
+   never re-list between submissions.
+3b. If the worklist reports blockers: get_blocker_resolutions(run_dir); present
+   each blocker's question, options, consequences, and evidence VERBATIM, one
+   blocker at a time, and record each user answer with record_blocker_decision.
+   The user decides: never pick for them, never invent options, never retry
+   submissions to clear a blocker; accepts require the user's own rationale.
+4. Work the tasks: adapt each prompt minimally (its `verbatim_source` is the
+   UNMODIFIED original, never a proposed adaptation) and submit_adapted_prompt;
+   write complete adapted files and submit_adapted_file; pass unchanged=true
+   when no change is needed. Every submission disposes every guidance item in
+   guidance_dispositions and documents every edit in annotated_changes
+   (anchors, why, evidence); undocumented or phantom changes are rejected.
+   Deliverables live under <run>/output/, never in the application tree.
+5. finalize_migration(run_dir) — writes the manifest and report and lists
+   remaining coverage gaps and undecided changes.
+6. get_change_review(run_dir) lists every annotated change with its decision
+   state; present each pending change VERBATIM, one at a time, and record the
+   user's accept or reject with record_change_decision (a rejection
+   deterministically regenerates the deliverable; a resubmission makes
+   decisions stale — reported, never silently applied).
 
-Never edit the user's application directly from research results; everything is a
-reviewable deliverable in the run's output/ directory.
+Never edit the user's application directly; everything is a reviewable
+deliverable in the run's output/ directory.
 """
 
 mcp = FastMCP("llm-migrate", instructions=_WORKFLOW_INSTRUCTIONS)
+
+# The guided workflow needs only these tools; LLM_MIGRATE_TOOLSET=guided keeps
+# the exposed tool surface within host inline-tool budgets by hiding the rest.
+_GUIDED_TOOL_NAMES = frozenset(
+    {
+        "resolve_model",
+        "get_model_profile",
+        "start_migration",
+        "get_research_prompts",
+        "validate_research_artifact",
+        "build_session_registry",
+        "list_adaptation_tasks",
+        "get_blocker_resolutions",
+        "record_blocker_decision",
+        "submit_adapted_prompt",
+        "submit_adapted_file",
+        "finalize_migration",
+        "get_change_review",
+        "record_change_decision",
+    }
+)
+
+_TOOLSET = os.environ.get("LLM_MIGRATE_TOOLSET", "full").strip().casefold() or "full"
+
+
+def _tool(fn: Callable[..., Any]) -> Any:
+    """Register one MCP tool, honoring the LLM_MIGRATE_TOOLSET selection.
+
+    With `LLM_MIGRATE_TOOLSET=guided` only the guided-workflow tools are
+    exposed over MCP; any other value (default `full`) exposes everything.
+    The Python function stays importable and callable either way.
+    """
+    if _TOOLSET == "guided" and fn.__name__ not in _GUIDED_TOOL_NAMES:
+        return fn
+    return mcp.tool()(fn)
 
 
 def _service() -> MigrationService:
@@ -97,17 +121,15 @@ def _json(model: Any) -> dict[str, Any]:
     return dict(model.model_dump(mode="json"))
 
 
-@mcp.tool()
+@_tool
 def resolve_model(
     identifier: str, platform: str | None = None, endpoint: str | None = None
 ) -> dict[str, Any]:
     """Match an identifier against the local registry, tolerating vague input.
 
-    Always check here before researching a model: regional Bedrock
-    inference-profile prefixes, version suffixes, spacing, and vague platform
-    names are normalized deterministically. `status` is `resolved`,
-    `needs_confirmation` (show `candidates` to the user and ask), or
-    `not_found`.
+    Check here before researching a model: prefixes, version suffixes, and
+    vague platform names normalize deterministically. `status` is `resolved`,
+    `needs_confirmation` (show `candidates` to the user), or `not_found`.
     """
     match = _service().match_model(identifier, platform, endpoint)
     result = _json(match)
@@ -118,13 +140,13 @@ def resolve_model(
     return result
 
 
-@mcp.tool()
+@_tool
 def get_model_profile(identifier: str) -> dict[str, Any]:
     """Return a validated local registry model profile."""
     return _json(_service().get_model_profile(identifier))
 
 
-@mcp.tool()
+@_tool
 def check_model_lifecycle(
     identifier: str,
     as_of_date: str | None = None,
@@ -134,7 +156,7 @@ def check_model_lifecycle(
     return _json(_service().check_model_lifecycle(identifier, as_of_date=effective_date))
 
 
-@mcp.tool()
+@_tool
 def compare_models(
     source: str,
     target: str,
@@ -158,7 +180,7 @@ def compare_models(
     )
 
 
-@mcp.tool()
+@_tool
 def recommend_models(
     platform: str | None = None,
     provider: str | None = None,
@@ -191,24 +213,23 @@ def recommend_models(
     )
 
 
-@mcp.tool()
+@_tool
 def scan_application(path: str, prompt_sources: list[str] | None = None) -> dict[str, Any]:
     """Scan a local Python application into a normalized coupling inventory.
 
-    `prompt_sources` optionally names prompt files (relative to the application
-    root) that automatic discovery missed; they become explicit high-confidence
-    prompt sources.
+    `prompt_sources` names prompt files automatic discovery missed (relative
+    to the application root).
     """
     return _json(_service().scan_application(path, prompt_sources=prompt_sources))
 
 
-@mcp.tool()
+@_tool
 def query_live_pricing(identifier: str, timeout: float = 5.0) -> dict[str, Any]:
     """Opt in to an OpenRouter pricing inquiry; canonical registry facts are unchanged."""
     return _json(_service().query_live_pricing(identifier, timeout=timeout))
 
 
-@mcp.tool()
+@_tool
 def estimate_migration_cost(
     source: str,
     target: str,
@@ -225,13 +246,13 @@ def estimate_migration_cost(
     return _json(_service().estimate_migration_cost(source, target, workload))
 
 
-@mcp.tool()
+@_tool
 def analyze_prompt(prompt: str) -> dict[str, Any]:
     """Conservatively analyze prompt characteristics without inference."""
     return _json(_service().analyze_prompt(prompt))
 
 
-@mcp.tool()
+@_tool
 def prepare_prompt_migration(
     source: str,
     target: str,
@@ -255,7 +276,7 @@ def prepare_prompt_migration(
     )
 
 
-@mcp.tool()
+@_tool
 def validate_prompt(
     target: str,
     prompt: str,
@@ -275,7 +296,7 @@ def validate_prompt(
     )
 
 
-@mcp.tool()
+@_tool
 def analyze_invocation(
     application_path: str,
     target: str | None = None,
@@ -289,7 +310,7 @@ def analyze_invocation(
     )
 
 
-@mcp.tool()
+@_tool
 def prepare_invocation_migration(
     application_path: str,
     source: str,
@@ -309,7 +330,7 @@ def prepare_invocation_migration(
     )
 
 
-@mcp.tool()
+@_tool
 def generate_migration_plan(
     application_path: str,
     source: str,
@@ -335,7 +356,7 @@ def generate_migration_plan(
     )
 
 
-@mcp.tool()
+@_tool
 def generate_migration_report(
     application_path: str,
     source: str,
@@ -359,7 +380,7 @@ def generate_migration_report(
     )
 
 
-@mcp.tool()
+@_tool
 def generate_eval_suite(
     migration_plan: dict[str, Any],
     cases: list[dict[str, Any]],
@@ -371,7 +392,7 @@ def generate_eval_suite(
     return _json(_service().generate_eval_suite(plan, corpus, name=name))
 
 
-@mcp.tool()
+@_tool
 def run_migration_eval(
     suite: dict[str, Any],
     source_config: dict[str, Any],
@@ -387,7 +408,7 @@ def run_migration_eval(
     )
 
 
-@mcp.tool()
+@_tool
 def compare_outputs(source_result: dict[str, Any], target_result: dict[str, Any]) -> dict[str, Any]:
     """Compare one paired source/target evaluation result deterministically."""
     return _json(
@@ -398,13 +419,13 @@ def compare_outputs(source_result: dict[str, Any], target_result: dict[str, Any]
     )
 
 
-@mcp.tool()
+@_tool
 def analyze_regressions(run: dict[str, Any]) -> dict[str, Any]:
     """Return a structured categorized regression report for an evaluation run."""
     return _json(_service().analyze_regressions(MigrationEvalRun.model_validate(run)))
 
 
-@mcp.tool()
+@_tool
 def optimize_migration(
     regression_report: dict[str, Any],
     candidate_runs: dict[str, dict[str, Any]] | None = None,
@@ -423,14 +444,14 @@ def optimize_migration(
     )
 
 
-@mcp.tool()
+@_tool
 def propose_registry_update(research: dict[str, Any]) -> dict[str, Any]:
     """Plan a registry update from supplied evidence without editing canonical files."""
     result = ResearchResult.model_validate(research)
     return _json(_service().propose_registry_update(result))
 
 
-@mcp.tool()
+@_tool
 def create_migration_research_request(
     application: str,
     run_id: str,
@@ -451,7 +472,7 @@ def create_migration_research_request(
     return _json(request)
 
 
-@mcp.tool()
+@_tool
 def validate_research_result(
     research: dict[str, Any],
     request: dict[str, Any],
@@ -464,7 +485,7 @@ def validate_research_result(
     return {"valid": not problems, "problems": problems}
 
 
-@mcp.tool()
+@_tool
 def validate_evidence_review(
     review: dict[str, Any],
     research: dict[str, Any],
@@ -477,7 +498,19 @@ def validate_evidence_review(
     return {"valid": not problems, "problems": problems}
 
 
-@mcp.tool()
+@_tool
+def validate_research_artifact(run_dir: str, scope: str) -> dict[str, Any]:
+    """Validate one scope's research artifacts directly from the run workspace.
+
+    Reads `request.yaml`, `research/<scope>.yaml`, and (when present)
+    `review/<scope>.yaml` and runs the deterministic scope/policy and
+    review-integrity gates; nothing is resent through the payload. `scope`
+    is `source`, `target`, or `pair`.
+    """
+    return _json(_service().validate_research_artifact(run_dir, scope))
+
+
+@_tool
 def build_research_consensus(
     research: dict[str, Any],
     review: dict[str, Any],
@@ -493,7 +526,7 @@ def build_research_consensus(
     )
 
 
-@mcp.tool()
+@_tool
 def build_session_registry(
     run_dir: str,
     now: str | None = None,
@@ -509,7 +542,7 @@ def build_session_registry(
     request = MigrationResearchRequest.model_validate(
         yaml.safe_load((workspace / "request.yaml").read_text(encoding="utf-8"))
     )
-    moment = datetime.fromisoformat(now) if now else datetime.now(UTC)
+    moment = utc_moment(now) or datetime.now(UTC)
     outcome = _service().run_agent_research(
         request,
         NullAgentRunner(),
@@ -521,7 +554,7 @@ def build_session_registry(
     return _json(outcome)
 
 
-@mcp.tool()
+@_tool
 def generate_session_migration_plan(
     application: str,
     source: str,
@@ -535,7 +568,7 @@ def generate_session_migration_plan(
     base = _service()
     session_service, manifest = base.load_session_service(
         Path(session_run_dir),
-        as_of=datetime.fromisoformat(now) if now else datetime.now(UTC),
+        as_of=utc_moment(now) or datetime.now(UTC),
     )
     plan = session_service.generate_migration_plan(
         Path(application),
@@ -548,7 +581,7 @@ def generate_session_migration_plan(
     return _json(plan)
 
 
-@mcp.tool()
+@_tool
 def start_migration(
     application_path: str,
     source: str,
@@ -565,13 +598,11 @@ def start_migration(
 ) -> dict[str, Any]:
     """Start a guided migration run; the preferred entry point for a full migration.
 
-    Matches both models against the local registry first (tolerating vague or
-    platform-decorated identifiers). If either identifier needs confirmation,
-    nothing is written and the result carries candidates to show the user.
-    Otherwise the run workspace is created (default
-    `<application>/.llm-migrate/runs/<run-id>/`, or `output_dir` when given), a
-    bounded research request is written only when knowledge is missing or
-    stale, and `next_steps` says exactly which tools to call next.
+    Both models match registry-first; if either needs confirmation, nothing
+    is written and `candidates` must be shown to the user. Otherwise the run
+    workspace is created, a bounded research request is written only when
+    knowledge is missing or stale, and `next_steps` says exactly what to
+    call next.
     """
     start = _service().start_migration_run(
         Path(application_path),
@@ -594,64 +625,54 @@ def start_migration(
     return result
 
 
-@mcp.tool()
+@_tool
 def get_research_prompts(run_dir: str) -> dict[str, Any]:
     """Ready-to-run researcher and reviewer prompts for a run's research request.
 
-    Renders one bounded, scope-isolated prompt pair per remaining scope from
-    `<run_dir>/request.yaml`. Run each prompt with a separate agent (never let
-    one agent research two scopes or review its own research), write the YAML
-    artifacts to the stated paths, validate them, then call
-    build_session_registry.
+    One bounded prompt pair per remaining scope. Run each with a separate
+    agent (never one agent for two scopes or reviewing its own research),
+    write the YAML artifacts to the stated paths, validate each with
+    validate_research_artifact, then call build_session_registry.
     """
     return _json(_service().get_research_prompts(run_dir))
 
 
-@mcp.tool()
+@_tool
 def list_adaptation_tasks(run_dir: str, now: str | None = None) -> dict[str, Any]:
-    """Per-file adaptation worklist for a started migration run. Call it once.
+    """Per-file adaptation worklist for a started migration run. Call it ONCE.
 
-    Derived from the run's migration plan (using its session overlay when one
-    was built). `shared_prompt_guidance` applies to every prompt task; each
-    task carries only its own guidance, and every guidance item has a stable
-    id for guidance_dispositions. Each prompt task's `verbatim_source` is the
-    ORIGINAL unmodified content — never a proposed adaptation, never to be
-    presented as one. Adapt each prompt minimally per the guidance and call
-    submit_adapted_prompt (disposing every guidance item); write each complete
-    adapted file and call submit_adapted_file (or pass unchanged=true when no
-    change is needed). Submission results confirm acceptance, so re-listing
-    between submissions is unnecessary; finalize_migration reports remaining
-    gaps.
+    `shared_prompt_guidance` applies to every prompt task; guidance items
+    carry stable ids for guidance_dispositions. Each prompt task's
+    `verbatim_source` is the ORIGINAL unmodified content, never a proposed
+    adaptation. Do not re-list between submissions; finalize_migration
+    reports remaining gaps.
     """
     return _json(
         _service().list_adaptation_tasks(
             run_dir,
-            now=datetime.fromisoformat(now) if now else None,
+            now=utc_moment(now),
         )
     )
 
 
-@mcp.tool()
+@_tool
 def get_blocker_resolutions(run_dir: str, now: str | None = None) -> dict[str, Any]:
     """Questions plus evidence-backed options for every unresolved blocker.
 
-    For each blocker of a started run, returns the question to ask the user
-    and 2-5 registry-backed options (retarget / redesign / correction /
-    accept-with-rationale), each with consequences, evidence URLs, and the
-    exact record_blocker_decision call to make once the user chooses. Present
-    questions, options, and evidence VERBATIM, one blocker at a time; never
-    choose on the user's behalf. Also reports how previously recorded
-    decisions applied, including stale ones.
+    Each blocker carries the question to ask the user and 2-5 registry-backed
+    options with consequences, evidence URLs, and the exact
+    record_blocker_decision call. Present them VERBATIM, one blocker at a
+    time; never choose on the user's behalf.
     """
     return _json(
         _service().get_blocker_resolutions(
             run_dir,
-            now=datetime.fromisoformat(now) if now else None,
+            now=utc_moment(now),
         )
     )
 
 
-@mcp.tool()
+@_tool
 def record_blocker_decision(
     run_dir: str,
     blocker_id: str,
@@ -662,14 +683,12 @@ def record_blocker_decision(
 ) -> dict[str, Any]:
     """Record the user's decision for one blocker; decisions are durable.
 
-    `blocker_id` and `option_id` must come from get_blocker_resolutions.
-    Accept options REQUIRE the user's own free-text `rationale` (they are
-    refused without one and are never a default). Retarget and correction
-    decisions update the run's migration.yaml identity immediately; redesign
-    decisions inject a required, evidence-linked adaptation task on every
-    plan regeneration; accept decisions downgrade the blocker to a
-    prominently reported accepted decision. The result lists the remaining
-    unresolved blockers and the exact next step.
+    Ids must come from get_blocker_resolutions. Accept options REQUIRE the
+    user's own free-text rationale and are never a default.
+    Retarget/correction decisions update the run identity immediately;
+    redesign decisions inject a required task on every regeneration; accept
+    decisions downgrade the blocker to a reported accepted risk. The result
+    lists the remaining blockers and the exact next step.
     """
     return _json(
         _service().record_blocker_decision(
@@ -678,12 +697,12 @@ def record_blocker_decision(
             option_id,
             rationale,
             decided_on=date.fromisoformat(decided_on) if decided_on else None,
-            now=datetime.fromisoformat(now) if now else None,
+            now=utc_moment(now),
         )
     )
 
 
-@mcp.tool()
+@_tool
 def submit_adapted_prompt(
     run_dir: str,
     source_path: str,
@@ -695,42 +714,22 @@ def submit_adapted_prompt(
     guidance_dispositions: list[dict[str, str]] | None = None,
     annotated_changes: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
-    """Validate and store one refined prompt for the target model.
+    """Validate and store one adapted prompt for the target model.
 
-    Adapt minimally: keep the original wording and structure except where a
-    listed model difference or evidence-linked guidance item requires a
-    change. `guidance_dispositions` must dispose EVERY guidance item of this
-    prompt's task (its `guidance` plus the worklist's
-    `shared_prompt_guidance`) exactly once, each entry `{"guidance_id": ...,
-    "disposition": "applied" | "not_applicable" | "declined", "note": ...}`
-    (a decline requires the note); missing or unknown ids are rejected.
-    Every edit must be documented in `annotated_changes`: each entry
-    `{"operation": "edit" | "insert" | "delete" | "restructure",
-    "original_anchor": <exact span of the original decoded content, for
-    edit/delete>, "adapted_anchor": <exact span of the adapted content, for
-    edit/insert>, "why": <one sentence: which target-model behavior needs
-    it>, "evidence": [{"kind": "model_guidance" | "model_difference" |
-    "analysis_finding" | "research" | "mechanical", "url": ..., "reference":
-    ...}]}`. Anchors are matched against the DECODED runtime values; every
-    diff hunk must be covered and every annotation must match a real edit
-    (undocumented or phantom changes are rejected); non-mechanical evidence
-    needs a url or reference. Validation runs on the DECODED runtime prompt
-    values, and a submission whose decoded values equal the original's — or
-    differ only by whitespace or letter case — is rejected: serialization
-    tricks, escapes, quoting and cosmetic edits are never an adaptation. If
-    the prompt needs no change, pass `unchanged=true` with an EMPTY
-    `adapted_prompt` (combining it with content is an error) to record a
-    reviewed no-change deliverable — the final report then states explicitly
-    that no change was needed and why; the claim is refused when the prompt's
-    decoded values still reference the source model, and it cannot mark any
-    guidance item as applied or carry annotated changes. Blockers are
-    rejected, and a submission that drops the original's structural sections
-    (XML-like tags or prompt components) is rejected unless
-    `allow_restructure` is true and the justification is recorded (a
-    `restructure` annotation with no anchors claims the whole rewrite).
-    Accepted prompts are written beneath `<run>/output/prompts/` mirroring
-    the application layout, and the annotations/dispositions appear verbatim
-    in the final migration report.
+    Adapt minimally: change only what a listed model difference or guidance
+    item requires. Dispose EVERY guidance item of the task (its `guidance`
+    plus `shared_prompt_guidance`) exactly once in `guidance_dispositions`:
+    {guidance_id, disposition: applied|not_applicable|declined, note
+    (required when declined)}. Document every edit in `annotated_changes`
+    against the DECODED runtime values: {operation: edit|insert|delete|
+    restructure, original_anchor/adapted_anchor (exact spans), why,
+    evidence: [{kind: model_guidance|model_difference|analysis_finding|
+    research|mechanical, url|reference}]}; every diff hunk covered, no
+    phantom annotations. Serialization-, whitespace-, or case-only edits
+    are rejected; structural drops need allow_restructure=true plus a
+    recorded justification. No change needed? Pass unchanged=true with an
+    EMPTY adapted_prompt (refused while the prompt still references the
+    source model). Deliverables land under <run>/output/prompts/.
     """
     return _json(
         _service().submit_adapted_prompt(
@@ -747,7 +746,7 @@ def submit_adapted_prompt(
     )
 
 
-@mcp.tool()
+@_tool
 def submit_adapted_file(
     run_dir: str,
     source_path: str,
@@ -759,23 +758,14 @@ def submit_adapted_file(
     guidance_dispositions: list[dict[str, str]] | None = None,
     annotated_changes: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
-    """Store one finalized post-adaptation application file for review.
+    """Store one complete adapted application file (never a diff) for review.
 
-    `adapted_content` must be the complete file, not a diff.
-    `guidance_dispositions` must dispose every required change of this
-    file's task exactly once (same shape and rules as prompt submissions),
-    and every edit to an existing file must be documented in
-    `annotated_changes` (same shape and rules as prompt submissions, with
-    anchors matched against the raw file content). Submissions are checked
-    deterministically (path containment, Python syntax, model-id
-    consistency, annotation-diff reconciliation) and written beneath
-    `<run>/output/files/`; the application tree itself is never modified. If
-    the file genuinely needs no change for the target model, pass
-    `unchanged=true` with an empty `adapted_content`: the original is copied
-    as the deliverable, the coverage gap closes without resending the file,
-    and the final report states explicitly that no change was needed and
-    why. Prompt source files are rejected here; submit them with
-    submit_adapted_prompt instead.
+    Same rules as submit_adapted_prompt: dispose every required change in
+    `guidance_dispositions` and document every edit in `annotated_changes`
+    (anchors match the raw file content). Deterministic checks gate the
+    write to `<run>/output/files/`; the application tree is never modified.
+    Pass unchanged=true with empty adapted_content for a reviewed no-change
+    file. Prompt sources are rejected here; use submit_adapted_prompt.
     """
     return _json(
         _service().submit_adapted_file(
@@ -792,42 +782,35 @@ def submit_adapted_file(
     )
 
 
-@mcp.tool()
+@_tool
 def finalize_migration(run_dir: str, now: str | None = None) -> dict[str, Any]:
     """Write the run's manifest, report, and adaptation change log under output/.
 
-    The report includes, per adapted file, what changed and why; deliverables
-    reviewed with no change needed are stated explicitly with their reasoning
-    (and counted separately as `reviewed_unchanged`); plus the affected files
-    that still lack an adaptation deliverable. Re-run it any time; it always
-    reflects the current submissions.
+    The report records per-file changes and rationale, states reviewed
+    no-change deliverables explicitly, and lists remaining coverage gaps.
+    Re-run it any time; it always reflects the current submissions.
     """
     return _json(
         _service().finalize_migration_run(
             run_dir,
-            now=datetime.fromisoformat(now) if now else None,
+            now=utc_moment(now),
         )
     )
 
 
-@mcp.tool()
+@_tool
 def get_change_review(run_dir: str) -> dict[str, Any]:
     """Per-deliverable annotated changes paired with their decision state.
 
-    For every submitted deliverable of a started run: the decoded unified
-    diff (original versus as-submitted content), and each annotated change
-    with its why, evidence, before/after spans, and status (pending /
-    accepted / rejected). Present each pending change VERBATIM, one at a
-    time; the user accepts or rejects each change — never decide for them.
-    Reviewed-unchanged deliverables have nothing to decide, a review whose
-    application file drifted since submission is marked stale, and decisions
-    that no longer match the current submission are listed under
-    `stale_decisions` (reported, never silently applied).
+    Returns each deliverable's decoded diff and every annotated change (why,
+    evidence, spans, pending/accepted/rejected). Present each pending change
+    VERBATIM, one at a time; the user decides, never you. Drift and stale
+    decisions are reported, never silently applied.
     """
     return _json(_service().get_change_review(run_dir))
 
 
-@mcp.tool()
+@_tool
 def record_change_decision(
     run_dir: str,
     source_path: str,
@@ -838,15 +821,11 @@ def record_change_decision(
 ) -> dict[str, Any]:
     """Record the user's accept/reject for one annotated change; durable.
 
-    `change_id` must come from get_change_review. `decision` is "accepted"
-    or "rejected" (an optional `note` records the user's reasoning). Every
-    recorded decision deterministically regenerates the deliverable under
-    output/ from the original content, the as-submitted content, and every
-    live rejection — rejecting every change leaves no annotated adaptation
-    in the deliverable. When the rejections cannot be applied
-    deterministically the decision is refused (NOT recorded) with the exact
-    reason; resubmit an adapted version reflecting the decisions instead.
-    The result lists the change ids still pending review for that file.
+    `change_id` comes from get_change_review. Every decision
+    deterministically regenerates the deliverable from the original, the
+    as-submitted content, and all live rejections; if that cannot be done
+    deterministically the decision is refused (NOT recorded) with the
+    reason. The result lists the change ids still pending for the file.
     """
     return _json(
         _service().record_change_decision(

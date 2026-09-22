@@ -40,10 +40,19 @@ explicitly, and each change is individually accepted or rejected with
 deterministic deliverable regeneration. See the V1.4 section below,
 `docs/adaptation-review.md`, and `docs/project_phases.md` §12.3.
 
+V1.4.1: Deployment-Run Immediate Relief — complete and released as `v1.4.1`
+on 2026-09-22, the patch tranche of the v1.5 plan, distilled from the audit
+of a real v1.4.0 production Bedrock migration run: portable
+atomic/locked run-state writes, UTC normalization at every MCP/CLI boundary,
+a ~40% tool-description diet plus the opt-in `LLM_MIGRATE_TOOLSET=guided`
+toolset, submission-format rejection tone, and path-based research artifact
+validation. See the V1.4.1 section below and `docs/project_phases.md` §12.4.
+
 ## Released foundation
 
-- Git tag `v1.4.0` is the current stable release; `v1.3.0`, `v1.2.0`,
-  `v1.1.0`, `v1.0.0`, and `v0.1.0` remain prior recorded release tags.
+- Git tag `v1.4.1` is the current stable release; `v1.4.0`, `v1.3.0`,
+  `v1.2.0`, `v1.1.0`, `v1.0.0`, and `v0.1.0` remain prior recorded release
+  tags.
 - The V0.1 reviewed registry, proposal workflow, provenance, freshness, model
   profiles, and directional Claude migration knowledge remain intact.
 - Every non-fixture provider profile has exactly one checked-in proposal
@@ -627,6 +636,33 @@ source-target `MigrationKnowledge`, not only individual model profiles.
   free-text `changes` list. Known accepted costs: each submission derives the
   plan (one scan per call, matching the blocker loop), and a rejection revert
   is not re-validated (it moves toward the already-validated original).
+
+## V1.4.1 completed capabilities
+
+- Durable run-state writes (2026-09-22): every run-workspace write is atomic
+  (temp file + `os.replace`, portable to Windows) and every read-modify-write
+  over `changes.yaml`, the blocker/change decision logs, deliverables, and
+  submission copies is serialized by an OS-level per-run advisory lock
+  (`core/runstate.py`); parallel host submissions no longer lose updates, and
+  a crashed holder never wedges the run.
+- UTC boundary normalization (2026-09-22): host timestamps entering through
+  MCP or the CLI are normalized by `core/moments.py` (naive means UTC), so
+  session-overlay expiry and freshness comparisons never mix naive and aware
+  datetimes.
+- Tool-surface diet (2026-09-22): guided-workflow tool descriptions cut ~40%
+  and the MCP server instructions 31% with the safety invariants kept
+  (verbatim presentation, the user decides, no-evidence-no-rewrite);
+  `LLM_MIGRATE_TOOLSET=guided` exposes only the 14 guided-workflow tools for
+  hosts with tight inline-tool budgets.
+- Submission-format rejection tone (2026-09-22): disposition/annotation
+  rejections state explicitly that they are format requirements of the tool
+  and not judgements on the adaptation content, so host agents repair the
+  payload instead of asking the user to "refine the prompt".
+- Research artifact validation by path (2026-09-22):
+  `validate_research_artifact(run_dir, scope)` (MCP and `llm-migrate
+  research validate-artifact`) validates researcher and reviewer YAML in
+  place with the existing deterministic gates; researcher/reviewer prompts
+  steer agents to it instead of resending full artifacts through MCP.
 
 ## Next work
 

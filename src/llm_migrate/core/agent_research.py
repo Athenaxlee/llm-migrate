@@ -195,6 +195,26 @@ class EvidenceReview(StrictModel):
         return self
 
 
+class ResearchArtifactValidation(StrictModel):
+    """Result of validating one scope's workspace research artifacts by path.
+
+    Path-based validation reads the researcher's (and, when present, the
+    reviewer's) YAML from the run workspace instead of requiring the full
+    artifact to be resent through a transport payload.
+    """
+
+    schema_version: Literal["1"] = "1"
+    run_id: str
+    scope: str
+    research_path: str = ""
+    review_path: str = ""
+    research_checked: bool = False
+    review_checked: bool = False
+    valid: bool
+    problems: list[str] = Field(default_factory=list)
+    message: str
+
+
 class TopicCoverage(StrEnum):
     COVERED = "covered"
     MISSING = "missing"

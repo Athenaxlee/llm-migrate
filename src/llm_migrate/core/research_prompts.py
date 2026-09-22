@@ -160,7 +160,8 @@ def _researcher_prompt(
         "",
         "Do not fabricate URLs, quotes, or retrieval dates. If evidence is missing, say "
         "so in unresolved_questions instead of guessing. When the file is written, "
-        "validate it (validate_research_result / `llm-migrate research validate-result`) "
+        f"validate it in place (validate_research_artifact(run_dir, scope={scope.value!r}) "
+        "/ `llm-migrate research validate-artifact`; no need to resend the artifact) "
         "and fix any reported problem before finishing.",
     ]
     return "\n".join(lines)
@@ -209,8 +210,9 @@ def _reviewer_prompt(
         "",
         "A `supported` verdict requires that you independently checked at least one of "
         "the claim's cited sources. Agreement with the researcher is not evidence; "
-        "verify, do not vote. When done, validate the file "
-        "(validate_evidence_review / `llm-migrate research validate-review`).",
+        "verify, do not vote. When done, validate the file in place "
+        f"(validate_research_artifact(run_dir, scope={scope.value!r}) / "
+        "`llm-migrate research validate-artifact`).",
     ]
     return "\n".join(lines)
 
@@ -262,9 +264,9 @@ def render_research_prompts(run_dir: Path) -> ResearchPromptPack:
             "scopes or review its own research.",
             "Scopes are independent: skip any scope whose status is already complete "
             "instead of re-running it.",
-            "Stage order per scope: research -> validate_research_result -> review (a "
-            "different agent) -> validate_evidence_review; after every scope is "
-            "complete, call build_session_registry once for the run.",
+            "Stage order per scope: research -> validate_research_artifact -> review "
+            "(a different agent) -> validate_research_artifact again; after every "
+            "scope is complete, call build_session_registry once for the run.",
             "If validation reports problems, fix only the reported problems and "
             "re-validate; do not restart completed scopes.",
         ],

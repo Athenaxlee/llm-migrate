@@ -1694,6 +1694,60 @@ post-decision rationale, and single-scan blocker calls).
 
 ---
 
+# 12.4. V1.4.1: Deployment-Run Immediate Relief (patch)
+
+Motivated by a real v1.4.0 migration run of a production Bedrock application,
+audited on 2026-09-22: the mechanical, low-risk failures (lost run-state
+updates under parallel submissions on a Windows host, naive/aware timestamp
+crashes, a tool surface past host inline budgets, rejection messages read as
+content judgements, research artifacts resent in full through MCP) got a
+patch release ahead of the v1.5 schema work on invocation identity and
+configuration coupling.
+
+## Scope
+
+- Durable run-state writes, portable: every run-workspace write goes through
+  `core/runstate.py` — atomic writes (temp file + `os.replace`, atomic on
+  POSIX and Windows) and an OS-level per-run advisory lock
+  (`fcntl.flock`/`msvcrt.locking` on `<run>/.llm-migrate.lock`, released by
+  the OS on process exit) around every read-modify-write of `changes.yaml`,
+  both decision logs, deliverables, and submission copies. Parallel
+  submissions from a concurrent host no longer lose updates. (F5)
+- UTC normalization at every MCP/CLI boundary (`core/moments.py`): naive
+  host timestamps are interpreted as UTC, aware ones converted, and internal
+  comparisons stay aware — no more naive/aware `TypeError` at the
+  session-overlay expiry check. (F6)
+- Tool-surface diet: the long guided-workflow tool descriptions were cut
+  ~40% (submit_adapted_prompt alone from 2.4k to 1.0k chars, server
+  instructions -31%) without losing the safety invariants, and the opt-in
+  `LLM_MIGRATE_TOOLSET=guided` exposes only the 14 guided-workflow tools for
+  hosts with tight inline-tool budgets. (F10)
+- Rejection-message tone: disposition/annotation rejections state explicitly
+  that they are submission-format requirements of the tool, not judgements
+  on the adaptation content, so host agents fix the payload instead of
+  bouncing "please refine your prompt" to the user.
+- Research artifact validation by path: `validate_research_artifact
+  (run_dir, scope)` (MCP + `llm-migrate research validate-artifact`) reads
+  the researcher and reviewer YAML from the run workspace and runs the
+  existing deterministic gates; the researcher/reviewer prompts now steer
+  agents to it, ending full-artifact resends through MCP. (F8, partial)
+
+## Boundary
+
+No schema versions change, no registry changes, no new workflow stages; the
+object-based validators remain for hosts that pass artifacts inline.
+
+## Current status
+
+Implemented on 2026-09-22 and released as `v1.4.1` the same day: the
+`runstate`/`moments` core modules, locked submission/decision persistence
+across workspace, blockers, and change review, boundary normalization across
+MCP and CLI, the trimmed tool surface with the guided toolset, and unit
+coverage for atomicity, cross-thread lock serialization, timeout, tone,
+path-based validation, naive-timestamp boundaries, and the guided toolset.
+
+---
+
 # 13. Cross-Phase Testing Strategy
 
 ## Unit tests

@@ -3,6 +3,35 @@
 All notable changes are documented here. The project follows semantic
 versioning.
 
+## 1.4.1 — 2026-09-22
+
+Immediate relief from a real v1.4.0 production migration run. No schema or
+registry changes.
+
+- Durable run-state writes: every run-workspace write is atomic (temp file +
+  `os.replace`, portable to Windows), and every read-modify-write over
+  `changes.yaml`, the blocker and change decision logs, deliverables, and
+  submission copies is serialized by an OS-level per-run advisory lock
+  (`fcntl`/`msvcrt` on `<run>/.llm-migrate.lock`, released automatically on
+  process exit). Parallel host submissions no longer lose updates, and a
+  crashed holder never wedges the run.
+- UTC normalization at every MCP/CLI boundary: naive host timestamps are
+  interpreted as UTC and aware ones converted, so session-overlay expiry and
+  freshness comparisons never raise naive/aware `TypeError`s.
+- Tool-surface diet: the guided-workflow tool descriptions were cut ~40%
+  (server instructions −31%) with the safety invariants kept, and the opt-in
+  `LLM_MIGRATE_TOOLSET=guided` environment variable exposes only the 14
+  guided-workflow tools for hosts with tight inline-tool budgets.
+- Rejection-message tone: disposition/annotation rejections state explicitly
+  that they are submission-format requirements of the tool, not judgements
+  on the adaptation content, so host agents repair the submission payload
+  instead of asking the user to "refine the prompt".
+- Research artifact validation by path: the new `validate_research_artifact`
+  MCP tool and `llm-migrate research validate-artifact` CLI command read the
+  researcher and reviewer YAML directly from the run workspace and run the
+  existing deterministic gates; the generated researcher/reviewer prompts
+  steer agents to them, ending full-artifact resends through MCP.
+
 ## 1.4.0 — 2026-09-21
 
 - Evidence-backed adaptation review: every changed submission documents each

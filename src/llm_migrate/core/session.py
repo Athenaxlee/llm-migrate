@@ -28,6 +28,7 @@ from llm_migrate.core.agent_research import (
 from llm_migrate.core.knowledge import MigrationKnowledge
 from llm_migrate.core.models import ModelProfile, StrictModel
 from llm_migrate.core.registry import ModelRegistry, RegistryError
+from llm_migrate.core.runstate import atomic_write_text
 
 
 class SessionOverlayError(RegistryError):
@@ -271,23 +272,14 @@ def write_session_overlay(
     candidates_dir = run_dir / "candidates"
     knowledge_dir = run_dir / "knowledge"
     for profile in candidate_profiles:
-        candidates_dir.mkdir(parents=True, exist_ok=True)
         path = candidates_dir / f"{_slug(profile.identity.canonical_name)}.yaml"
-        path.write_text(
-            yaml.safe_dump(profile.model_dump(mode="json"), sort_keys=False),
-            encoding="utf-8",
-        )
+        atomic_write_text(path, yaml.safe_dump(profile.model_dump(mode="json"), sort_keys=False))
     for item in migration_knowledge:
-        knowledge_dir.mkdir(parents=True, exist_ok=True)
         path = knowledge_dir / f"{_slug(item.id)}.yaml"
-        path.write_text(
-            yaml.safe_dump(item.model_dump(mode="json"), sort_keys=False),
-            encoding="utf-8",
-        )
+        atomic_write_text(path, yaml.safe_dump(item.model_dump(mode="json"), sort_keys=False))
     manifest_path = run_dir / "session-manifest.yaml"
-    manifest_path.write_text(
-        yaml.safe_dump(manifest.model_dump(mode="json"), sort_keys=False),
-        encoding="utf-8",
+    atomic_write_text(
+        manifest_path, yaml.safe_dump(manifest.model_dump(mode="json"), sort_keys=False)
     )
     return manifest_path
 

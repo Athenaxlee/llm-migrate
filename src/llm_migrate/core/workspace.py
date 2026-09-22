@@ -47,6 +47,7 @@ from llm_migrate.core.prompt_documents import (
     is_prompt_bearing,
     source_format,
 )
+from llm_migrate.core.runstate import atomic_write_text, run_state_lock
 
 RUN_CONFIG_FILENAME = "migration.yaml"
 CHANGES_FILENAME = "changes.yaml"
@@ -236,11 +237,7 @@ def load_change_decision_log(run_dir: Path, run_id: str) -> ChangeDecisionLog:
 
 def save_change_decision_log(run_dir: Path, log: ChangeDecisionLog) -> Path:
     path = Path(run_dir) / CHANGE_DECISIONS_FILENAME
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(
-        yaml.safe_dump(log.model_dump(mode="json"), sort_keys=False),
-        encoding="utf-8",
-    )
+    atomic_write_text(path, yaml.safe_dump(log.model_dump(mode="json"), sort_keys=False))
     return path
 
 
@@ -392,10 +389,7 @@ def write_run_config(run_dir: Path, config: MigrationRunConfig) -> Path:
     run_dir.mkdir(parents=True, exist_ok=True)
     (run_dir / "output").mkdir(exist_ok=True)
     path = run_dir / RUN_CONFIG_FILENAME
-    path.write_text(
-        yaml.safe_dump(config.model_dump(mode="json"), sort_keys=False),
-        encoding="utf-8",
-    )
+    atomic_write_text(path, yaml.safe_dump(config.model_dump(mode="json"), sort_keys=False))
     return path
 
 
@@ -421,12 +415,8 @@ def load_adaptation_log(run_dir: Path, run_id: str) -> AdaptationLog:
 
 def _save_adaptation_log(run_dir: Path, log: AdaptationLog) -> None:
     path = Path(run_dir) / "output" / CHANGES_FILENAME
-    path.parent.mkdir(parents=True, exist_ok=True)
     log = log.model_copy(update={"schema_version": "2"})
-    path.write_text(
-        yaml.safe_dump(log.model_dump(mode="json"), sort_keys=False),
-        encoding="utf-8",
-    )
+    atomic_write_text(path, yaml.safe_dump(log.model_dump(mode="json"), sort_keys=False))
 
 
 def _upsert_entry(log: AdaptationLog, entry: AdaptationEntry) -> AdaptationLog:
@@ -454,9 +444,7 @@ def submission_copy_path(run_dir: Path, kind: str, relative: Path | str) -> Path
 
 
 def _write_submission_copy(run_dir: Path, kind: str, relative: Path, content: str) -> None:
-    path = submission_copy_path(run_dir, kind, relative)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(content, encoding="utf-8")
+    atomic_write_text(submission_copy_path(run_dir, kind, relative), content)
 
 
 def _application_base(config: MigrationRunConfig) -> Path:
@@ -810,6 +798,15 @@ def _shorten(text: str, limit: int = 100) -> str:
     return text if len(text) <= limit else text[: limit - 1] + "…"
 
 
+_FORMAT_REQUIREMENT_NOTE = (
+    " NOTE: these rejection(s) are submission-format requirements of this tool "
+    "(guidance dispositions / annotated changes recorded in the submission "
+    "payload), not a judgement on the adaptation content. Fix the submission "
+    "fields and resubmit; do not ask the user to refine the prompt or the "
+    "adaptation."
+)
+
+
 def _disposition_problems(
     required: list[GuidanceItem],
     dispositions: list[GuidanceDisposition],
@@ -899,11 +896,12 @@ def submit_adapted_prompt(
         )
         if task is not None:
             required_guidance = [*task.guidance, *tasks.shared_prompt_guidance]
-    blockers.extend(_disposition_problems(required_guidance, dispositions, unchanged))
+    format_problems = _disposition_problems(required_guidance, dispositions, unchanged)
     if unchanged and annotations:
-        blockers.append(
+        format_problems.append(
             "unchanged=true cannot carry annotated_changes; there is no edit to annotate"
         )
+    blockers.extend(format_problems)
     original = _application_base(config) / relative
     original_text = original.read_text(encoding="utf-8") if original.is_file() else None
     format = STRUCTURED_SUFFIXES.get(relative.suffix.casefold())
@@ -991,6 +989,7 @@ def submit_adapted_prompt(
                 known_evidence_urls=known_evidence_urls,
             )
             blockers.extend(annotation_issues)
+            format_problems.extend(annotation_issues)
             structure_warnings.extend(annotation_warnings)
     if not adapted_prompt.strip():
         blockers.append("the adapted prompt is empty")
@@ -999,13 +998,12 @@ def submit_adapted_prompt(
             accepted=False,
             source_path=source_path,
             validation=validation,
-            message="Rejected: " + "; ".join(blockers),
+            message="Rejected: "
+            + "; ".join(blockers)
+            + (_FORMAT_REQUIREMENT_NOTE if format_problems else ""),
         )
     source_sha = _sha256(original_text) if original_text is not None else None
     output_path = Path(run_dir) / "output" / "prompts" / relative
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    output_path.write_text(adapted_prompt, encoding="utf-8")
-    _write_submission_copy(run_dir, "prompt", relative, adapted_prompt)
     guidance_texts = {item.id: item.text for item in required_guidance}
     entry = AdaptationEntry(
         kind="prompt",
@@ -1031,7 +1029,12 @@ def submit_adapted_prompt(
         ],
         annotated_changes=with_change_ids(annotations),
     )
-    _save_adaptation_log(run_dir, _upsert_entry(load_adaptation_log(run_dir, config.run_id), entry))
+    with run_state_lock(run_dir):
+        atomic_write_text(output_path, adapted_prompt)
+        _write_submission_copy(run_dir, "prompt", relative, adapted_prompt)
+        _save_adaptation_log(
+            run_dir, _upsert_entry(load_adaptation_log(run_dir, config.run_id), entry)
+        )
     return PromptSubmissionResult(
         accepted=True,
         source_path=source_path,
@@ -1094,9 +1097,9 @@ def submit_adapted_file(
         )
         if task is not None:
             required_changes = list(task.required_changes)
-    problems.extend(_disposition_problems(required_changes, dispositions, unchanged))
+    format_problems = _disposition_problems(required_changes, dispositions, unchanged)
     if unchanged and annotations:
-        problems.append(
+        format_problems.append(
             "unchanged=true cannot carry annotated_changes; there is no edit to annotate"
         )
     elif not unchanged and original is not None and adapted_content.strip():
@@ -1106,13 +1109,13 @@ def submit_adapted_file(
             annotations,
             known_evidence_urls=known_evidence_urls,
         )
-        problems.extend(annotation_issues)
+        format_problems.extend(annotation_issues)
         warnings.extend(annotation_warnings)
     elif annotations and original is None:
         standalone_problems, standalone_warnings = standalone_annotation_problems(
             annotations, known_evidence_urls
         )
-        problems.extend(standalone_problems)
+        format_problems.extend(standalone_problems)
         warnings.extend(standalone_warnings)
         warnings.append(
             "annotated_changes could not be checked against a diff because the file "
@@ -1159,12 +1162,15 @@ def submit_adapted_file(
         problems.append(
             "at least one annotated change (or `changes` entry) describing the edit is required"
         )
+    problems.extend(format_problems)
     if problems:
         return FileSubmissionResult(
             accepted=False,
             source_path=source_path,
             problems=problems,
-            message="Rejected: " + "; ".join(problems),
+            message="Rejected: "
+            + "; ".join(problems)
+            + (_FORMAT_REQUIREMENT_NOTE if format_problems else ""),
         )
     if config.source_model_id != config.target_model_id:
         if config.source_model_id in adapted_content:
@@ -1182,9 +1188,6 @@ def submit_adapted_file(
                 f"content never references the target model id {config.target_model_id!r}"
             )
     output_path = Path(run_dir) / "output" / "files" / relative
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    output_path.write_text(adapted_content, encoding="utf-8")
-    _write_submission_copy(run_dir, "file", relative, adapted_content)
     required_texts = {item.id: item.text for item in required_changes}
     entry = AdaptationEntry(
         kind="file",
@@ -1203,7 +1206,12 @@ def submit_adapted_file(
         ],
         annotated_changes=with_change_ids(annotations),
     )
-    _save_adaptation_log(run_dir, _upsert_entry(load_adaptation_log(run_dir, config.run_id), entry))
+    with run_state_lock(run_dir):
+        atomic_write_text(output_path, adapted_content)
+        _write_submission_copy(run_dir, "file", relative, adapted_content)
+        _save_adaptation_log(
+            run_dir, _upsert_entry(load_adaptation_log(run_dir, config.run_id), entry)
+        )
     return FileSubmissionResult(
         accepted=True,
         source_path=source_path,

@@ -40,6 +40,7 @@ def test_all_service_operations_are_exposed_as_mcp_tools() -> None:
         "optimize_migration",
         "create_migration_research_request",
         "validate_research_result",
+        "validate_research_artifact",
         "validate_evidence_review",
         "build_research_consensus",
         "build_session_registry",
