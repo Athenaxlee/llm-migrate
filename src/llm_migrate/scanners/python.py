@@ -26,6 +26,7 @@ from llm_migrate.core.prompt_documents import (
 )
 from llm_migrate.scanners.config import (
     ConfigDocument,
+    find_config_couplings,
     load_config_documents,
     lookup,
     resolve_reference,
@@ -185,6 +186,9 @@ class _Visitor(ast.NodeVisitor):
         self.prompt_document_vars: dict[str, str] = {}
         self.prompt_text_vars: dict[str, str] = {}
         self.prompt_source_facts: dict[str, list[str]] = {}
+        # Config documents whose values were traced into an invocation call
+        # chain; they anchor semantic config couplings (V1.5.0-b).
+        self.config_invocation_usage: set[str] = set()
         self.notes: list[str] = []
 
     def _expand(self, node: ast.AST) -> str:
@@ -533,6 +537,16 @@ class _Visitor(ast.NodeVisitor):
                 value=call_name,
                 metadata={"dynamic_request": True} if dynamic_request else None,
             )
+            # Config documents whose values reach this invocation are anchored:
+            # a name assigned from a loaded document, or a direct subscript
+            # chain into one (the same loader recognition prompt discovery uses).
+            for keyword in node.keywords:
+                for child in ast.walk(keyword.value):
+                    if isinstance(child, ast.Name) and child.id in self.document_vars:
+                        self.config_invocation_usage.add(self.document_vars[child.id][0])
+                    chain = _subscript_chain(child)
+                    if chain is not None and chain[0] in self.document_vars:
+                        self.config_invocation_usage.add(self.document_vars[chain[0]][0])
         keyword_map = {item.arg: item.value for item in node.keywords if item.arg}
         model_node = keyword_map.get("model") or keyword_map.get("modelId")
         model_value = self._value(model_node)
@@ -914,8 +928,69 @@ def _requirements(findings: list[ApplicationFinding]) -> ApplicationRequirements
     )
 
 
+_CONFIG_COUPLING_DETAILS: dict[str, tuple[CouplingKind, str]] = {
+    "model_id": (CouplingKind.MODEL_IDENTIFIER, "configures a model identifier"),
+    "sampling": (CouplingKind.PARAMETER, "configures a sampling parameter"),
+    "token_budget": (CouplingKind.PARAMETER, "configures a token budget"),
+    "region": (CouplingKind.CONFIGURATION, "configures model region/routing"),
+    "pricing": (CouplingKind.CONFIGURATION, "configures model pricing/cost telemetry"),
+}
+
+
+def _config_coupling_findings(
+    catalog: dict[str, ConfigDocument],
+    known_model_ids: set[str],
+    usage_anchored: set[str],
+) -> list[ApplicationFinding]:
+    """Semantic couplings from anchored config documents (V1.5.0-b).
+
+    Structured documents carry no parse locations, so findings anchor to line
+    1 with the exact key path in metadata.
+    """
+    findings: list[ApplicationFinding] = []
+    for relative in sorted(catalog):
+        document = catalog[relative]
+        couplings = find_config_couplings(
+            document, known_model_ids, usage_anchored=relative in usage_anchored
+        )
+        for coupling in couplings:
+            kind, detail = _CONFIG_COUPLING_DETAILS[coupling.value_kind]
+            key = coupling.key_path[-1]
+            provider = platform = None
+            if (
+                coupling.value_kind == "model_id"
+                and isinstance(coupling.value, str)
+                and "anthropic." in coupling.value
+            ):
+                provider, platform = "anthropic", "amazon-bedrock"
+            value: str | bool | int | float = (
+                coupling.value if coupling.value_kind == "model_id" else f"{key}={coupling.value}"
+            )
+            findings.append(
+                ApplicationFinding(
+                    kind=kind,
+                    provider=provider,
+                    platform=platform,
+                    value=value,
+                    detail=f"{detail} at {'.'.join(coupling.key_path)}",
+                    location=SourceLocation(path=relative, line=1, column=0),
+                    metadata={
+                        "config": relative,
+                        "key_path": ".".join(coupling.key_path),
+                        "value_kind": coupling.value_kind,
+                        "name": key,
+                        "value": coupling.value,
+                    },
+                )
+            )
+    return findings
+
+
 def scan_application(
-    root: Path | str, *, prompt_sources: Sequence[str] | None = None
+    root: Path | str,
+    *,
+    prompt_sources: Sequence[str] | None = None,
+    known_model_ids: Sequence[str] | None = None,
 ) -> ApplicationAnalysis:
     path = Path(root)
     if not path.exists():
@@ -947,6 +1022,7 @@ def scan_application(
     multimodal_inputs: list[MultimodalInputContract] = []
     warnings: list[str] = []
     discovered: dict[str, list[str]] = {}
+    config_usage: set[str] = set()
     for file_path in python_files:
         relative = file_path.relative_to(base).as_posix()
         try:
@@ -961,8 +1037,10 @@ def scan_application(
         structured_outputs.extend(visitor.structured_outputs)
         multimodal_inputs.extend(visitor.multimodal_inputs)
         warnings.extend(visitor.notes)
+        config_usage.update(visitor.config_invocation_usage)
         for source_path, provenance in visitor.prompt_source_facts.items():
             discovered.setdefault(source_path, provenance)
+    findings.extend(_config_coupling_findings(catalog, set(known_model_ids or ()), config_usage))
     warnings.extend(config_warnings)
     sources, source_warnings = assemble_prompt_sources(
         base, catalog, known_files, discovered, prompt_sources

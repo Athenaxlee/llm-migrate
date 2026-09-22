@@ -1,8 +1,12 @@
-"""Configuration file scanning for prompt provenance discovery.
+"""Configuration file scanning: prompt provenance and semantic config couplings.
 
 Parses YAML/JSON/TOML documents found in an application without executing any
-application code, and finds configuration values that reference prompt files
-(for example `prompts: {multi: prompt_lib/claude_prompt.yaml}`).
+application code, finds configuration values that reference prompt files
+(for example `prompts: {multi: prompt_lib/claude_prompt.yaml}`), and promotes
+model-coupled configuration values (model ids, sampling, token budgets,
+region/routing, pricing) to first-class couplings — but only when the document
+is anchored: a registry-matched model id spelling appears in it, or its values
+are traced into a detected invocation call chain.
 """
 
 from __future__ import annotations
@@ -10,7 +14,7 @@ from __future__ import annotations
 import posixpath
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from llm_migrate.core.models import PromptSourceFormat
 from llm_migrate.core.prompt_documents import (
@@ -122,3 +126,99 @@ def lookup(document: ConfigDocument, key_path: tuple[str, ...]) -> Any:
             return None
         node = node[key]
     return node
+
+
+# ---------------------------------------------------------------------------
+# Semantic configuration couplings (V1.5.0-b)
+# ---------------------------------------------------------------------------
+
+ConfigValueKind = Literal["model_id", "sampling", "token_budget", "region", "pricing"]
+
+_MODEL_ID_KEYS = {"model", "model_id", "modelid", "model_name"}
+_SAMPLING_KEYS = {"temperature", "top_p", "top_k"}
+_TOKEN_BUDGET_KEYS = {
+    "max_tokens",
+    "max_output_tokens",
+    "max_input_tokens",
+    "max_completion_tokens",
+    "budget_tokens",
+    "token_budget",
+}
+_REGION_KEYS = {"region", "region_name", "aws_region", "routing"}
+_PRICING_KEY_MARKERS = ("price", "pricing", "cost")
+
+
+@dataclass(frozen=True)
+class ConfigCoupling:
+    """One model-coupled configuration value in an anchored config document."""
+
+    key_path: tuple[str, ...]
+    value_kind: ConfigValueKind
+    value: str | bool | int | float
+
+
+def _value_kind(key: str, value: Any) -> ConfigValueKind | None:
+    lowered = key.casefold()
+    if (lowered in _MODEL_ID_KEYS or lowered.endswith(("_model", "_model_id"))) and isinstance(
+        value, str
+    ):
+        return "model_id"
+    if lowered in _SAMPLING_KEYS and isinstance(value, (int, float)):
+        return "sampling"
+    if lowered in _TOKEN_BUDGET_KEYS and isinstance(value, int):
+        return "token_budget"
+    if lowered in _REGION_KEYS and isinstance(value, str):
+        return "region"
+    if any(marker in lowered for marker in _PRICING_KEY_MARKERS) and isinstance(
+        value, (int, float)
+    ):
+        return "pricing"
+    return None
+
+
+def find_config_couplings(
+    document: ConfigDocument,
+    known_model_ids: set[str],
+    *,
+    usage_anchored: bool,
+) -> list[ConfigCoupling]:
+    """Model-coupled values in one config document, with precision guardrails.
+
+    A document contributes couplings only when the detection is anchored:
+    (a) a registry-matched model id spelling appears among its string values,
+    or (b) `usage_anchored` — the document's values were traced into a
+    detected invocation call chain. Pricing-shaped values are promoted only
+    under a model-id anchor (a): pricing alone never becomes a coupling.
+    """
+    candidates: list[ConfigCoupling] = []
+    model_anchored = False
+
+    def walk(node: Any, key_path: tuple[str, ...]) -> None:
+        nonlocal model_anchored
+        if isinstance(node, dict):
+            for key, value in node.items():
+                if isinstance(key, str):
+                    walk(value, (*key_path, key))
+        elif isinstance(node, list):
+            for item in node:
+                walk(item, key_path)
+        elif isinstance(node, (str, bool, int, float)) and key_path:
+            if isinstance(node, str) and node in known_model_ids:
+                model_anchored = True
+                candidates.append(
+                    ConfigCoupling(key_path=key_path, value_kind="model_id", value=node)
+                )
+                return
+            kind = _value_kind(key_path[-1], node)
+            if kind is not None:
+                candidates.append(ConfigCoupling(key_path=key_path, value_kind=kind, value=node))
+
+    walk(document.data, ())
+    if not model_anchored and not usage_anchored:
+        return []
+    return [
+        coupling
+        for coupling in candidates
+        # Pricing-shaped values without a model anchor are never couplings.
+        if coupling.value_kind != "pricing" or model_anchored
+    ]

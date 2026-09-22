@@ -127,6 +127,81 @@ def _difference_locations(
     return _locations(application, *kinds) if kinds else []
 
 
+def difference_governs_prompts(difference: ModelDifference) -> bool:
+    """Whether a model difference's governing surface is prompt content.
+
+    Prompt-governing differences travel as prompt guidance; every other
+    material difference attaches a required change to the files whose
+    detected couplings it governs (the one propagation mechanism).
+    """
+    if difference.category == "behavioral_prompt_guidance":
+        return True
+    if difference.category == "migration_knowledge":
+        return str(difference.source_value or "").startswith("prompt_guidance")
+    return False
+
+
+_DIFFERENCE_CHANGE_CATEGORIES: dict[str, str] = {
+    "parameters": "parameter",
+    "reasoning": "parameter",
+    "context_output_limits": "parameter",
+    "tool_use": "tool",
+    "parallel_tool_use": "tool",
+    "structured_output": "output_contract",
+    "multimodality": "multimodal",
+    "streaming": "invocation",
+    "prompt_caching": "invocation",
+    "batch_inference": "invocation",
+}
+
+
+def _difference_change_category(difference: ModelDifference) -> str:
+    category = difference.category
+    if category == "migration_knowledge":
+        field_path = str(difference.source_value or "")
+        if field_path.startswith("parameters."):
+            return "parameter"
+        if field_path.startswith("capabilities."):
+            capability = field_path.split(".", 1)[1]
+            return _DIFFERENCE_CHANGE_CATEGORIES.get(capability, "configuration")
+        return "invocation"
+    return _DIFFERENCE_CHANGE_CATEGORIES.get(category, "configuration")
+
+
+def _difference_text(difference: ModelDifference) -> str:
+    return (
+        f"Model difference ({difference.severity.value}): {difference.migration_impact}"
+        + (f" Action: {difference.recommended_action}" if difference.recommended_action else "")
+        + (
+            f" (evidence: {difference.target_evidence_url})"
+            if difference.target_evidence_url
+            else ""
+        )
+    )
+
+
+def _difference_changes(comparison: ModelComparison) -> list[PlannedMigrationChange]:
+    """One required change per material difference, on the files it governs.
+
+    The single difference-propagation mechanism: a non-prompt difference with
+    mapped locations becomes a required change on exactly those files;
+    prompt-governing differences travel through prompt guidance instead, and a
+    difference with no mapped coupling stays a report-level fact (nothing to
+    attach it to — never a phantom task).
+    """
+    return [
+        _change(
+            _difference_change_category(difference),
+            _difference_text(difference),
+            difference.locations,
+        )
+        for difference in comparison.differences
+        if difference.severity is not ComparisonSeverity.INFO
+        and difference.locations
+        and not difference_governs_prompts(difference)
+    ]
+
+
 def _change(
     category: str, description: str, locations: list[SourceLocation]
 ) -> PlannedMigrationChange:
@@ -374,8 +449,11 @@ def generate_application_migration_plan(
             unknowns.append(difference.migration_impact)
 
     required_changes = [
-        _change("invocation", item, _locations(application, CouplingKind.INVOCATION))
-        for item in invocation.required_changes
+        *(
+            _change("invocation", item, _locations(application, CouplingKind.INVOCATION))
+            for item in invocation.required_changes
+        ),
+        *_difference_changes(comparison),
     ]
     optional_changes: list[PlannedMigrationChange] = []
     for prompt in prompt_changes:
@@ -439,6 +517,15 @@ def generate_application_migration_plan(
             *(item.source_path for item in prompt_changes if item.source_path),
         }
     )
+    # Files whose only detected coupling is an incidental SDK import carry no
+    # migration work of their own; the worklist lists them as unaffected
+    # instead of manufacturing a generic adaptation task per file.
+    findings_by_file: dict[str, set[CouplingKind]] = {}
+    for finding in application.findings:
+        findings_by_file.setdefault(finding.location.path, set()).add(finding.kind)
+    incidental_files = sorted(
+        file for file, kinds in findings_by_file.items() if kinds <= {CouplingKind.PROVIDER_SDK}
+    )
     complexity = migration_complexity(
         blockers, comparison.highest_severity, required_changes, warnings
     )
@@ -472,6 +559,7 @@ def generate_application_migration_plan(
         ],
         model_differences=comparison,
         affected_files=affected_files,
+        incidental_files=incidental_files,
         required_changes=required_changes,
         optional_changes=optional_changes,
         blockers=blockers,

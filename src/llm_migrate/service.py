@@ -64,6 +64,10 @@ from llm_migrate.core.change_review import (
     record_change_decision as review_record_change_decision,
 )
 from llm_migrate.core.comparison import compare_models
+from llm_migrate.core.consistency import (
+    check_cross_surface_consistency,
+    render_consistency_section,
+)
 from llm_migrate.core.evaluation import (
     CustomEvaluator,
     EvaluationExecutor,
@@ -179,6 +183,7 @@ from llm_migrate.core.workspace import (
     MigrationRunStart,
     PromptSubmissionResult,
     ResearchNeed,
+    UnaffectedConfirmation,
     coverage_gaps,
     decision_matches_entry,
     default_run_dir,
@@ -422,13 +427,33 @@ class MigrationService:
             result = result.model_copy(update={"pricing_overlays": overlays})
         return result
 
+    def _model_id_spellings(self) -> list[str]:
+        """Every reviewed model-id spelling in the registry (bare + selectors).
+
+        Anchors semantic config-coupling detection: a config document that
+        names any of these spellings is model-coupled.
+        """
+        spellings: set[str] = set()
+        for profile in self.registry.all():
+            for platform in profile.platforms:
+                spellings.add(platform.model_id)
+                if platform.invocation is not None:
+                    spellings.update(
+                        selector.model_id for selector in platform.invocation.selectors
+                    )
+        return sorted(spellings)
+
     def scan_application(
         self,
         root: Path | str,
         *,
         prompt_sources: Sequence[str] | None = None,
     ) -> ApplicationAnalysis:
-        return scan_application(root, prompt_sources=prompt_sources)
+        return scan_application(
+            root,
+            prompt_sources=prompt_sources,
+            known_model_ids=self._model_id_spellings(),
+        )
 
     def query_live_pricing(
         self,
@@ -2078,6 +2103,90 @@ class MigrationService:
             decided_on=decided_on,
         )
 
+    def confirm_unaffected(
+        self,
+        run_dir: Path | str,
+        paths: Sequence[str],
+        rationale: str,
+        *,
+        submitted_on: date | None = None,
+        now: datetime | None = None,
+    ) -> UnaffectedConfirmation:
+        """Close every listed unaffected file with one reviewed no-change entry.
+
+        Each path is validated independently (per-file accept/reject): it must
+        be on the worklist's `unaffected_files` list — a file with required
+        changes needs a real submission, and a file already confirmed or
+        outside the worklist is refused. Every accepted path passes the
+        existing unchanged guards and lands in `changes.yaml` exactly like an
+        individual unchanged submission.
+        """
+        workspace = Path(run_dir)
+        config = load_run_config(workspace)
+        if not rationale.strip():
+            raise ValueError(
+                "confirm_unaffected requires a rationale recording the review that "
+                "found these files unaffected"
+            )
+        plan = self._plan_for_run(config, workspace, now=now)
+        tasks = derive_adaptation_tasks(config, plan, workspace)
+        allowed = set(tasks.unaffected_files)
+        task_paths = {task.source_path for task in tasks.file_tasks} | {
+            task.source_path for task in tasks.prompt_tasks
+        }
+        results: list[FileSubmissionResult] = []
+        for path in dict.fromkeys(paths):
+            if path in allowed:
+                results.append(
+                    workspace_submit_adapted_file(
+                        workspace,
+                        config,
+                        path,
+                        "",
+                        rationale,
+                        [],
+                        submitted_on or date.today(),
+                        unchanged=True,
+                        tasks=tasks,
+                    )
+                )
+            elif path in task_paths:
+                results.append(
+                    FileSubmissionResult(
+                        accepted=False,
+                        source_path=path,
+                        problems=[
+                            "this file has its own adaptation task with required "
+                            "changes; submit it through submit_adapted_file or "
+                            "submit_adapted_prompt instead"
+                        ],
+                        message="Rejected: the file has required changes.",
+                    )
+                )
+            else:
+                results.append(
+                    FileSubmissionResult(
+                        accepted=False,
+                        source_path=path,
+                        problems=[
+                            "this path is not on the worklist's unaffected_files list "
+                            "(already confirmed, or not part of this run)"
+                        ],
+                        message="Rejected: not an unconfirmed unaffected file.",
+                    )
+                )
+        confirmed = sum(item.accepted for item in results)
+        rejected = len(results) - confirmed
+        return UnaffectedConfirmation(
+            run_id=config.run_id,
+            results=results,
+            confirmed=confirmed,
+            message=(
+                f"{confirmed} unaffected file(s) recorded as reviewed no-change "
+                f"entries; {rejected} path(s) rejected (see per-file results)."
+            ),
+        )
+
     def finalize_migration_run(
         self,
         run_dir: Path | str,
@@ -2087,7 +2196,10 @@ class MigrationService:
         """Write the manifest, the report with per-file changes/rationale, and gaps."""
         workspace = Path(run_dir)
         config = load_run_config(workspace)
-        plan = self._plan_for_run(config, workspace, now=now)
+        analysis = self.scan_application(
+            config.application_root, prompt_sources=config.prompt_sources or None
+        )
+        plan = self._plan_for_run(config, workspace, now=now, analysis=analysis)
         log = load_adaptation_log(workspace, config.run_id)
         paths = run_paths(workspace)
         Path(paths.output_dir).mkdir(parents=True, exist_ok=True)
@@ -2095,11 +2207,14 @@ class MigrationService:
         tasks = derive_adaptation_tasks(config, plan, workspace, log)
         gaps = coverage_gaps(tasks)
         change_decisions = load_change_decision_log(workspace, config.run_id)
+        consistency = check_cross_surface_consistency(workspace, config, analysis, log)
         report = self.migration_report(plan)
         report = (
             report.rstrip("\n")
             + "\n\n"
             + render_adaptation_section(log, gaps, change_decisions)
+            + "\n"
+            + render_consistency_section(consistency)
             + "\n"
         )
         atomic_write_text(paths.report_path, report)
@@ -2157,6 +2272,8 @@ class MigrationService:
             reviewed_unchanged=reviewed_unchanged,
             undecided_changes=undecided_changes,
             coverage_gaps=gaps,
+            consistency_findings=[finding.rendered for finding in consistency],
+            unconfirmed_unaffected=list(tasks.unaffected_files),
             message=(
                 "Migration run finalized. Review output/migration-report.md; "
                 + (
@@ -2167,6 +2284,18 @@ class MigrationService:
                 + (
                     f"{reviewed_unchanged} deliverable(s) were reviewed and needed no change; "
                     if reviewed_unchanged
+                    else ""
+                )
+                + (
+                    f"{len(tasks.unaffected_files)} unaffected file(s) still await a "
+                    "confirm_unaffected entry; "
+                    if tasks.unaffected_files
+                    else ""
+                )
+                + (
+                    f"{len(consistency)} cross-surface consistency finding(s) need "
+                    "review (see the report's consistency section); "
+                    if consistency
                     else ""
                 )
                 + (

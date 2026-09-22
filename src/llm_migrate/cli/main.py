@@ -1368,6 +1368,26 @@ def run_submit_file(
         raise typer.Exit(1)
 
 
+@run_app.command("confirm-unaffected")
+def run_confirm_unaffected(
+    run_dir: Path,
+    paths: Annotated[list[str], typer.Argument(metavar="PATH...")],
+    rationale: Annotated[
+        str, typer.Option("--rationale", help="Why these files were reviewed as unaffected.")
+    ],
+    registry: Annotated[Path | None, typer.Option(help="Registry root.")] = None,
+) -> None:
+    """Record reviewed no-change entries for the worklist's unaffected files."""
+    try:
+        confirmation = _service(registry).confirm_unaffected(run_dir, paths, rationale)
+    except (RegistryError, ValueError) as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(2) from exc
+    _emit(confirmation)
+    if confirmation.confirmed != len(confirmation.results):
+        raise typer.Exit(1)
+
+
 @run_app.command("finalize")
 def run_finalize(
     run_dir: Path,

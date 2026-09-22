@@ -43,6 +43,7 @@ from llm_migrate.core.models import (
     StrictModel,
     ValidationLevel,
 )
+from llm_migrate.core.planning import difference_governs_prompts
 from llm_migrate.core.prompt_documents import (
     STRUCTURED_SUFFIXES,
     build_candidate_document,
@@ -335,11 +336,14 @@ class AdaptationTaskList(StrictModel):
     """Everything still needed to produce a complete adaptation output set.
 
     `target_model_id` stays the bare platform id; `target_invocation_model_id`
-    (additive) is the selector-qualified id deliverables must reference when a
-    selector was chosen.
+    is the selector-qualified id deliverables must reference when a selector
+    was chosen. Schema version 4 adds `unaffected_files`: files whose only
+    detected coupling is an incidental SDK import — no adaptation task, one
+    reviewed no-change confirmation via `confirm_unaffected` (a full
+    adaptation may still be submitted for them).
     """
 
-    schema_version: Literal["3"] = "3"
+    schema_version: Literal["3", "4"] = "4"
     run_id: str
     source_model: str
     target_model: str
@@ -348,6 +352,7 @@ class AdaptationTaskList(StrictModel):
     target_invocation_selector: str | None = None
     prompt_tasks: list[PromptAdaptationTask] = Field(default_factory=list)
     file_tasks: list[FileAdaptationTask] = Field(default_factory=list)
+    unaffected_files: list[str] = Field(default_factory=list)
     blockers: list[str] = Field(default_factory=list)
     guidance: list[str] = Field(default_factory=list)
     shared_prompt_guidance: list[GuidanceItem] = Field(default_factory=list)
@@ -370,6 +375,16 @@ class FileSubmissionResult(StrictModel):
     message: str
 
 
+class UnaffectedConfirmation(StrictModel):
+    """Per-file outcome of one confirm_unaffected call."""
+
+    schema_version: Literal["1"] = "1"
+    run_id: str
+    results: list[FileSubmissionResult] = Field(default_factory=list)
+    confirmed: int = 0
+    message: str
+
+
 class MigrationRunFinalization(StrictModel):
     """Summary of the finalized run output set.
 
@@ -377,10 +392,12 @@ class MigrationRunFinalization(StrictModel):
     unresolved, blockers resolved by a recorded user decision (with the
     decision), and recorded decisions that no longer match a live blocker.
     Deliverables that were reviewed and needed no change are counted in
-    `reviewed_unchanged`, never inflated into the adapted counts.
+    `reviewed_unchanged`, never inflated into the adapted counts. Schema
+    version 5 adds the cross-surface consistency findings and the unaffected
+    files still awaiting a confirm_unaffected entry.
     """
 
-    schema_version: Literal["4"] = "4"
+    schema_version: Literal["5"] = "5"
     run_id: str
     manifest_path: str
     report_path: str
@@ -393,6 +410,8 @@ class MigrationRunFinalization(StrictModel):
     reviewed_unchanged: int = 0
     undecided_changes: list[str] = Field(default_factory=list)
     coverage_gaps: list[str] = Field(default_factory=list)
+    consistency_findings: list[str] = Field(default_factory=list)
+    unconfirmed_unaffected: list[str] = Field(default_factory=list)
     message: str
 
 
@@ -591,6 +610,9 @@ def derive_adaptation_tasks(
         if spec.source_path is None:
             continue  # No real path means no submittable (or closable) task.
         specs_by_path.setdefault(spec.source_path, []).append(spec)
+    # One difference-propagation mechanism: non-prompt differences reach the
+    # worklist as required changes on the files they govern (attached by the
+    # plan); only prompt-governing differences travel as prompt guidance.
     difference_guidance = [
         invocation_qualified(
             f"Model difference ({item.severity.value}): {item.migration_impact}"
@@ -598,7 +620,7 @@ def derive_adaptation_tasks(
             + (f" (evidence: {item.target_evidence_url})" if item.target_evidence_url else "")
         )
         for item in plan.model_differences.differences
-        if item.category == "migration_knowledge" and item.severity is not ComparisonSeverity.INFO
+        if item.severity is not ComparisonSeverity.INFO and difference_governs_prompts(item)
     ]
     for source_path, specs in sorted(specs_by_path.items()):
         prompt_paths.add(source_path)
@@ -675,8 +697,17 @@ def derive_adaptation_tasks(
         if file not in prompt_paths and file != "<application>"
     ]
     covered = {task.source_path for task in file_tasks} | prompt_paths
+    incidental = set(plan.incidental_files)
+    unaffected_files: list[str] = []
     for file in plan.affected_files:
         if file in covered:
+            continue
+        if file in incidental:
+            # Only an incidental SDK import couples this file: no task, one
+            # confirm_unaffected entry closes it (a full adaptation may still
+            # be submitted for it).
+            if ("file", file) not in submitted:
+                unaffected_files.append(file)
             continue
         file_tasks.append(
             FileAdaptationTask(
@@ -693,6 +724,7 @@ def derive_adaptation_tasks(
             )
         )
     file_tasks.sort(key=lambda task: task.source_path)
+    unaffected_files.sort()
     # Required changes that target a prompt file (e.g. a decision-injected
     # prompt-reduction task) belong on that prompt task's guidance — prompt
     # paths are excluded from file tasks, and dropping them would lose a
@@ -746,9 +778,21 @@ def derive_adaptation_tasks(
         target_invocation_selector=config.target_invocation_selector,
         prompt_tasks=prompt_tasks,
         file_tasks=file_tasks,
+        unaffected_files=unaffected_files,
         blockers=[blocker.rendered for blocker in plan.blockers],
         guidance=[
             *application_level_changes,
+            *(
+                [
+                    "Files under `unaffected_files` couple to the migration only "
+                    "through an incidental SDK import and need no adaptation: close "
+                    "them all with ONE confirm_unaffected(run_dir, paths, rationale) "
+                    "call (each records a reviewed no-change entry), or submit an "
+                    "adaptation for any you disagree about."
+                ]
+                if unaffected_files
+                else []
+            ),
             "Read each source file from the application, produce the complete adapted "
             "version, and submit it with submit_adapted_file; submit rewritten prompts "
             "with submit_adapted_prompt.",

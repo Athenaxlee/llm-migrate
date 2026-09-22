@@ -52,6 +52,7 @@ def test_all_service_operations_are_exposed_as_mcp_tools() -> None:
         "record_blocker_decision",
         "submit_adapted_prompt",
         "submit_adapted_file",
+        "confirm_unaffected",
         "finalize_migration",
         "get_change_review",
         "record_change_decision",

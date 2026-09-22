@@ -430,7 +430,7 @@ def test_worklist_names_verbatim_source_and_disposition_rules(
     )
     assert start.paths is not None
     tasks = service.list_adaptation_tasks(start.paths.run_dir)
-    assert tasks.schema_version == "3"
+    assert tasks.schema_version == "4"
     assert tasks.prompt_tasks[0].verbatim_source
     assert any("verbatim_source` is the ORIGINAL" in line for line in tasks.guidance)
     assert any("dispose EVERY guidance item" in line for line in tasks.guidance)

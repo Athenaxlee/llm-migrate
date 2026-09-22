@@ -1159,6 +1159,7 @@ class MigrationPlan(StrictModel):
     target_selection_rationale: list[str]
     model_differences: ModelComparison
     affected_files: list[str]
+    incidental_files: list[str] = Field(default_factory=list)
     required_changes: list[PlannedMigrationChange]
     optional_changes: list[PlannedMigrationChange]
     blockers: list[MigrationBlocker]

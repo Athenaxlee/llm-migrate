@@ -61,6 +61,7 @@ exposes only its tools):
    when no change is needed. Every submission disposes every guidance item in
    guidance_dispositions and documents every edit in annotated_changes
    (anchors, why, evidence); undocumented or phantom changes are rejected.
+   Close every `unaffected_files` entry with ONE confirm_unaffected call.
    Deliverables live under <run>/output/, never in the application tree.
 5. finalize_migration(run_dir) — writes the manifest and report and lists
    remaining coverage gaps and undecided changes.
@@ -91,6 +92,7 @@ _GUIDED_TOOL_NAMES = frozenset(
         "record_blocker_decision",
         "submit_adapted_prompt",
         "submit_adapted_file",
+        "confirm_unaffected",
         "finalize_migration",
         "get_change_review",
         "record_change_decision",
@@ -783,11 +785,29 @@ def submit_adapted_file(
 
 
 @_tool
+def confirm_unaffected(
+    run_dir: str,
+    paths: list[str],
+    rationale: str,
+    now: str | None = None,
+) -> dict[str, Any]:
+    """Close every listed `unaffected_files` entry with one reviewed no-change call.
+
+    Each path is validated independently (per-file accept/reject in
+    `results`): only files on the worklist's `unaffected_files` list qualify —
+    a file with required changes needs a real submission. Each accepted path
+    records a reviewed no-change entry that appears in the final report.
+    """
+    return _json(_service().confirm_unaffected(run_dir, paths, rationale, now=utc_moment(now)))
+
+
+@_tool
 def finalize_migration(run_dir: str, now: str | None = None) -> dict[str, Any]:
     """Write the run's manifest, report, and adaptation change log under output/.
 
     The report records per-file changes and rationale, states reviewed
-    no-change deliverables explicitly, and lists remaining coverage gaps.
+    no-change deliverables explicitly, lists remaining coverage gaps, and runs
+    the cross-surface consistency gate over the whole deliverable set.
     Re-run it any time; it always reflects the current submissions.
     """
     return _json(

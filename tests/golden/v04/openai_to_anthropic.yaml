@@ -516,6 +516,7 @@ migration:
     pricing_overlays: []
   affected_files:
   - app.py
+  incidental_files: []
   required_changes:
   - category: invocation
     description: Replace model identifier with claude-sonnet-5 in field model.
@@ -581,6 +582,60 @@ migration:
       line: 7
       column: 11
       end_line: 43
+  - category: configuration
+    description: 'Model difference (high): Provider SDK and invocation code may change.
+      Action: Review authentication, SDK, request, and response mappings. (evidence:
+      https://platform.claude.com/docs/en/about-claude/models/overview)'
+    files:
+    - app.py
+    locations:
+    - path: app.py
+      line: 3
+      column: 0
+      end_line: 3
+  - category: configuration
+    description: 'Model difference (high): Selected deployment platforms differ. Action:
+      Confirm endpoint, region, authentication, and platform feature support. (evidence:
+      https://platform.claude.com/docs/en/about-claude/models/overview)'
+    files:
+    - app.py
+    locations:
+    - path: app.py
+      line: 8
+      column: 10
+      end_line: 8
+  - category: tool
+    description: 'Model difference (low): One or both values for ''parallel_tool_use''
+      are unknown; compatibility must not be assumed. Action: Verify both source reliance
+      and target support before migration. (evidence: https://platform.claude.com/docs/en/about-claude/models/overview)'
+    files:
+    - app.py
+    locations:
+    - path: app.py
+      line: 20
+      column: 10
+      end_line: 31
+  - category: parameter
+    description: 'Model difference (high): The context window limit changes. Action:
+      Test workloads near the source limit. (evidence: https://platform.claude.com/docs/en/about-claude/models/overview)'
+    files:
+    - app.py
+    locations:
+    - path: app.py
+      line: 9
+      column: 10
+      end_line: 17
+  - category: parameter
+    description: 'Model difference (high): One or both values for ''reasoning_effort''
+      are unknown; compatibility must not be assumed. Action: Map, verify, or remove
+      ''reasoning_effort'' before invoking the target. (evidence: https://platform.claude.com/docs/en/about-claude/models/whats-new-sonnet-5)'
+    files:
+    - app.py
+    locations:
+    - path: app.py
+      line: 19
+      column: 21
+      end_line: 19
   optional_changes: []
   blockers: []
   decisions: []

@@ -546,6 +546,7 @@ migration:
     pricing_overlays: []
   affected_files:
   - app.py
+  incidental_files: []
   required_changes:
   - category: invocation
     description: Replace model identifier with claude-sonnet-5 in field model.
@@ -558,6 +559,39 @@ migration:
       end_line: 9
   - category: invocation
     description: Use anthropic.Anthropic and messages.create.
+    files:
+    - app.py
+    locations:
+    - path: app.py
+      line: 4
+      column: 11
+      end_line: 9
+  - category: configuration
+    description: 'Model difference (high): Selected deployment platforms differ. Action:
+      Confirm endpoint, region, authentication, and platform feature support. (evidence:
+      https://platform.claude.com/docs/en/about-claude/models/overview)'
+    files:
+    - app.py
+    locations:
+    - path: app.py
+      line: 5
+      column: 10
+      end_line: 5
+  - category: invocation
+    description: 'Model difference (breaking): Assistant message prefilling accepted
+      by Sonnet 4.5 is rejected on Sonnet 5. Action: Use structured outputs, system
+      instructions, or output_config.format. (evidence: https://platform.claude.com/docs/en/about-claude/models/migration-guide)'
+    files:
+    - app.py
+    locations:
+    - path: app.py
+      line: 4
+      column: 11
+      end_line: 9
+  - category: invocation
+    description: 'Model difference (high): Sonnet 5 uses a new tokenizer; earlier
+      token counts must not be reused. Action: Recount prompts and revise token and
+      cost budgets. (evidence: https://platform.claude.com/docs/en/about-claude/models/whats-new-sonnet-5)'
     files:
     - app.py
     locations:

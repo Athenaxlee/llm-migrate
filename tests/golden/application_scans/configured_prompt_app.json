@@ -111,6 +111,26 @@
       "platform": "amazon-bedrock",
       "provider": "anthropic",
       "value": "messages"
+    },
+    {
+      "detail": "configures a model identifier at models.claude.model_id",
+      "kind": "model_identifier",
+      "location": {
+        "column": 0,
+        "end_line": null,
+        "line": 1,
+        "path": "model_profiles.yaml"
+      },
+      "metadata": {
+        "config": "model_profiles.yaml",
+        "key_path": "models.claude.model_id",
+        "name": "model_id",
+        "value": "anthropic.claude-sonnet-4-6",
+        "value_kind": "model_id"
+      },
+      "platform": "amazon-bedrock",
+      "provider": "anthropic",
+      "value": "anthropic.claude-sonnet-4-6"
     }
   ],
   "multimodal_inputs": [],
