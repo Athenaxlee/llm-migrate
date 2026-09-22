@@ -226,8 +226,12 @@ The `llm-migrate` MCP server does not contain an embedded model or general web
 search tool.
 
 Hosts with tight inline-tool budgets can set the environment variable
-`LLM_MIGRATE_TOOLSET=guided` on the server process to expose only the 14
-guided-workflow tools; the default (`full`) exposes everything.
+`LLM_MIGRATE_TOOLSET=guided` on the server process to expose only the
+guided-workflow tools; the default (`full`) exposes everything. Production
+migrations can pass `strict=true` to `start_migration` (CLI
+`run start --strict`) so unknown evidence, missing invocation facts,
+incomplete coverage, consistency findings, and a missing validation
+disposition block delivery instead of warning.
 
 ## First migration with an agent
 
@@ -300,9 +304,14 @@ available for manual or partial use.
 | `record_blocker_decision` | The user has chosen an option | Records the decision durably in the run's `decisions.yaml` (accepts require the user's own rationale); retarget/correction decisions update the run identity registry-first, redesign decisions inject the required evidence-linked task, and stale decisions are reported, never silently applied |
 | `submit_adapted_prompt` | The host has written an improved target-model prompt | Statically validates it against the target and stores it under `output/prompts/`; every guidance item must be disposed (applied / not applicable / declined with a note) and every edit documented as an anchored, evidence-linked annotated change reconciled against the real diff of the decoded runtime values — undocumented or phantom edits are rejected, and `unchanged=true` records an explicitly reported no-change deliverable |
 | `submit_adapted_file` | The host has written one complete adapted application file | Applies fail-closed checks (path containment, Python syntax, actually changed, model-id consistency) plus the same disposition and annotated-change reconciliation, and stores it under `output/files/` |
+| `submit_adaptations` | Several deliverables are ready at once | Validates every item independently (per-item accept/reject, never all-or-nothing) and applies the accepted subset in one locked, atomic write to `changes.yaml` |
+| `confirm_unaffected` | The worklist lists `unaffected_files` (incidental SDK imports only) | Closes them all in one call, recording a reviewed no-change entry per file through the same unchanged guards |
+| `get_run_status` | Any time between steps | Reports the run's state machine position (research → blockers → tasks → review → ready_to_finalize) with the single next action, served from the worklist snapshot so it is cheap |
 | `finalize_migration` | Submissions are done (re-runnable any time) | Writes `migration-manifest.yaml`, `changes.yaml`, and `migration-report.md` with per-file annotated changes and their evidence, explicit no-change deliverables, coverage gaps, and changes awaiting review decisions |
 | `get_change_review` | Submissions are in and the user reviews them | Returns, per deliverable, the decoded unified diff plus every annotated change with its why, evidence, before/after spans, and decision status — presented verbatim, one change at a time, like reviewing a pull request |
 | `record_change_decision` | The user accepted or rejected one change | Records the decision durably in `change-decisions.yaml` (keyed to the submitted content; a resubmission makes it stale, never silently applied) and deterministically regenerates the deliverable — rejected regions revert, everything else keeps the submission |
+| `record_change_decisions` | The user decided several changes at once | Records them in order with per-decision results; a refused decision is reported and the rest continue |
+| `record_validation_disposition` | The migration was validated (or explicitly accepted without validation) | Durably records the method — BYOK evaluation, the user-executed generated contract test under `output/validation/`, or an explicit accept requiring the user's own rationale |
 
 ### 1. Understand the application and models
 

@@ -3,8 +3,59 @@
 All notable changes are documented here. The project follows semantic
 versioning.
 
-## Unreleased
+## 1.5.0 — 2026-09-22
 
+Deployment fidelity and workflow economics, driven by the audit of a real
+v1.4.0 production Bedrock migration run.
+
+- Semantic configuration coupling (v1.5.0-b): anchored structured-config
+  documents — a registry-matched model-id spelling appears in them, or their
+  values are traced into a detected invocation call chain — now contribute
+  model-id, sampling, token-budget, region/routing, and pricing couplings
+  (pricing-shaped values without a model anchor are never couplings), so the
+  configuration file that carries the model setup becomes a real worklist
+  task. One difference-propagation mechanism replaces the prompt-guidance
+  special case: every material model difference attaches a required change to
+  exactly the files whose detected couplings it governs, and reaches prompt
+  guidance only when the governing surface is a prompt. Files whose only
+  coupling is an incidental SDK import move to one `unaffected_files` bucket,
+  closed by a single `confirm_unaffected(run_dir, paths, rationale)` call
+  (MCP + CLI) recording per-file reviewed no-change entries. Finalization
+  runs a deterministic cross-surface consistency gate over the whole
+  effective deliverable set: no active source-model configuration remains
+  (catching review-rejection reverts), no forbidden bare target references,
+  one selector-qualified target across every surface, model-coupled files
+  still name the target, and scanner-recognized coupling markers cannot
+  vanish without an explicit disposition.
+- Workflow economics (v1.5.0-c): the derived worklist and its plan evidence
+  persist as a run-workspace snapshot keyed by a complete staleness hash
+  (application content, `migration.yaml`, the blocker decision log, the
+  session manifest, and the registry content); submissions and status checks
+  reuse it until the key changes, task statuses are recomputed from the
+  adaptation log at read time, and the v1.4.0 "one scan per submission"
+  trade-off is retired. New `submit_adaptations` validates every item
+  independently (per-item accept/reject, never all-or-nothing) and applies
+  the accepted subset in one locked atomic `changes.yaml` write;
+  `record_change_decisions` batches review decisions; canonical-shadow
+  selections surface together in one error. Shared prompt guidance is
+  disposable once per run, and `default_disposition` covers unlisted
+  guidance ids — expanded into per-item records marked `defaulted` and
+  flagged DEFAULTED in the report. Researcher/reviewer prompts embed the
+  exact JSON Schema of their artifacts, and `get_run_status` (MCP + CLI
+  `run status`) reports the run's state machine with the single next action.
+- Strict production mode (v1.5.0-d): an opt-in `strict` flag on
+  `start_migration` (CLI `run start --strict`) rejects unknown evidence URLs
+  at submission, turns missing invocation facts on the target profile and
+  incomplete prompt coverage into blockers (normal resolution flow, accept
+  always offered), and refuses to finalize cleanly while coverage gaps,
+  unconfirmed unaffected files, consistency findings, undecided changes, or
+  a missing validation disposition remain. `record_validation_disposition`
+  (MCP + CLI `run record-validation`) durably records how the migration was
+  validated — BYOK evaluation, user-executed generated tests, or an explicit
+  accept requiring the user's own rationale — and finalization emits a
+  deterministic request-shape contract test under `output/validation/` that
+  the user wires to their application and runs themselves; the toolkit never
+  executes application code.
 - Invocation identity (v1.5.0-a): the registry now separates canonical
   identity (which model this is) from the invocation selector (which id the
   platform accepts for an on-demand call). `PlatformAvailability` gains an
