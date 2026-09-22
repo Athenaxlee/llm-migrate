@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 from collections.abc import Callable, Mapping, Sequence
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
@@ -55,6 +56,8 @@ from llm_migrate.core.blockers import (
     upsert_decision,
 )
 from llm_migrate.core.change_review import (
+    BatchChangeDecisionResult,
+    ChangeDecisionRequest,
     ChangeDecisionResult,
     ChangeReviewSet,
     build_change_review,
@@ -174,16 +177,28 @@ from llm_migrate.core.session import (
     manifest_summary_lines,
     registry_content_sha256,
 )
+from llm_migrate.core.snapshot import (
+    WorklistSnapshot,
+    load_snapshot,
+    save_snapshot,
+    snapshot_key,
+)
 from llm_migrate.core.workspace import (
+    AdaptationLog,
+    AdaptationSubmission,
     AdaptationTaskList,
+    BatchSubmissionResult,
     FileSubmissionResult,
     GuidanceDisposition,
     MigrationRunConfig,
     MigrationRunFinalization,
     MigrationRunStart,
+    PendingSubmission,
     PromptSubmissionResult,
     ResearchNeed,
+    RunStatus,
     UnaffectedConfirmation,
+    apply_submissions,
     coverage_gaps,
     decision_matches_entry,
     default_run_dir,
@@ -193,7 +208,10 @@ from llm_migrate.core.workspace import (
     load_adaptation_log,
     load_change_decision_log,
     load_run_config,
+    prepare_adapted_file,
+    prepare_adapted_prompt,
     read_original_prompt,
+    refresh_task_statuses,
     render_adaptation_section,
     run_paths,
     sanitize_run_id,
@@ -1606,17 +1624,83 @@ class MigrationService:
             }
         )
 
+    def _registry_digest(self) -> str:
+        if self.registry_root is None:
+            return "in-memory-registry"
+        return registry_content_sha256(self.registry_root)
+
+    def _tasks_for_run(
+        self,
+        config: MigrationRunConfig,
+        workspace: Path,
+        *,
+        now: datetime | None = None,
+    ) -> tuple[AdaptationTaskList, set[str], bool]:
+        """(worklist with fresh statuses, plan evidence URLs, snapshot reused).
+
+        The persisted snapshot is reused only while its staleness key — a
+        content hash over the scanned application, migration.yaml, the blocker
+        decision log, the session manifest, and the registry — still matches;
+        anything else re-derives the plan and refreshes the snapshot. Task
+        statuses are always recomputed from the adaptation log at read time.
+        """
+        key = snapshot_key(workspace, config, self._registry_digest())
+        snapshot = load_snapshot(workspace, config.run_id)
+        log = load_adaptation_log(workspace, config.run_id)
+        if snapshot is not None and snapshot.key == key:
+            return (
+                refresh_task_statuses(snapshot.tasks, log),
+                set(snapshot.evidence_urls),
+                True,
+            )
+        plan = self._plan_for_run(config, workspace, now=now)
+        base_tasks = derive_adaptation_tasks(
+            config, plan, workspace, AdaptationLog(run_id=config.run_id)
+        )
+        evidence = plan_evidence_urls(plan)
+        save_snapshot(
+            workspace,
+            WorklistSnapshot(
+                run_id=config.run_id,
+                key=key,
+                tasks=base_tasks,
+                evidence_urls=sorted(evidence),
+            ),
+        )
+        return refresh_task_statuses(base_tasks, log), evidence, False
+
     def list_adaptation_tasks(
         self,
         run_dir: Path | str,
         *,
         now: datetime | None = None,
     ) -> AdaptationTaskList:
-        """Per-file adaptation worklist derived from the run's migration plan."""
+        """Per-file adaptation worklist derived from the run's migration plan.
+
+        Served from the run's worklist snapshot while its staleness key holds
+        (statuses always recomputed from the adaptation log); re-derived and
+        re-persisted otherwise.
+        """
         workspace = Path(run_dir)
         config = load_run_config(workspace)
-        plan = self._plan_for_run(config, workspace, now=now)
-        return derive_adaptation_tasks(config, plan, workspace)
+        tasks, _, _ = self._tasks_for_run(config, workspace, now=now)
+        return tasks
+
+    @staticmethod
+    def _predisposed_shared(tasks: AdaptationTaskList, log: AdaptationLog) -> set[str]:
+        """Shared guidance ids already disposed by an earlier accepted submission.
+
+        Shared prompt guidance is disposable once per run: the first accepted
+        record stands, and later submissions no longer owe those items.
+        """
+        shared_ids = {item.id for item in tasks.shared_prompt_guidance}
+        return {
+            disposition.guidance_id
+            for entry in log.entries
+            if entry.kind == "prompt"
+            for disposition in entry.guidance_dispositions
+            if disposition.guidance_id in shared_ids
+        }
 
     def _blocker_resolution_context(
         self,
@@ -1925,6 +2009,8 @@ class MigrationService:
         unchanged: bool = False,
         guidance_dispositions: Sequence[GuidanceDisposition | Mapping[str, Any]] | None = None,
         annotated_changes: Sequence[AnnotatedChange | Mapping[str, Any]] | None = None,
+        default_disposition: Literal["applied", "not_applicable", "declined"] | None = None,
+        default_disposition_note: str = "",
         submitted_on: date | None = None,
         now: datetime | None = None,
     ) -> PromptSubmissionResult:
@@ -1933,9 +2019,12 @@ class MigrationService:
         `guidance_dispositions` must dispose every guidance item of the
         prompt's task (its own guidance plus the worklist's shared prompt
         guidance) as applied / not_applicable / declined (with a note);
-        submissions that leave guidance undisposed are rejected. A changed
-        submission must document every edit in `annotated_changes`, each
-        anchored to the actual diff with its why and evidence.
+        submissions that leave guidance undisposed are rejected. Shared
+        guidance disposed by an earlier accepted submission is no longer
+        owed, and `default_disposition` covers every unlisted item — expanded
+        into visibly defaulted per-item records. A changed submission must
+        document every edit in `annotated_changes`, each anchored to the
+        actual diff with its why and evidence.
         """
         workspace = Path(run_dir)
         config = load_run_config(workspace)
@@ -1959,8 +2048,7 @@ class MigrationService:
         validation = downgrade_accepted_prompt_issues(
             validation, load_decision_log(workspace, config.run_id)
         )
-        plan = self._plan_for_run(config, workspace, now=now)
-        tasks = derive_adaptation_tasks(config, plan, workspace)
+        tasks, evidence, _ = self._tasks_for_run(config, workspace, now=now)
         result = workspace_submit_adapted_prompt(
             workspace,
             config,
@@ -1975,7 +2063,12 @@ class MigrationService:
             guidance_dispositions=dispositions,
             tasks=tasks,
             annotated_changes=annotations,
-            known_evidence_urls=plan_evidence_urls(plan),
+            known_evidence_urls=evidence,
+            default_disposition=default_disposition,
+            default_disposition_note=default_disposition_note,
+            predisposed=self._predisposed_shared(
+                tasks, load_adaptation_log(workspace, config.run_id)
+            ),
         )
         return self._with_reapplied_decisions(workspace, config, result)
 
@@ -1991,13 +2084,16 @@ class MigrationService:
         unchanged: bool = False,
         guidance_dispositions: Sequence[GuidanceDisposition | Mapping[str, Any]] | None = None,
         annotated_changes: Sequence[AnnotatedChange | Mapping[str, Any]] | None = None,
+        default_disposition: Literal["applied", "not_applicable", "declined"] | None = None,
+        default_disposition_note: str = "",
         submitted_on: date | None = None,
         now: datetime | None = None,
     ) -> FileSubmissionResult:
         """Check and persist one adapted application file beneath output/files/.
 
         `guidance_dispositions` must dispose every required change of the
-        file's task, and a changed submission of an existing file must
+        file's task (`default_disposition` covers unlisted items as visibly
+        defaulted records), and a changed submission of an existing file must
         document every edit in `annotated_changes`, each anchored to the
         actual diff with its why and evidence.
         """
@@ -2008,8 +2104,7 @@ class MigrationService:
             )
         workspace = Path(run_dir)
         config = load_run_config(workspace)
-        plan = self._plan_for_run(config, workspace, now=now)
-        tasks = derive_adaptation_tasks(config, plan, workspace)
+        tasks, evidence, _ = self._tasks_for_run(config, workspace, now=now)
         result = workspace_submit_adapted_file(
             workspace,
             config,
@@ -2027,9 +2122,284 @@ class MigrationService:
             annotated_changes=_coerced_models(
                 AnnotatedChange, annotated_changes, "annotated change"
             ),
-            known_evidence_urls=plan_evidence_urls(plan),
+            known_evidence_urls=evidence,
+            default_disposition=default_disposition,
+            default_disposition_note=default_disposition_note,
         )
         return self._with_reapplied_decisions(workspace, config, result)
+
+    def submit_adaptations(
+        self,
+        run_dir: Path | str,
+        submissions: Sequence[AdaptationSubmission | Mapping[str, Any]],
+        *,
+        submitted_on: date | None = None,
+        now: datetime | None = None,
+    ) -> BatchSubmissionResult:
+        """Validate every submission independently; apply the accepted subset once.
+
+        Per-item accept/reject results, never all-or-nothing: rejected items
+        change nothing, and every accepted deliverable lands in ONE locked,
+        atomic write to changes.yaml. Duplicate source paths within a batch
+        keep the last accepted item. Shared prompt guidance disposed by an
+        earlier item (or an earlier run submission) is no longer owed by
+        later items.
+        """
+        workspace = Path(run_dir)
+        config = load_run_config(workspace)
+        items = _coerced_models(AdaptationSubmission, submissions, "adaptation submission")
+        tasks, evidence, _ = self._tasks_for_run(config, workspace, now=now)
+        decision_log = load_decision_log(workspace, config.run_id)
+        predisposed = self._predisposed_shared(tasks, load_adaptation_log(workspace, config.run_id))
+        shared_ids = {item.id for item in tasks.shared_prompt_guidance}
+        when = submitted_on or date.today()
+        results: list[PromptSubmissionResult | FileSubmissionResult] = []
+        pending: list[PendingSubmission] = []
+        for item in items:
+            if item.unchanged and item.content.strip():
+                rejection = (
+                    "unchanged=true cannot be combined with adapted content; omit the "
+                    "content or drop unchanged"
+                )
+                if item.kind == "prompt":
+                    results.append(
+                        PromptSubmissionResult(
+                            accepted=False,
+                            source_path=item.source_path,
+                            validation=PromptValidationResult(
+                                valid=False,
+                                source_prompt_sha256=hashlib.sha256(
+                                    item.content.encode("utf-8")
+                                ).hexdigest(),
+                                target_model=config.target.model,
+                                issues=[],
+                            ),
+                            message=f"Rejected: {rejection}",
+                        )
+                    )
+                else:
+                    results.append(
+                        FileSubmissionResult(
+                            accepted=False,
+                            source_path=item.source_path,
+                            problems=[rejection],
+                            message=f"Rejected: {rejection}",
+                        )
+                    )
+                continue
+            if item.kind == "prompt":
+                content = item.content
+                if item.unchanged:
+                    original = read_original_prompt(config, item.source_path)
+                    if original is not None:
+                        content = original
+                validation = downgrade_accepted_prompt_issues(
+                    self._validate_prompt_submission(config, item.source_path, content),
+                    decision_log,
+                )
+                prompt_result, prompt_pending = prepare_adapted_prompt(
+                    workspace,
+                    config,
+                    item.source_path,
+                    content,
+                    item.rationale,
+                    list(item.changes),
+                    validation,
+                    when,
+                    allow_restructure=item.allow_restructure,
+                    unchanged=item.unchanged,
+                    guidance_dispositions=list(item.guidance_dispositions),
+                    tasks=tasks,
+                    annotated_changes=list(item.annotated_changes),
+                    known_evidence_urls=evidence,
+                    default_disposition=item.default_disposition,
+                    default_disposition_note=item.default_disposition_note,
+                    predisposed=predisposed,
+                )
+                results.append(prompt_result)
+                if prompt_pending is not None:
+                    pending.append(prompt_pending)
+                    predisposed |= {
+                        disposition.guidance_id
+                        for disposition in prompt_pending.entry.guidance_dispositions
+                        if disposition.guidance_id in shared_ids
+                    }
+            else:
+                file_result, file_pending = prepare_adapted_file(
+                    workspace,
+                    config,
+                    item.source_path,
+                    item.content,
+                    item.rationale,
+                    list(item.changes),
+                    when,
+                    new_file=item.new_file,
+                    unchanged=item.unchanged,
+                    guidance_dispositions=list(item.guidance_dispositions),
+                    tasks=tasks,
+                    annotated_changes=list(item.annotated_changes),
+                    known_evidence_urls=evidence,
+                    default_disposition=item.default_disposition,
+                    default_disposition_note=item.default_disposition_note,
+                )
+                results.append(file_result)
+                if file_pending is not None:
+                    pending.append(file_pending)
+        apply_submissions(workspace, config, pending)
+        reapplied: list[PromptSubmissionResult | FileSubmissionResult] = []
+        for outcome in results:
+            if not outcome.accepted:
+                reapplied.append(outcome)
+            elif isinstance(outcome, PromptSubmissionResult):
+                reapplied.append(self._with_reapplied_decisions(workspace, config, outcome))
+            else:
+                reapplied.append(self._with_reapplied_decisions(workspace, config, outcome))
+        results = reapplied
+        accepted = sum(item.accepted for item in results)
+        return BatchSubmissionResult(
+            run_id=config.run_id,
+            results=results,
+            accepted=accepted,
+            message=(
+                f"{accepted} of {len(results)} submission(s) accepted and applied in "
+                "one atomic write; rejected items changed nothing (see per-item "
+                "results)."
+            ),
+        )
+
+    def record_change_decisions(
+        self,
+        run_dir: Path | str,
+        decisions: Sequence[ChangeDecisionRequest | Mapping[str, Any]],
+        *,
+        decided_on: date | None = None,
+    ) -> BatchChangeDecisionResult:
+        """Record several review decisions in order, with per-decision results.
+
+        Decisions apply sequentially (each regeneration reflects every earlier
+        rejection), never all-or-nothing: a refused decision is reported and
+        the rest continue.
+        """
+        workspace = Path(run_dir)
+        config = load_run_config(workspace)
+        items = _coerced_models(ChangeDecisionRequest, decisions, "change decision")
+        results = [
+            review_record_change_decision(
+                workspace,
+                config,
+                item.source_path,
+                item.change_id,
+                item.decision,
+                note=item.note,
+                decided_on=decided_on,
+            )
+            for item in items
+        ]
+        recorded = sum(item.accepted for item in results)
+        return BatchChangeDecisionResult(
+            run_id=config.run_id,
+            results=results,
+            recorded=recorded,
+            message=(
+                f"{recorded} of {len(results)} decision(s) recorded; refused decisions "
+                "changed nothing (see per-decision results)."
+            ),
+        )
+
+    def get_run_status(
+        self,
+        run_dir: Path | str,
+        *,
+        now: datetime | None = None,
+    ) -> RunStatus:
+        """The run's state machine position with the single next action.
+
+        Derived from the worklist snapshot (re-derived only when stale), the
+        adaptation log, and the decision logs, so status checks stay cheap.
+        """
+        workspace = Path(run_dir)
+        config = load_run_config(workspace)
+        tasks, _, reused = self._tasks_for_run(config, workspace, now=now)
+        log = load_adaptation_log(workspace, config.run_id)
+        change_decisions = load_change_decision_log(workspace, config.run_id)
+        gaps = coverage_gaps(tasks)
+        pending_review = 0
+        for entry in log.entries:
+            if entry_is_unchanged(entry) or not entry.annotated_changes:
+                continue
+            decided = {
+                item.change_id
+                for item in change_decisions.decisions
+                if decision_matches_entry(item, entry)
+            }
+            pending_review += sum(change.id not in decided for change in entry.annotated_changes)
+        research_pending: list[str] = []
+        if (
+            (workspace / "request.yaml").is_file()
+            and not (workspace / "session-manifest.yaml").is_file()
+            and not log.entries
+        ):
+            pack = self.get_research_prompts(workspace)
+            research_pending = [
+                scope.scope.value for scope in pack.scopes if scope.status != "complete"
+            ]
+        if research_pending:
+            state: Literal[
+                "research_pending",
+                "blockers_pending",
+                "tasks_pending",
+                "review_pending",
+                "ready_to_finalize",
+            ] = "research_pending"
+            next_action = (
+                "Research is recommended but optional: ask the user, then either run "
+                "the get_research_prompts stages (scopes pending: "
+                + ", ".join(research_pending)
+                + ") and build_session_registry, or proceed to list_adaptation_tasks."
+            )
+        elif tasks.blockers:
+            state = "blockers_pending"
+            next_action = (
+                "Call get_blocker_resolutions(run_dir) and present each blocker's "
+                "question, options, and evidence VERBATIM, one at a time; record each "
+                "user answer with record_blocker_decision."
+            )
+        elif gaps or tasks.unaffected_files:
+            state = "tasks_pending"
+            next_action = (
+                f"Work the worklist: {len(gaps)} task(s) still need a submission"
+                + (
+                    f" and {len(tasks.unaffected_files)} unaffected file(s) need one "
+                    "confirm_unaffected call"
+                    if tasks.unaffected_files
+                    else ""
+                )
+                + "."
+            )
+        elif pending_review:
+            state = "review_pending"
+            next_action = (
+                f"{pending_review} annotated change(s) await user decisions: present "
+                "each pending change from get_change_review VERBATIM and record the "
+                "user's accept/reject with record_change_decision(s)."
+            )
+        else:
+            state = "ready_to_finalize"
+            next_action = (
+                "Call finalize_migration(run_dir); then surface the evaluation stage "
+                "(generate_eval_suite / run_migration_eval) to the user before rollout."
+            )
+        return RunStatus(
+            run_id=config.run_id,
+            state=state,
+            next_action=next_action,
+            unresolved_blockers=len(tasks.blockers),
+            pending_tasks=len(gaps),
+            unconfirmed_unaffected=len(tasks.unaffected_files),
+            pending_review_changes=pending_review,
+            research_scopes_pending=research_pending,
+            snapshot_reused=reused,
+        )
 
     def _with_reapplied_decisions(
         self,
@@ -2128,8 +2498,7 @@ class MigrationService:
                 "confirm_unaffected requires a rationale recording the review that "
                 "found these files unaffected"
             )
-        plan = self._plan_for_run(config, workspace, now=now)
-        tasks = derive_adaptation_tasks(config, plan, workspace)
+        tasks, _, _ = self._tasks_for_run(config, workspace, now=now)
         allowed = set(tasks.unaffected_files)
         task_paths = {task.source_path for task in tasks.file_tasks} | {
             task.source_path for task in tasks.prompt_tasks

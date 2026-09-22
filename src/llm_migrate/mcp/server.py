@@ -47,9 +47,10 @@ exposes only its tools):
    run each researcher/reviewer prompt with a separate agent, validate each
    artifact with validate_research_artifact(run_dir, scope), then
    build_session_registry(run_dir).
-3. list_adaptation_tasks(run_dir) — call it ONCE; `shared_prompt_guidance`
-   applies to every prompt task, and submission results confirm acceptance, so
-   never re-list between submissions.
+3. list_adaptation_tasks(run_dir) — `shared_prompt_guidance` applies to every
+   prompt task, and submission results confirm acceptance, so never re-list
+   between submissions; get_run_status(run_dir) is the cheap way to check
+   where the run stands and what to do next.
 3b. If the worklist reports blockers: get_blocker_resolutions(run_dir); present
    each blocker's question, options, consequences, and evidence VERBATIM, one
    blocker at a time, and record each user answer with record_blocker_decision.
@@ -61,8 +62,10 @@ exposes only its tools):
    when no change is needed. Every submission disposes every guidance item in
    guidance_dispositions and documents every edit in annotated_changes
    (anchors, why, evidence); undocumented or phantom changes are rejected.
-   Close every `unaffected_files` entry with ONE confirm_unaffected call.
-   Deliverables live under <run>/output/, never in the application tree.
+   Close every `unaffected_files` entry with ONE confirm_unaffected call, and
+   prefer ONE submit_adaptations batch (per-item accept/reject) over many
+   single submissions. Deliverables live under <run>/output/, never in the
+   application tree.
 5. finalize_migration(run_dir) — writes the manifest and report and lists
    remaining coverage gaps and undecided changes.
 6. get_change_review(run_dir) lists every annotated change with its decision
@@ -92,10 +95,13 @@ _GUIDED_TOOL_NAMES = frozenset(
         "record_blocker_decision",
         "submit_adapted_prompt",
         "submit_adapted_file",
+        "submit_adaptations",
         "confirm_unaffected",
+        "get_run_status",
         "finalize_migration",
         "get_change_review",
         "record_change_decision",
+        "record_change_decisions",
     }
 )
 
@@ -715,6 +721,8 @@ def submit_adapted_prompt(
     unchanged: bool = False,
     guidance_dispositions: list[dict[str, str]] | None = None,
     annotated_changes: list[dict[str, Any]] | None = None,
+    default_disposition: Literal["applied", "not_applicable", "declined"] | None = None,
+    default_disposition_note: str = "",
 ) -> dict[str, Any]:
     """Validate and store one adapted prompt for the target model.
 
@@ -731,7 +739,9 @@ def submit_adapted_prompt(
     are rejected; structural drops need allow_restructure=true plus a
     recorded justification. No change needed? Pass unchanged=true with an
     EMPTY adapted_prompt (refused while the prompt still references the
-    source model). Deliverables land under <run>/output/prompts/.
+    source model). Shared guidance already disposed earlier in the run is no
+    longer owed, and `default_disposition` covers unlisted items as visibly
+    defaulted records. Deliverables land under <run>/output/prompts/.
     """
     return _json(
         _service().submit_adapted_prompt(
@@ -744,6 +754,8 @@ def submit_adapted_prompt(
             unchanged=unchanged,
             guidance_dispositions=guidance_dispositions,
             annotated_changes=annotated_changes,
+            default_disposition=default_disposition,
+            default_disposition_note=default_disposition_note,
         )
     )
 
@@ -759,6 +771,8 @@ def submit_adapted_file(
     unchanged: bool = False,
     guidance_dispositions: list[dict[str, str]] | None = None,
     annotated_changes: list[dict[str, Any]] | None = None,
+    default_disposition: Literal["applied", "not_applicable", "declined"] | None = None,
+    default_disposition_note: str = "",
 ) -> dict[str, Any]:
     """Store one complete adapted application file (never a diff) for review.
 
@@ -780,8 +794,61 @@ def submit_adapted_file(
             unchanged=unchanged,
             guidance_dispositions=guidance_dispositions,
             annotated_changes=annotated_changes,
+            default_disposition=default_disposition,
+            default_disposition_note=default_disposition_note,
         )
     )
+
+
+@_tool
+def submit_adaptations(
+    run_dir: str,
+    submissions: list[dict[str, Any]],
+    now: str | None = None,
+) -> dict[str, Any]:
+    """Submit several adaptations in one call, with per-item accept/reject.
+
+    Each item: {"kind": "prompt"|"file", "source_path", "content",
+    "rationale", "changes"?, "new_file"?, "unchanged"?, "allow_restructure"?,
+    "guidance_dispositions"?, "annotated_changes"?, "default_disposition"?,
+    "default_disposition_note"?} — the same rules as the single-submission
+    tools. Items validate independently (never all-or-nothing) and the
+    accepted subset is applied in one locked, atomic write to changes.yaml.
+    """
+    return _json(_service().submit_adaptations(run_dir, submissions, now=utc_moment(now)))
+
+
+@_tool
+def record_change_decisions(
+    run_dir: str,
+    decisions: list[dict[str, str]],
+    decided_on: str | None = None,
+) -> dict[str, Any]:
+    """Record several review decisions in one call, with per-decision results.
+
+    Each item: {"source_path", "change_id", "decision": "accepted"|"rejected",
+    "note"?}. Decisions apply in order (each regeneration reflects every
+    earlier rejection); a refused decision is reported and the rest continue.
+    """
+    return _json(
+        _service().record_change_decisions(
+            run_dir,
+            decisions,
+            decided_on=date.fromisoformat(decided_on) if decided_on else None,
+        )
+    )
+
+
+@_tool
+def get_run_status(run_dir: str, now: str | None = None) -> dict[str, Any]:
+    """The run's state machine position with the single next action.
+
+    States: research_pending -> blockers_pending -> tasks_pending ->
+    review_pending -> ready_to_finalize, with pending counts. Served from the
+    worklist snapshot (re-derived only when the application, run identity,
+    decisions, or registry changed), so it is cheap to call between steps.
+    """
+    return _json(_service().get_run_status(run_dir, now=utc_moment(now)))
 
 
 @_tool

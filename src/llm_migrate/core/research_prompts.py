@@ -8,6 +8,7 @@ assignments by generating one bounded prompt per scope directly from the typed
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import Literal
 
@@ -15,6 +16,7 @@ import yaml
 from pydantic import Field, ValidationError
 
 from llm_migrate.core.agent_research import (
+    EvidenceReview,
     MigrationResearchRequest,
     ModelEndpointIdentity,
     ResearchScope,
@@ -23,6 +25,19 @@ from llm_migrate.core.agent_research import (
 )
 from llm_migrate.core.knowledge import ResearchResult
 from llm_migrate.core.models import StrictModel
+
+
+def _compact_schema(model: type[ResearchResult] | type[EvidenceReview]) -> str:
+    """The exact JSON Schema of the expected artifact, compact for one prompt.
+
+    Generated from the same Pydantic models the toolkit validates with, so a
+    schema-shaped retry loop cannot start from a prose description drifting
+    out of date.
+    """
+    return json.dumps(
+        model.model_json_schema(mode="validation"), sort_keys=True, separators=(",", ":")
+    )
+
 
 _TOPIC_FIELD_PREFIXES: dict[ResearchTopic, str] = {
     ResearchTopic.PRICING: "pricing.*",
@@ -163,6 +178,12 @@ def _researcher_prompt(
         f"validate it in place (validate_research_artifact(run_dir, scope={scope.value!r}) "
         "/ `llm-migrate research validate-artifact`; no need to resend the artifact) "
         "and fix any reported problem before finishing.",
+        "",
+        "The artifact must validate against this exact JSON Schema (generated from the "
+        "toolkit's own models):",
+        "```json",
+        _compact_schema(ResearchResult),
+        "```",
     ]
     return "\n".join(lines)
 
@@ -213,6 +234,12 @@ def _reviewer_prompt(
         "verify, do not vote. When done, validate the file in place "
         f"(validate_research_artifact(run_dir, scope={scope.value!r}) / "
         "`llm-migrate research validate-artifact`).",
+        "",
+        "The artifact must validate against this exact JSON Schema (generated from the "
+        "toolkit's own models):",
+        "```json",
+        _compact_schema(EvidenceReview),
+        "```",
     ]
     return "\n".join(lines)
 

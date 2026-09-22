@@ -116,6 +116,25 @@ class ChangeDecisionResult(StrictModel):
     message: str
 
 
+class ChangeDecisionRequest(StrictModel):
+    """One item of a batched record_change_decisions call."""
+
+    source_path: str
+    change_id: str
+    decision: str
+    note: str = ""
+
+
+class BatchChangeDecisionResult(StrictModel):
+    """Per-decision outcomes of one batched review call (never all-or-nothing)."""
+
+    schema_version: Literal["1"] = "1"
+    run_id: str
+    results: list[ChangeDecisionResult] = Field(default_factory=list)
+    recorded: int = 0
+    message: str
+
+
 def _sha256(text: str) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
 

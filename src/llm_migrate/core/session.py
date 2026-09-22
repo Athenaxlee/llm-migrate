@@ -233,13 +233,18 @@ def build_session_registry(
             merged_profiles.append(provided_profiles[name])
         else:
             merged_profiles.append(profile)
+    # Every canonical-shadow choice surfaces together in ONE error, so the
+    # host resolves them in a single pass instead of one failure per retry.
+    needing_selection = sorted(
+        name for name in provided_profiles if name in base_names and name not in shadows
+    )
+    if needing_selection:
+        raise SessionOverlayError(
+            "session candidate(s) duplicate canonical profiles; shadowing requires an "
+            "explicit selection for each (pass shadow_canonical): " + ", ".join(needing_selection)
+        )
     for name in sorted(provided_profiles):
         if name in base_names:
-            if name not in shadows:
-                raise SessionOverlayError(
-                    f"session candidate {name!r} duplicates a canonical profile; "
-                    "shadowing requires an explicit manifest selection"
-                )
             continue
         merged_profiles.append(provided_profiles[name])
 

@@ -175,7 +175,7 @@ def test_duplicate_canonical_name_requires_explicit_shadow(
         candidate_profiles=[*candidates, sonnet],
         migration_knowledge=knowledge,
     )
-    with pytest.raises(SessionOverlayError, match="explicit manifest selection"):
+    with pytest.raises(SessionOverlayError, match="explicit selection for each"):
         build_session_registry(
             service.registry,
             shadow_manifest,

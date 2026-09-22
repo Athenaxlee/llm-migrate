@@ -188,6 +188,7 @@ class GuidanceDisposition(StrictModel):
     disposition: Literal["applied", "not_applicable", "declined"]
     note: str = ""
     guidance: str = ""
+    defaulted: bool = False
 
 
 class AdaptationEntry(StrictModel):
@@ -383,6 +384,58 @@ class UnaffectedConfirmation(StrictModel):
     results: list[FileSubmissionResult] = Field(default_factory=list)
     confirmed: int = 0
     message: str
+
+
+class AdaptationSubmission(StrictModel):
+    """One item of a batched submit_adaptations call (prompt or file)."""
+
+    kind: Literal["prompt", "file"] = "file"
+    source_path: str
+    content: str = ""
+    rationale: str = ""
+    changes: list[str] = Field(default_factory=list)
+    new_file: bool = False
+    unchanged: bool = False
+    allow_restructure: bool = False
+    guidance_dispositions: list[GuidanceDisposition] = Field(default_factory=list)
+    annotated_changes: list[AnnotatedChange] = Field(default_factory=list)
+    default_disposition: Literal["applied", "not_applicable", "declined"] | None = None
+    default_disposition_note: str = ""
+
+
+class BatchSubmissionResult(StrictModel):
+    """Per-item accept/reject outcomes of one batched submission call.
+
+    Never all-or-nothing: every item is validated independently and the
+    accepted subset is applied in one locked, atomic write to changes.yaml.
+    """
+
+    schema_version: Literal["1"] = "1"
+    run_id: str
+    results: list[PromptSubmissionResult | FileSubmissionResult] = Field(default_factory=list)
+    accepted: int = 0
+    message: str
+
+
+class RunStatus(StrictModel):
+    """The run's state machine position with the single next action."""
+
+    schema_version: Literal["1"] = "1"
+    run_id: str
+    state: Literal[
+        "research_pending",
+        "blockers_pending",
+        "tasks_pending",
+        "review_pending",
+        "ready_to_finalize",
+    ]
+    next_action: str
+    unresolved_blockers: int = 0
+    pending_tasks: int = 0
+    unconfirmed_unaffected: int = 0
+    pending_review_changes: int = 0
+    research_scopes_pending: list[str] = Field(default_factory=list)
+    snapshot_reused: bool = False
 
 
 class MigrationRunFinalization(StrictModel):
@@ -910,19 +963,57 @@ _FORMAT_REQUIREMENT_NOTE = (
 )
 
 
+def _expanded_dispositions(
+    required: list[GuidanceItem],
+    dispositions: list[GuidanceDisposition],
+    predisposed: set[str],
+    default_disposition: Literal["applied", "not_applicable", "declined"] | None,
+    default_note: str,
+) -> tuple[list[GuidanceItem], list[GuidanceDisposition]]:
+    """(guidance still owed, dispositions with the default expanded per item).
+
+    Shared guidance already disposed by an earlier accepted submission
+    (`predisposed`) is no longer owed. A `default_disposition` covers every
+    owed item without an explicit entry — but it is expanded into one full,
+    visibly `defaulted` record per item, so the accountability trail survives
+    and rubber-stamping stays visible in the log and the report.
+    """
+    owed = [item for item in required if item.id not in predisposed]
+    if default_disposition is None:
+        return owed, dispositions
+    explicit = {item.guidance_id for item in dispositions}
+    return owed, [
+        *dispositions,
+        *(
+            GuidanceDisposition(
+                guidance_id=item.id,
+                disposition=default_disposition,
+                note=default_note,
+                defaulted=True,
+            )
+            for item in owed
+            if item.id not in explicit
+        ),
+    ]
+
+
 def _disposition_problems(
     required: list[GuidanceItem],
     dispositions: list[GuidanceDisposition],
     unchanged: bool,
+    also_known: frozenset[str] = frozenset(),
 ) -> list[str]:
     """Fail-closed reconciliation of dispositions against the task's guidance.
 
     Every guidance item must be disposed exactly once, a decline must record
     why, and an unchanged submission cannot claim an item as applied — an
-    applied item implies an edit.
+    applied item implies an edit. `also_known` names ids that are valid but no
+    longer owed (shared guidance already disposed earlier in the run).
     """
     problems: list[str] = []
     known = {item.id: item.text for item in required}
+    for extra in also_known:
+        known.setdefault(extra, "")
     seen: set[str] = set()
     for disposition in dispositions:
         if disposition.guidance_id not in known:
@@ -956,7 +1047,35 @@ def _disposition_problems(
     return problems
 
 
-def submit_adapted_prompt(
+class PendingSubmission(StrictModel):
+    """One validated deliverable awaiting its (possibly batched) persist."""
+
+    kind: Literal["prompt", "file"]
+    relative: str
+    content: str
+    entry: AdaptationEntry
+
+
+def apply_submissions(
+    run_dir: Path, config: MigrationRunConfig, pending: list[PendingSubmission]
+) -> None:
+    """Persist every prepared deliverable in ONE locked, atomic log update.
+
+    Batched submissions validate independently, then the accepted subset
+    lands together: one lock, one read-modify-write of `changes.yaml`.
+    """
+    if not pending:
+        return
+    with run_state_lock(run_dir):
+        log = load_adaptation_log(run_dir, config.run_id)
+        for item in pending:
+            atomic_write_text(Path(run_dir) / item.entry.output_path, item.content)
+            _write_submission_copy(run_dir, item.kind, Path(item.relative), item.content)
+            log = _upsert_entry(log, item.entry)
+        _save_adaptation_log(run_dir, log)
+
+
+def prepare_adapted_prompt(
     run_dir: Path,
     config: MigrationRunConfig,
     source_path: str,
@@ -971,8 +1090,11 @@ def submit_adapted_prompt(
     tasks: AdaptationTaskList | None = None,
     annotated_changes: list[AnnotatedChange] | None = None,
     known_evidence_urls: set[str] | None = None,
-) -> PromptSubmissionResult:
-    """Persist one validated adapted prompt beneath output/prompts/.
+    default_disposition: Literal["applied", "not_applicable", "declined"] | None = None,
+    default_disposition_note: str = "",
+    predisposed: set[str] | None = None,
+) -> tuple[PromptSubmissionResult, PendingSubmission | None]:
+    """Validate one adapted prompt; persisting is the caller's (batchable) step.
 
     `unchanged=True` records that the prompt was reviewed and needs no change:
     the original content is copied as the deliverable. Without it, a
@@ -999,7 +1121,19 @@ def submit_adapted_prompt(
         )
         if task is not None:
             required_guidance = [*task.guidance, *tasks.shared_prompt_guidance]
-    format_problems = _disposition_problems(required_guidance, dispositions, unchanged)
+    owed_guidance, dispositions = _expanded_dispositions(
+        required_guidance,
+        dispositions,
+        set(predisposed or ()),
+        default_disposition,
+        default_disposition_note,
+    )
+    format_problems = _disposition_problems(
+        owed_guidance,
+        dispositions,
+        unchanged,
+        also_known=frozenset(item.id for item in required_guidance),
+    )
     if unchanged and annotations:
         format_problems.append(
             "unchanged=true cannot carry annotated_changes; there is no edit to annotate"
@@ -1011,21 +1145,28 @@ def submit_adapted_prompt(
     structure_warnings: list[str] = []
     if unchanged:
         if original_text is None:
-            return PromptSubmissionResult(
-                accepted=False,
-                source_path=source_path,
-                validation=validation,
-                message=(
-                    "Rejected: unchanged=true requires the prompt file to exist in the application"
+            return (
+                PromptSubmissionResult(
+                    accepted=False,
+                    source_path=source_path,
+                    validation=validation,
+                    message=(
+                        "Rejected: unchanged=true requires the prompt file to exist "
+                        "in the application"
+                    ),
                 ),
+                None,
             )
         problems = _unchanged_prompt_problems(config, original_text, format, rationale)
         if problems:
-            return PromptSubmissionResult(
-                accepted=False,
-                source_path=source_path,
-                validation=validation,
-                message="Rejected: " + "; ".join(problems),
+            return (
+                PromptSubmissionResult(
+                    accepted=False,
+                    source_path=source_path,
+                    validation=validation,
+                    message="Rejected: " + "; ".join(problems),
+                ),
+                None,
             )
         adapted_prompt = original_text
         if not changes:
@@ -1118,13 +1259,16 @@ def submit_adapted_prompt(
                 + ", ".join(selector_ids)
             )
     if blockers:
-        return PromptSubmissionResult(
-            accepted=False,
-            source_path=source_path,
-            validation=validation,
-            message="Rejected: "
-            + "; ".join(blockers)
-            + (_FORMAT_REQUIREMENT_NOTE if format_problems else ""),
+        return (
+            PromptSubmissionResult(
+                accepted=False,
+                source_path=source_path,
+                validation=validation,
+                message="Rejected: "
+                + "; ".join(blockers)
+                + (_FORMAT_REQUIREMENT_NOTE if format_problems else ""),
+            ),
+            None,
         )
     source_sha = _sha256(original_text) if original_text is not None else None
     output_path = Path(run_dir) / "output" / "prompts" / relative
@@ -1153,28 +1297,71 @@ def submit_adapted_prompt(
         ],
         annotated_changes=with_change_ids(annotations),
     )
-    with run_state_lock(run_dir):
-        atomic_write_text(output_path, adapted_prompt)
-        _write_submission_copy(run_dir, "prompt", relative, adapted_prompt)
-        _save_adaptation_log(
-            run_dir, _upsert_entry(load_adaptation_log(run_dir, config.run_id), entry)
-        )
-    return PromptSubmissionResult(
-        accepted=True,
-        source_path=source_path,
-        output_path=str(output_path),
-        validation=validation,
-        message=f"Adapted prompt written to {output_path}."
-        + (
-            f" Accepted with {len(structure_warnings)} recorded warning(s): "
-            + "; ".join(structure_warnings)
-            if structure_warnings
-            else ""
+    return (
+        PromptSubmissionResult(
+            accepted=True,
+            source_path=source_path,
+            output_path=str(output_path),
+            validation=validation,
+            message=f"Adapted prompt written to {output_path}."
+            + (
+                f" Accepted with {len(structure_warnings)} recorded warning(s): "
+                + "; ".join(structure_warnings)
+                if structure_warnings
+                else ""
+            ),
+        ),
+        PendingSubmission(
+            kind="prompt", relative=relative.as_posix(), content=adapted_prompt, entry=entry
         ),
     )
 
 
-def submit_adapted_file(
+def submit_adapted_prompt(
+    run_dir: Path,
+    config: MigrationRunConfig,
+    source_path: str,
+    adapted_prompt: str,
+    rationale: str,
+    changes: list[str],
+    validation: PromptValidationResult,
+    submitted_on: date,
+    allow_restructure: bool = False,
+    unchanged: bool = False,
+    guidance_dispositions: list[GuidanceDisposition] | None = None,
+    tasks: AdaptationTaskList | None = None,
+    annotated_changes: list[AnnotatedChange] | None = None,
+    known_evidence_urls: set[str] | None = None,
+    default_disposition: Literal["applied", "not_applicable", "declined"] | None = None,
+    default_disposition_note: str = "",
+    predisposed: set[str] | None = None,
+) -> PromptSubmissionResult:
+    """Validate and persist one adapted prompt beneath output/prompts/."""
+    result, pending = prepare_adapted_prompt(
+        run_dir,
+        config,
+        source_path,
+        adapted_prompt,
+        rationale,
+        changes,
+        validation,
+        submitted_on,
+        allow_restructure=allow_restructure,
+        unchanged=unchanged,
+        guidance_dispositions=guidance_dispositions,
+        tasks=tasks,
+        annotated_changes=annotated_changes,
+        known_evidence_urls=known_evidence_urls,
+        default_disposition=default_disposition,
+        default_disposition_note=default_disposition_note,
+        predisposed=predisposed,
+    )
+    if pending is not None:
+        apply_submissions(run_dir, config, [pending])
+    return result
+
+
+def prepare_adapted_file(
     run_dir: Path,
     config: MigrationRunConfig,
     source_path: str,
@@ -1188,8 +1375,11 @@ def submit_adapted_file(
     tasks: AdaptationTaskList | None = None,
     annotated_changes: list[AnnotatedChange] | None = None,
     known_evidence_urls: set[str] | None = None,
-) -> FileSubmissionResult:
-    """Persist one adapted application file beneath output/files/, fail closed.
+    default_disposition: Literal["applied", "not_applicable", "declined"] | None = None,
+    default_disposition_note: str = "",
+    predisposed: set[str] | None = None,
+) -> tuple[FileSubmissionResult, PendingSubmission | None]:
+    """Validate one adapted file; persisting is the caller's (batchable) step.
 
     `unchanged=True` records that the file was reviewed and needs no change
     for the target model: the original content is copied as the deliverable
@@ -1221,7 +1411,19 @@ def submit_adapted_file(
         )
         if task is not None:
             required_changes = list(task.required_changes)
-    format_problems = _disposition_problems(required_changes, dispositions, unchanged)
+    owed_changes, dispositions = _expanded_dispositions(
+        required_changes,
+        dispositions,
+        set(predisposed or ()),
+        default_disposition,
+        default_disposition_note,
+    )
+    format_problems = _disposition_problems(
+        owed_changes,
+        dispositions,
+        unchanged,
+        also_known=frozenset(item.id for item in required_changes),
+    )
     if unchanged and annotations:
         format_problems.append(
             "unchanged=true cannot carry annotated_changes; there is no edit to annotate"
@@ -1311,13 +1513,16 @@ def submit_adapted_file(
         )
     problems.extend(format_problems)
     if problems:
-        return FileSubmissionResult(
-            accepted=False,
-            source_path=source_path,
-            problems=problems,
-            message="Rejected: "
-            + "; ".join(problems)
-            + (_FORMAT_REQUIREMENT_NOTE if format_problems else ""),
+        return (
+            FileSubmissionResult(
+                accepted=False,
+                source_path=source_path,
+                problems=problems,
+                message="Rejected: "
+                + "; ".join(problems)
+                + (_FORMAT_REQUIREMENT_NOTE if format_problems else ""),
+            ),
+            None,
         )
     target_forms = target_spellings(config)
     source_forms = [item for item in source_spellings(config) if item not in set(target_forms)]
@@ -1357,18 +1562,88 @@ def submit_adapted_file(
         ],
         annotated_changes=with_change_ids(annotations),
     )
-    with run_state_lock(run_dir):
-        atomic_write_text(output_path, adapted_content)
-        _write_submission_copy(run_dir, "file", relative, adapted_content)
-        _save_adaptation_log(
-            run_dir, _upsert_entry(load_adaptation_log(run_dir, config.run_id), entry)
-        )
-    return FileSubmissionResult(
-        accepted=True,
-        source_path=source_path,
-        output_path=str(output_path),
-        warnings=warnings,
-        message=f"Adapted file written to {output_path}.",
+    return (
+        FileSubmissionResult(
+            accepted=True,
+            source_path=source_path,
+            output_path=str(output_path),
+            warnings=warnings,
+            message=f"Adapted file written to {output_path}.",
+        ),
+        PendingSubmission(
+            kind="file", relative=relative.as_posix(), content=adapted_content, entry=entry
+        ),
+    )
+
+
+def submit_adapted_file(
+    run_dir: Path,
+    config: MigrationRunConfig,
+    source_path: str,
+    adapted_content: str,
+    rationale: str,
+    changes: list[str],
+    submitted_on: date,
+    new_file: bool = False,
+    unchanged: bool = False,
+    guidance_dispositions: list[GuidanceDisposition] | None = None,
+    tasks: AdaptationTaskList | None = None,
+    annotated_changes: list[AnnotatedChange] | None = None,
+    known_evidence_urls: set[str] | None = None,
+    default_disposition: Literal["applied", "not_applicable", "declined"] | None = None,
+    default_disposition_note: str = "",
+    predisposed: set[str] | None = None,
+) -> FileSubmissionResult:
+    """Validate and persist one adapted application file beneath output/files/."""
+    result, pending = prepare_adapted_file(
+        run_dir,
+        config,
+        source_path,
+        adapted_content,
+        rationale,
+        changes,
+        submitted_on,
+        new_file=new_file,
+        unchanged=unchanged,
+        guidance_dispositions=guidance_dispositions,
+        tasks=tasks,
+        annotated_changes=annotated_changes,
+        known_evidence_urls=known_evidence_urls,
+        default_disposition=default_disposition,
+        default_disposition_note=default_disposition_note,
+        predisposed=predisposed,
+    )
+    if pending is not None:
+        apply_submissions(run_dir, config, [pending])
+    return result
+
+
+def refresh_task_statuses(tasks: AdaptationTaskList, log: AdaptationLog) -> AdaptationTaskList:
+    """Recompute per-task statuses and the unconfirmed unaffected list.
+
+    Statuses are never baked into a persisted worklist (the V1.5.0-c
+    snapshot): they are derived at read time from the adaptation log, so a
+    cached worklist can never disagree with the submissions.
+    """
+    submitted = {(entry.kind, entry.source_path) for entry in log.entries}
+
+    def status(kind: str, path: str) -> Literal["pending", "submitted"]:
+        return "submitted" if (kind, path) in submitted else "pending"
+
+    return tasks.model_copy(
+        update={
+            "prompt_tasks": [
+                task.model_copy(update={"status": status("prompt", task.source_path)})
+                for task in tasks.prompt_tasks
+            ],
+            "file_tasks": [
+                task.model_copy(update={"status": status("file", task.source_path)})
+                for task in tasks.file_tasks
+            ],
+            "unaffected_files": [
+                path for path in tasks.unaffected_files if ("file", path) not in submitted
+            ],
+        }
     )
 
 
@@ -1459,7 +1734,8 @@ def _render_dispositions(entry: AdaptationEntry) -> list[str]:
     for item in entry.guidance_dispositions:
         text = item.guidance or item.guidance_id
         note = f" (note: {item.note})" if item.note.strip() else ""
-        lines.append(f"  - {_DISPOSITION_LABELS[item.disposition]} — {text}{note}")
+        defaulted = " (DEFAULTED — covered by default_disposition)" if item.defaulted else ""
+        lines.append(f"  - {_DISPOSITION_LABELS[item.disposition]}{defaulted} — {text}{note}")
     return lines
 
 

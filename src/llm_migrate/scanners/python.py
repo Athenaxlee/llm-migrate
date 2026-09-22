@@ -986,6 +986,25 @@ def _config_coupling_findings(
     return findings
 
 
+def scannable_files(path: Path) -> tuple[list[Path], list[Path]]:
+    """The exact file set one scan covers: (python files, prompt-source candidates).
+
+    Shared with the worklist-snapshot staleness key, so "the scanned
+    application content" in the key means precisely the files a scan reads.
+    """
+    if path.is_file():
+        return [path], []
+    entries = [
+        item
+        for item in sorted(path.rglob("*"))
+        if item.is_file()
+        and not any(part in _IGNORED_DIRECTORIES for part in item.relative_to(path).parts)
+    ]
+    python_files = [item for item in entries if item.suffix == ".py"]
+    candidate_files = [item for item in entries if item.suffix.casefold() in PROMPT_SOURCE_SUFFIXES]
+    return python_files, candidate_files
+
+
 def scan_application(
     root: Path | str,
     *,
@@ -996,20 +1015,7 @@ def scan_application(
     if not path.exists():
         raise ValueError(f"application path does not exist: {path}")
     base = path if path.is_dir() else path.parent
-    if path.is_file():
-        python_files = [path]
-        candidate_files: list[Path] = []
-    else:
-        entries = [
-            item
-            for item in sorted(path.rglob("*"))
-            if item.is_file()
-            and not any(part in _IGNORED_DIRECTORIES for part in item.relative_to(path).parts)
-        ]
-        python_files = [item for item in entries if item.suffix == ".py"]
-        candidate_files = [
-            item for item in entries if item.suffix.casefold() in PROMPT_SOURCE_SUFFIXES
-        ]
+    python_files, candidate_files = scannable_files(path)
     candidate_relative = [item.relative_to(base).as_posix() for item in candidate_files]
     known_files = {
         *(item.relative_to(base).as_posix() for item in python_files),

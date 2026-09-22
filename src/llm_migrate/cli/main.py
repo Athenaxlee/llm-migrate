@@ -1368,6 +1368,19 @@ def run_submit_file(
         raise typer.Exit(1)
 
 
+@run_app.command("status")
+def run_status(
+    run_dir: Path,
+    registry: Annotated[Path | None, typer.Option(help="Registry root.")] = None,
+) -> None:
+    """Show the run's state machine position and its single next action."""
+    try:
+        _emit(_service(registry).get_run_status(run_dir))
+    except (RegistryError, ValueError) as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(2) from exc
+
+
 @run_app.command("confirm-unaffected")
 def run_confirm_unaffected(
     run_dir: Path,
