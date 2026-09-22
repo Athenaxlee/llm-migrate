@@ -49,6 +49,13 @@ def _matches(
         for platform in profile.platforms
         if normalized == normalize_identifier(platform.model_id)
     )
+    matches.extend(
+        (IdentifierMatchType.INVOCATION_SELECTOR, platform)
+        for platform in profile.platforms
+        if platform.invocation is not None
+        for selector in platform.invocation.selectors
+        if normalized == normalize_identifier(selector.model_id)
+    )
     return matches
 
 
@@ -84,10 +91,14 @@ def resolve_model(
         names = ", ".join(sorted(matched_names))
         raise AmbiguousModelError(f"ambiguous model identifier {query!r}; matches: {names}")
     profile = profile_matches[0][0]
+    platform_match_types = {
+        IdentifierMatchType.PLATFORM_MODEL_ID,
+        IdentifierMatchType.INVOCATION_SELECTOR,
+    }
     implied_platforms = [
         item[2]
         for item in profile_matches
-        if item[1] is IdentifierMatchType.PLATFORM_MODEL_ID and item[2] is not None
+        if item[1] in platform_match_types and item[2] is not None
     ]
     candidates = [
         item
@@ -117,13 +128,17 @@ def resolve_model(
             f"platform model ID {query!r} maps to multiple representations: {choices}; "
             "provide platform and endpoint"
         )
-    if selected is not None and any(
-        item[1] is IdentifierMatchType.PLATFORM_MODEL_ID and item[2] == selected
-        for item in profile_matches
-    ):
-        match_type = IdentifierMatchType.PLATFORM_MODEL_ID
-    else:
-        match_type = profile_matches[0][1]
+    selected_match = next(
+        (
+            item[1]
+            for item in profile_matches
+            if item[1] in platform_match_types and item[2] == selected
+        ),
+        None,
+    )
+    match_type = (
+        selected_match if selected is not None and selected_match else profile_matches[0][1]
+    )
     return ResolvedModel(
         profile=profile,
         matched_identifier=query,
@@ -221,6 +236,12 @@ def _identifier_pool(profile: ModelProfile) -> list[tuple[str, str | None]]:
         *((alias, None) for alias in identity.aliases),
     ]
     pool.extend((platform.model_id, platform.platform) for platform in profile.platforms)
+    pool.extend(
+        (selector.model_id, platform.platform)
+        for platform in profile.platforms
+        if platform.invocation is not None
+        for selector in platform.invocation.selectors
+    )
     return pool
 
 
@@ -383,7 +404,13 @@ def match_model(
                     "with the user, then retry."
                 ),
             )
-        if identifier is not query:
+        if resolution.matched_by is IdentifierMatchType.INVOCATION_SELECTOR:
+            notes.append(
+                f"Identifier {query!r} is a reviewed invocation selector of "
+                f"{resolution.canonical_name!r}: it routes on-demand invocation via an "
+                "inference-profile id and does not change model identity."
+            )
+        elif identifier is not query:
             notes.append(
                 f"Identifier {query!r} matched {resolution.canonical_name!r} after removing "
                 "a regional inference-profile prefix or version suffix; these route "

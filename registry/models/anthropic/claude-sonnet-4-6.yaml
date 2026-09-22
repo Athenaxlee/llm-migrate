@@ -9,6 +9,17 @@ identity:
 platforms:
   - platform: anthropic-api
     model_id: claude-sonnet-4-6
+    invocation:
+      bare_on_demand_supported: true
+      sources:
+        - id: anthropic-models-overview-invocation-2026-09-22
+          url: https://platform.claude.com/docs/en/about-claude/models/overview
+          title: Models overview - Claude Docs
+          source_type: official_documentation
+          authority_tier: 2
+          publisher: Anthropic
+          retrieved_at: 2026-09-22
+          supports: [platforms]
   - platform: amazon-bedrock
     endpoint: bedrock-runtime
     model_id: anthropic.claude-sonnet-4-6
@@ -18,6 +29,33 @@ platforms:
       tool_use: true
       prompt_caching: true
       streaming: true
+    invocation:
+      bare_on_demand_supported: false
+      selectors:
+        - name: us
+          model_id: us.anthropic.claude-sonnet-4-6
+          description: US cross-region inference profile.
+        - name: eu
+          model_id: eu.anthropic.claude-sonnet-4-6
+          description: EU cross-region inference profile.
+        - name: au
+          model_id: au.anthropic.claude-sonnet-4-6
+          description: Australia cross-region inference profile.
+        - name: jp
+          model_id: jp.anthropic.claude-sonnet-4-6
+          description: Japan cross-region inference profile.
+        - name: global
+          model_id: global.anthropic.claude-sonnet-4-6
+          description: Global cross-region inference profile.
+      sources:
+        - id: aws-inference-profiles-sonnet-4-6-2026-09-22
+          url: https://docs.aws.amazon.com/bedrock/latest/userguide/inference-profiles-support.html
+          title: Supported cross-region inference profiles - Amazon Bedrock
+          source_type: official_documentation
+          authority_tier: 2
+          publisher: Amazon Web Services
+          retrieved_at: 2026-09-22
+          supports: [platforms]
 lifecycle:
   status: active
   announced_on: 2026-02-17

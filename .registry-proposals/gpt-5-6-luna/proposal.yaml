@@ -7,14 +7,14 @@ changes:
   current_value:
   - field_path: pricing
     statements:
-    - The dedicated GPT-5.6 Luna model page lists $1 input, $0.10 cached input, and
-      $6 output per million tokens.
+    - The dedicated GPT-5.6 Luna model page lists $1 input, $0.10 cached input, and $6 output per million
+      tokens.
     - The models catalog summary lists $0.20 input and $1.20 output per million tokens.
     source_ids:
     - openai-gpt-5-6-luna-2026-08-08
     - openai-model-catalog-2026-08-08
-    notes: Pricing is deliberately omitted until the official pages converge or a
-      structured authority resolves the conflict.
+    notes: Pricing is deliberately omitted until the official pages converge or a structured authority
+      resolves the conflict.
   proposed_value: []
   confidence: authoritative
   risk: low
@@ -56,11 +56,20 @@ changes:
   supporting_sources:
   - openai-gpt-5-6-luna-2026-08-29
   reason: authoritative claim supported by a tier 1-3 source
+- field_path: platforms.openai-api.invocation
+  change_type: update
+  current_value: null
+  proposed_value: bare_on_demand_supported true
+  confidence: authoritative
+  risk: low
+  supporting_sources:
+  - openai-model-page-invocation-2026-09-22
+  reason: The official model page documents direct invocation by model id; recording the fact keeps invocation-identity
+    reports quiet for this platform.
 conflicts: []
 unknown_fields: []
 warnings:
-- The registry cannot yet represent long-context price multipliers or cache-write
-  pricing.
+- The registry cannot yet represent long-context price multipliers or cache-write pricing.
 candidate_errors: []
 review:
   status: approved
@@ -69,19 +78,22 @@ review:
   - field_path: evidence_conflicts
     decision: approved
     disposition: promoted
-    rationale: The GPT-5.6 Luna model page and the models catalog were independently
-      refetched on 2026-08-29 and both list $0.20 input and $1.20 output per million
-      tokens, so the recorded official pricing conflict is resolved.
+    rationale: The GPT-5.6 Luna model page and the models catalog were independently refetched on 2026-08-29
+      and both list $0.20 input and $1.20 output per million tokens, so the recorded official pricing
+      conflict is resolved.
   - field_path: pricing
     decision: approved
     disposition: promoted
-    rationale: With the conflict resolved, the refetched official Luna model page
-      supports $0.20 input, $0.02 cached input, and $1.20 output per million tokens.
+    rationale: With the conflict resolved, the refetched official Luna model page supports $0.20 input,
+      $0.02 cached input, and $1.20 output per million tokens.
   - field_path: freshness
     decision: approved
     disposition: promoted
-    rationale: The refetched official model page, models catalog, and GPT-5.6 guide
-      support the candidate profile and the evidence refresh.
-  notes: Long-context price multipliers and cache-write pricing remain unrepresentable
-    in the current schema; a future schema change is tracked separately and does not
-    block this promotion.
+    rationale: The refetched official model page, models catalog, and GPT-5.6 guide support the candidate
+      profile and the evidence refresh.
+  - field_path: platforms.openai-api.invocation
+    decision: approved
+    disposition: promoted
+    rationale: The official model page documents direct invocation by model id (2026-09-22).
+  notes: Long-context price multipliers and cache-write pricing remain unrepresentable in the current
+    schema; a future schema change is tracked separately and does not block this promotion.

@@ -48,6 +48,15 @@ a ~40% tool-description diet plus the opt-in `LLM_MIGRATE_TOOLSET=guided`
 toolset, submission-format rejection tone, and path-based research artifact
 validation. See the V1.4.1 section below and `docs/project_phases.md` §12.4.
 
+V1.5.0-a: Invocation Identity — implemented on 2026-09-22 (ships with the
+v1.5.0 release), closing the audited run's highest-priority defect: canonical
+identity conflated with the invocation selector. The registry now records
+reviewed invocation facts per platform representation, runs record the chosen
+selector-qualified invocation id (seeded from the user's spelling, confirmed
+at start, or driven through an `invocation_selector_required` blocker), and
+every downstream surface enforces the invocable id through reviewed spelling
+sets. See the V1.5.0-a section below and `docs/project_phases.md` §12.5.
+
 ## Released foundation
 
 - Git tag `v1.4.1` is the current stable release; `v1.4.0`, `v1.3.0`,
@@ -663,6 +672,32 @@ source-target `MigrationKnowledge`, not only individual model profiles.
   research validate-artifact`) validates researcher and reviewer YAML in
   place with the existing deterministic gates; researcher/reviewer prompts
   steer agents to it instead of resending full artifacts through MCP.
+
+## V1.5.0-a completed capabilities
+
+- Reviewed invocation facts (2026-09-22): `PlatformAvailability.invocation`
+  records whether the bare model id is invocable on demand and the named,
+  evidence-linked invocation selectors (full inference-profile ids);
+  fail-open when absent, fail-closed schema validation when stated. The
+  canonical Anthropic Bedrock representations record their cross-region
+  inference profiles; the direct Anthropic/OpenAI APIs record bare
+  invocability; proposal bundles carry the evidence through the normal
+  review flow.
+- Invocation-aware run identity (2026-09-22): `migration.yaml` additively
+  records the invocation model id, selector, requires-selector fact, and
+  the reviewed spelling set per side. The user's original spelling seeds
+  the selector; a bare target on a selector-requiring platform returns
+  selector candidates for explicit confirmation at start, and a legacy run
+  gains an `invocation_selector_required` blocker with one evidence-linked
+  correction option per selector.
+- Selector-qualified enforcement (2026-09-22): the worklist carries and
+  rewrites guidance to the invocation id, adapted files referencing a
+  forbidden bare id are rejected with the valid selector ids, spelling-set
+  matching backs the unchanged-claim guards and source/target reference
+  warnings, the sanctioned structured-config swap accepts any reviewed
+  source spelling to any reviewed target spelling, selector ids resolve as
+  exact registry identifiers, and the report records the invocation
+  identity (or warns when facts are unknown).
 
 ## Next work
 

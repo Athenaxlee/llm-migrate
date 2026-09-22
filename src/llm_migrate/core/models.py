@@ -75,12 +75,56 @@ class CapabilityOverrides(StrictModel):
     maximum_output_tokens: int | None = Field(default=None, gt=0)
 
 
+class InvocationSelector(StrictModel):
+    """One named, reviewed way to invoke this platform representation on demand.
+
+    `model_id` is the full id the platform accepts for invocation (e.g. the
+    regional inference-profile id `us.anthropic.claude-sonnet-5`); `name` is
+    its short selector label (e.g. `us`).
+    """
+
+    name: str = Field(min_length=1)
+    model_id: str = Field(min_length=1)
+    description: str | None = None
+    sources: list[SourceReference] = Field(default_factory=list)
+
+
+class PlatformInvocation(StrictModel):
+    """Reviewed facts about how this representation is invoked on demand.
+
+    Fail-open: a platform representation without this block behaves exactly
+    as before (the bare `model_id` is treated as the invocation id, with a
+    report warning). Only a block that states `bare_on_demand_supported:
+    false` hard-requires an invocation selector.
+    """
+
+    bare_on_demand_supported: bool | None = None
+    selectors: list[InvocationSelector] = Field(default_factory=list)
+    sources: list[SourceReference] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def validate_invocation(self) -> PlatformInvocation:
+        names = [selector.name for selector in self.selectors]
+        if len(names) != len(set(names)):
+            raise ValueError("invocation selector names must be unique")
+        ids = [selector.model_id for selector in self.selectors]
+        if len(ids) != len(set(ids)):
+            raise ValueError("invocation selector model ids must be unique")
+        if self.bare_on_demand_supported is False and not self.selectors:
+            raise ValueError(
+                "a platform that does not support bare on-demand invocation must "
+                "declare at least one invocation selector"
+            )
+        return self
+
+
 class PlatformAvailability(StrictModel):
     platform: str = Field(min_length=1)
     model_id: str = Field(min_length=1)
     endpoint: str | None = None
     regions: list[str] = Field(default_factory=list)
     capability_overrides: CapabilityOverrides | None = None
+    invocation: PlatformInvocation | None = None
     sources: list[SourceReference] = Field(default_factory=list)
 
 
@@ -274,6 +318,7 @@ class IdentifierMatchType(StrEnum):
     DISPLAY_NAME = "display_name"
     ALIAS = "alias"
     PLATFORM_MODEL_ID = "platform_model_id"
+    INVOCATION_SELECTOR = "invocation_selector"
 
 
 class ResolvedModel(StrictModel):
@@ -882,6 +927,7 @@ class BlockerCategory(StrEnum):
     CONTEXT_WINDOW = "context_window"
     INVALID_SCHEMA = "invalid_schema"
     PARAMETER = "parameter"
+    INVOCATION = "invocation"
     OTHER = "other"
 
 
@@ -1026,6 +1072,7 @@ class EndpointChange(StrictModel):
     model: str | None = None
     platform: str | None = None
     endpoint: str | None = None
+    invocation_selector: str | None = None
 
 
 class RedesignTaskSpec(StrictModel):

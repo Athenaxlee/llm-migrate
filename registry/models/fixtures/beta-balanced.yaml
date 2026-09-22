@@ -11,6 +11,8 @@ platforms:
   - platform: fixture-api
     model_id: example.beta-balanced-v2
     regions: [test-east]
+    invocation:
+      bare_on_demand_supported: true
 lifecycle:
   status: active
 pricing:

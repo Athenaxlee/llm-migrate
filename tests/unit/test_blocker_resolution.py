@@ -51,11 +51,15 @@ def native_app(tmp_path: Path) -> Path:
 
 
 def _start_blocked_run(service: MigrationService, app: Path) -> Path:
-    """Target claude-sonnet-5 on Bedrock, whose override declares no structured output."""
+    """Target claude-sonnet-5 on Bedrock, whose override declares no structured output.
+
+    The selector-qualified target spelling seeds the invocation selector (the
+    bare Bedrock id is not invocable on demand).
+    """
     start = service.start_migration_run(
         app,
         "claude-sonnet-4-6",
-        "claude-sonnet-5",
+        "us.anthropic.claude-sonnet-5",
         source_platform="anthropic-api",
         target_platform="amazon-bedrock",
         target_endpoint="bedrock-runtime",

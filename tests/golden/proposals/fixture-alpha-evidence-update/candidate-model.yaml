@@ -18,6 +18,18 @@ platforms:
   - test-east
   - test-west
   capability_overrides: null
+  invocation:
+    bare_on_demand_supported: false
+    selectors:
+    - name: test-east
+      model_id: test-east.fixture.alpha-large-v1
+      description: TEST/FIXTURE east routing profile.
+      sources: []
+    - name: test-west
+      model_id: test-west.fixture.alpha-large-v1
+      description: TEST/FIXTURE west routing profile.
+      sources: []
+    sources: []
   sources: []
 lifecycle:
   status: legacy

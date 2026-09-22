@@ -88,6 +88,11 @@ from llm_migrate.core.evaluation_models import (
 from llm_migrate.core.evaluator_registry import registered_evaluators
 from llm_migrate.core.freshness import registry_freshness
 from llm_migrate.core.intelligence import check_model_lifecycle, estimate_migration_cost
+from llm_migrate.core.invocation_identity import (
+    InvocationChoice,
+    derive_invocation,
+    platform_spelling_set,
+)
 from llm_migrate.core.knowledge import (
     RegistryFreshnessReport,
     RegistryUpdateProposal,
@@ -128,6 +133,7 @@ from llm_migrate.core.models import (
     ValidationIssue,
     ValidationLevel,
     migration_blocker,
+    migration_complexity,
 )
 from llm_migrate.core.moments import utc_moment
 from llm_migrate.core.orchestration import (
@@ -1247,6 +1253,60 @@ class MigrationService:
         target_resolution = target_match.resolution
         assert source_resolution is not None and target_resolution is not None
         assert source_resolution.platform is not None and target_resolution.platform is not None
+        target_derivation = derive_invocation(target_resolution.platform, target)
+        if target_derivation.choice is None:
+            # The reviewed target platform forbids bare on-demand invocation and
+            # several selectors exist: the user must pick one before anything is
+            # written. Retrying with the chosen selector's model id seeds it.
+            identity = target_resolution.profile.identity
+            bare = target_resolution.platform.model_id
+            return MigrationRunStart(
+                status="needs_confirmation",
+                source_match=source_match,
+                target_match=ModelMatchResult(
+                    query=target,
+                    platform_query=target_platform,
+                    status=ModelMatchStatus.NEEDS_CONFIRMATION,
+                    candidates=[
+                        ModelMatchCandidate(
+                            canonical_name=identity.canonical_name,
+                            display_name=identity.display_name,
+                            provider=identity.provider,
+                            matched_identifier=selector.model_id,
+                            platform=target_resolution.platform.platform,
+                            endpoint=target_resolution.platform.endpoint,
+                            similarity=1.0,
+                            reason=f"invocation selector {selector.name!r}"
+                            + (f": {selector.description}" if selector.description else ""),
+                        )
+                        for selector in target_derivation.selection_required
+                    ],
+                    notes=[
+                        *target_match.notes,
+                        f"The bare model id {bare!r} is not invocable on demand on "
+                        f"{target_resolution.platform.platform}; an invocation "
+                        "selector is required.",
+                    ],
+                    guidance=(
+                        "Ask the user which invocation selector the target should "
+                        "use, then retry start_migration with the target set to the "
+                        "chosen selector's model id."
+                    ),
+                ),
+                next_steps=[
+                    "Show the invocation selector candidates to the user and ask "
+                    "which one the deployment should invoke; never choose one on "
+                    "their behalf.",
+                    "Retry start_migration with the target set to the chosen "
+                    "selector's model id (e.g. the full regional inference-profile "
+                    "id).",
+                ],
+            )
+        target_choice = target_derivation.choice
+        source_derivation = derive_invocation(source_resolution.platform, source)
+        source_choice = source_derivation.choice or InvocationChoice(
+            invocation_model_id=source_resolution.platform.model_id
+        )
         application_path = Path(application).resolve()
         if output_dir is not None:
             run_dir = Path(output_dir).resolve()
@@ -1289,6 +1349,13 @@ class MigrationService:
             target=target_identity,
             source_model_id=source_resolution.platform.model_id,
             target_model_id=target_resolution.platform.model_id,
+            source_invocation_model_id=source_choice.invocation_model_id,
+            target_invocation_model_id=target_choice.invocation_model_id,
+            source_invocation_selector=source_choice.selector,
+            target_invocation_selector=target_choice.selector,
+            target_invocation_requires_selector=target_choice.requires_selector,
+            source_model_spellings=platform_spelling_set(source_resolution.platform),
+            target_model_spellings=platform_spelling_set(target_resolution.platform),
             created_on=as_of,
             prompt_sources=list(prompt_sources or []),
         )
@@ -1350,7 +1417,14 @@ class MigrationService:
             run=config,
             paths=run_paths(run_dir),
             research=need,
-            warnings=[*source_match.notes, *target_match.notes, *analysis.warnings],
+            warnings=[
+                *source_match.notes,
+                *target_match.notes,
+                *target_choice.warnings,
+                *target_choice.notes,
+                *source_choice.notes,
+                *analysis.warnings,
+            ],
             next_steps=next_steps,
         )
 
@@ -1404,7 +1478,108 @@ class MigrationService:
         )
         if session_lines:
             plan = plan.model_copy(update={"warnings": [*plan.warnings, *session_lines]})
+        plan = self._with_invocation_identity(plan, config, service)
         return apply_decisions(plan, load_decision_log(run_dir, config.run_id), config)
+
+    def _with_invocation_identity(
+        self,
+        plan: MigrationPlan,
+        config: MigrationRunConfig,
+        service: MigrationService,
+    ) -> MigrationPlan:
+        """Surface the run's target invocation identity on the plan.
+
+        Canonical identity matching normalizes selector prefixes away, so the
+        selector-qualified invocation id is enforced explicitly: the plan
+        records the chosen invocation identity (or warns that invocation facts
+        are unknown), and a reviewed target platform that forbids bare
+        on-demand invocation with no selector recorded gains an
+        `invocation_selector_required` blocker — injected before decision
+        replay so an accept decision can address it like any other blocker.
+        """
+        try:
+            resolved = service.resolve_model(
+                config.target.model, config.target.platform, config.target.endpoint
+            )
+        except RegistryError:
+            return plan
+        platform = resolved.platform
+        if platform is None:
+            return plan
+        invocation = platform.invocation
+        warnings = list(plan.warnings)
+        rationale = list(plan.target_selection_rationale)
+        blockers = list(plan.blockers)
+        if config.target_invocation_selector and config.target_invocation_model_id:
+            rationale.append(
+                "Invocation identity: the target is invoked as "
+                f"{config.target_invocation_model_id!r} (selector "
+                f"{config.target_invocation_selector!r}); deliverables must "
+                "reference this id, not the bare platform model id."
+            )
+        elif invocation is None:
+            warnings.append(
+                "No reviewed invocation facts exist for "
+                f"{platform.platform}/{platform.model_id}; the bare platform model "
+                "id is used as the invocation id. Verify it is invocable on demand "
+                "before deploying."
+            )
+        if (
+            invocation is not None
+            and invocation.bare_on_demand_supported is False
+            and config.target_invocation_selector is None
+        ):
+            names = ", ".join(
+                f"{selector.name} ({selector.model_id})" for selector in invocation.selectors
+            )
+            evidence = sorted(
+                {
+                    str(source.url)
+                    for selector in invocation.selectors
+                    for source in selector.sources
+                    if source.url
+                }
+                | {str(source.url) for source in invocation.sources if source.url}
+            )
+            blockers.append(
+                migration_blocker(
+                    code="invocation_selector_required",
+                    category=BlockerCategory.INVOCATION,
+                    message=(
+                        "The target platform representation "
+                        f"{platform.platform}/{platform.model_id} is not invocable "
+                        "by its bare model id; choose an invocation selector: "
+                        f"{names}."
+                    ),
+                    evidence_urls=evidence,
+                    data={
+                        "selectors": [
+                            {"name": selector.name, "model_id": selector.model_id}
+                            for selector in invocation.selectors
+                        ],
+                        "side": "target",
+                    },
+                )
+            )
+        if (
+            warnings == list(plan.warnings)
+            and blockers == list(plan.blockers)
+            and rationale == list(plan.target_selection_rationale)
+        ):
+            return plan
+        return plan.model_copy(
+            update={
+                "warnings": warnings,
+                "target_selection_rationale": rationale,
+                "blockers": blockers,
+                "migration_complexity": migration_complexity(
+                    blockers,
+                    plan.model_differences.highest_severity,
+                    plan.required_changes,
+                    warnings,
+                ),
+            }
+        )
 
     def list_adaptation_tasks(
         self,
@@ -1536,12 +1711,25 @@ class MigrationService:
         service = run_service[0]
         config_updated = False
         if option.kind in {ResolutionKind.RETARGET, ResolutionKind.CORRECTION}:
-            side = "target" if option.kind is ResolutionKind.RETARGET else "source"
+            # A correction may fix either side; which change is set says which.
+            side = "target" if option.target_change is not None else "source"
             change = option.target_change if side == "target" else option.source_change
             assert change is not None
             identity = config.target if side == "target" else config.source
+            selector_only = (
+                change.invocation_selector is not None
+                and change.model is None
+                and change.platform is None
+                and change.endpoint is None
+            )
             try:
-                if change.model and change.platform is None:
+                if selector_only:
+                    # Only the invocation selector changes; the identity (and its
+                    # endpoint) stays exactly what the run already records.
+                    resolved = service.resolve_model(
+                        identity.model, identity.platform, identity.endpoint
+                    )
+                elif change.model and change.platform is None:
                     # A model correction must not inherit the mistakenly
                     # declared platform; pin the model's own representation.
                     resolved = service.resolve_model(change.model)
@@ -1579,12 +1767,49 @@ class MigrationService:
                 model=resolved.canonical_name,
                 endpoint=resolved.platform.endpoint,
             )
-            config = config.model_copy(
-                update={
-                    side: new_identity,
-                    f"{side}_model_id": resolved.platform.model_id,
-                }
-            )
+            invocation_facts = resolved.platform.invocation
+            invocation_id: str | None = None
+            selector_chosen: str | None = None
+            if change.invocation_selector is not None:
+                selector = next(
+                    (
+                        item
+                        for item in (invocation_facts.selectors if invocation_facts else [])
+                        if item.name == change.invocation_selector
+                    ),
+                    None,
+                )
+                if selector is None:
+                    return BlockerDecisionResult(
+                        accepted=False,
+                        problems=[
+                            f"invocation selector {change.invocation_selector!r} is not a "
+                            "reviewed selector of the chosen platform representation"
+                        ],
+                        message="Rejected: the decision names an unknown invocation selector.",
+                    )
+                invocation_id, selector_chosen = selector.model_id, selector.name
+            else:
+                derivation = derive_invocation(resolved.platform, change.model)
+                if derivation.choice is not None:
+                    invocation_id = derivation.choice.invocation_model_id
+                    selector_chosen = derivation.choice.selector
+                # With several selectors and none derivable, the invocation
+                # fields stay unset and the invocation_selector_required
+                # blocker surfaces on the next plan regeneration.
+            update: dict[str, Any] = {
+                side: new_identity,
+                f"{side}_model_id": resolved.platform.model_id,
+                f"{side}_invocation_model_id": invocation_id,
+                f"{side}_invocation_selector": selector_chosen,
+                f"{side}_model_spellings": platform_spelling_set(resolved.platform),
+            }
+            if side == "target":
+                update["target_invocation_requires_selector"] = (
+                    invocation_facts is not None
+                    and invocation_facts.bare_on_demand_supported is False
+                )
+            config = config.model_copy(update=update)
             write_run_config(workspace, config)
             config_updated = True
         with run_state_lock(workspace):

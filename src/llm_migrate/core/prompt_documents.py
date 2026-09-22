@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import json
 import tomllib
+from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any, Literal
 
@@ -157,12 +158,22 @@ def build_candidate_document(
     return None
 
 
-def _is_model_id_swap(original: Any, adapted: Any, source_id: str, target_id: str) -> bool:
-    """Whether a non-prompt value changed exactly by source->target model id."""
+def _is_model_id_swap(
+    original: Any, adapted: Any, source_ids: Sequence[str], target_ids: Sequence[str]
+) -> bool:
+    """Whether a non-prompt value changed exactly by a source->target id swap.
+
+    Any reviewed spelling of the source may be replaced by any reviewed
+    spelling of the target (bare platform id or a selector-qualified
+    invocation id); anything else remains an unsanctioned change.
+    """
     original_json = json.dumps(original, sort_keys=True, default=str)
     adapted_json = json.dumps(adapted, sort_keys=True, default=str)
-    return source_id in original_json and adapted_json == original_json.replace(
-        source_id, target_id
+    return any(
+        source_id in original_json and adapted_json == original_json.replace(source_id, target_id)
+        for source_id in sorted(source_ids, key=len, reverse=True)
+        for target_id in target_ids
+        if source_id != target_id
     )
 
 
@@ -170,8 +181,8 @@ def _document_problems(
     original: Any,
     adapted: Any,
     original_components: list[PromptComponent],
-    source_model_id: str | None,
-    target_model_id: str | None,
+    source_model_ids: Sequence[str],
+    target_model_ids: Sequence[str],
 ) -> tuple[list[str], list[str]]:
     """Non-prompt values must be preserved exactly; only components may change.
 
@@ -197,10 +208,9 @@ def _document_problems(
             problems.append(f"the adapted document dropped the non-prompt key {key!r}")
         elif adapted[key] != value:
             if (
-                source_model_id
-                and target_model_id
-                and source_model_id != target_model_id
-                and _is_model_id_swap(value, adapted[key], source_model_id, target_model_id)
+                source_model_ids
+                and target_model_ids
+                and _is_model_id_swap(value, adapted[key], source_model_ids, target_model_ids)
             ):
                 notes.append(
                     f"non-prompt value {key!r} updated from the source to the target model id"
@@ -317,6 +327,8 @@ def evaluate_prompt_submission(
     *,
     source_model_id: str | None = None,
     target_model_id: str | None = None,
+    source_model_ids: Sequence[str] | None = None,
+    target_model_ids: Sequence[str] | None = None,
 ) -> SubmissionAssessment:
     """Fail-closed checks for a submitted prompt adaptation, in one parse.
 
@@ -369,8 +381,10 @@ def evaluate_prompt_submission(
         and [_normalized(value) for value in original_positional]
         == [_normalized(value) for value in adapted_positional]
     )
+    source_ids = list(source_model_ids or ([source_model_id] if source_model_id else []))
+    target_ids = list(target_model_ids or ([target_model_id] if target_model_id else []))
     problems, notes = _document_problems(
-        original, adapted, original_components, source_model_id, target_model_id
+        original, adapted, original_components, source_ids, target_ids
     )
     return SubmissionAssessment(
         problems=problems,

@@ -28,6 +28,10 @@ from llm_migrate.core.annotations import (
     standalone_annotation_problems,
     with_change_ids,
 )
+from llm_migrate.core.invocation_identity import (
+    qualify_bare_references,
+    references_bare_alone,
+)
 from llm_migrate.core.models import (
     ComparisonSeverity,
     MigrationAdvice,
@@ -60,7 +64,14 @@ class WorkspaceError(ValueError):
 
 
 class MigrationRunConfig(StrictModel):
-    """Durable identity of one migration run, persisted as `migration.yaml`."""
+    """Durable identity of one migration run, persisted as `migration.yaml`.
+
+    `*_model_id` is the bare platform model id (canonical identity);
+    `*_invocation_model_id` is the id the platform accepts for an on-demand
+    call (selector-qualified when a selector was chosen). The invocation
+    fields are additive: schema version stays "1" and configs written before
+    v1.5.0-a still load, behaving exactly as before.
+    """
 
     schema_version: Literal["1"] = "1"
     run_id: str = Field(min_length=1, pattern=RUN_ID_PATTERN)
@@ -69,8 +80,35 @@ class MigrationRunConfig(StrictModel):
     target: ModelEndpointIdentity
     source_model_id: str
     target_model_id: str
+    source_invocation_model_id: str | None = None
+    target_invocation_model_id: str | None = None
+    source_invocation_selector: str | None = None
+    target_invocation_selector: str | None = None
+    target_invocation_requires_selector: bool = False
+    source_model_spellings: list[str] = Field(default_factory=list)
+    target_model_spellings: list[str] = Field(default_factory=list)
     created_on: date
     prompt_sources: list[str] = Field(default_factory=list)
+
+
+def source_spellings(config: MigrationRunConfig) -> list[str]:
+    """Every reviewed spelling that names the source model on its platform."""
+    return config.source_model_spellings or [config.source_model_id]
+
+
+def target_spellings(config: MigrationRunConfig) -> list[str]:
+    """Every reviewed spelling that names the target model on its platform."""
+    return config.target_model_spellings or [config.target_model_id]
+
+
+def effective_target_id(config: MigrationRunConfig) -> str:
+    """The id the application must reference to invoke the target on demand."""
+    return config.target_invocation_model_id or config.target_model_id
+
+
+def effective_source_id(config: MigrationRunConfig) -> str:
+    """The id the application referenced to invoke the source on demand."""
+    return config.source_invocation_model_id or config.source_model_id
 
 
 class MigrationRunPaths(StrictModel):
@@ -294,13 +332,20 @@ class FileAdaptationTask(StrictModel):
 
 
 class AdaptationTaskList(StrictModel):
-    """Everything still needed to produce a complete adaptation output set."""
+    """Everything still needed to produce a complete adaptation output set.
+
+    `target_model_id` stays the bare platform id; `target_invocation_model_id`
+    (additive) is the selector-qualified id deliverables must reference when a
+    selector was chosen.
+    """
 
     schema_version: Literal["3"] = "3"
     run_id: str
     source_model: str
     target_model: str
     target_model_id: str
+    target_invocation_model_id: str | None = None
+    target_invocation_selector: str | None = None
     prompt_tasks: list[PromptAdaptationTask] = Field(default_factory=list)
     file_tasks: list[FileAdaptationTask] = Field(default_factory=list)
     blockers: list[str] = Field(default_factory=list)
@@ -523,9 +568,21 @@ def derive_adaptation_tasks(
     run_dir: Path,
     log: AdaptationLog | None = None,
 ) -> AdaptationTaskList:
-    """Turn one migration plan into an explicit, per-file adaptation worklist."""
+    """Turn one migration plan into an explicit, per-file adaptation worklist.
+
+    Every guidance and required-change text is invocation-qualified: bare
+    target model ids the plan derived are rewritten to the run's chosen
+    invocation id, so the toolkit never instructs an id the platform cannot
+    invoke on demand.
+    """
     if log is None:
         log = load_adaptation_log(run_dir, config.run_id)
+
+    def invocation_qualified(text: str) -> str:
+        return qualify_bare_references(
+            text, config.target_model_id, target_spellings(config), effective_target_id(config)
+        )
+
     submitted = {(entry.kind, entry.source_path) for entry in log.entries}
     prompt_tasks: list[PromptAdaptationTask] = []
     prompt_paths: set[str] = set()
@@ -535,9 +592,11 @@ def derive_adaptation_tasks(
             continue  # No real path means no submittable (or closable) task.
         specs_by_path.setdefault(spec.source_path, []).append(spec)
     difference_guidance = [
-        f"Model difference ({item.severity.value}): {item.migration_impact}"
-        + (f" Action: {item.recommended_action}" if item.recommended_action else "")
-        + (f" (evidence: {item.target_evidence_url})" if item.target_evidence_url else "")
+        invocation_qualified(
+            f"Model difference ({item.severity.value}): {item.migration_impact}"
+            + (f" Action: {item.recommended_action}" if item.recommended_action else "")
+            + (f" (evidence: {item.target_evidence_url})" if item.target_evidence_url else "")
+        )
         for item in plan.model_differences.differences
         if item.category == "migration_knowledge" and item.severity is not ComparisonSeverity.INFO
     ]
@@ -571,11 +630,11 @@ def derive_adaptation_tasks(
                     f"{prefix}In-prompt finding ({finding.category}): {finding.message}{evidence}"
                 )
             for text in _spec_guidance(spec):
-                line = prefix + text
+                line = invocation_qualified(prefix + text)
                 if line not in guidance:
                     guidance.append(line)
             for text in _advice_texts(spec.migration_risks):
-                line = prefix + text
+                line = invocation_qualified(prefix + text)
                 if line not in risks:
                     risks.append(line)
         candidate = (
@@ -602,7 +661,7 @@ def derive_adaptation_tasks(
         *plan.configuration_changes,
     ):
         for file in change.files or ["<application>"]:
-            changes_by_file.setdefault(file, []).append(change.description)
+            changes_by_file.setdefault(file, []).append(invocation_qualified(change.description))
     file_tasks = [
         FileAdaptationTask(
             source_path=file,
@@ -628,7 +687,7 @@ def derive_adaptation_tasks(
                     guidance_item(
                         "Update every detected coupling in this file for "
                         f"{config.target.model} on {config.target.platform} "
-                        f"(model id {config.target_model_id})."
+                        f"(invocation model id {effective_target_id(config)})."
                     )
                 ],
             )
@@ -683,6 +742,8 @@ def derive_adaptation_tasks(
         source_model=config.source.model,
         target_model=config.target.model,
         target_model_id=config.target_model_id,
+        target_invocation_model_id=config.target_invocation_model_id,
+        target_invocation_selector=config.target_invocation_selector,
         prompt_tasks=prompt_tasks,
         file_tasks=file_tasks,
         blockers=[blocker.rendered for blocker in plan.blockers],
@@ -774,13 +835,11 @@ def _unchanged_prompt_problems(
     problems: list[str] = []
     if not rationale.strip():
         problems.append("unchanged=true requires a rationale recording the review")
+    target_forms = {*target_spellings(config), config.target.model}
     needles = [
         needle
-        for needle, counterpart in (
-            (config.source_model_id, config.target_model_id),
-            (config.source.model, config.target.model),
-        )
-        if needle and needle != counterpart
+        for needle in (*source_spellings(config), config.source.model)
+        if needle and needle not in target_forms
     ]
     mentioned = sorted(
         {needle for needle in needles if document_mentions(original_text, format, needle)}
@@ -937,8 +996,8 @@ def submit_adapted_prompt(
             original_text,
             adapted_prompt,
             format,
-            source_model_id=config.source_model_id,
-            target_model_id=config.target_model_id,
+            source_model_ids=source_spellings(config),
+            target_model_ids=target_spellings(config),
         )
         blockers.extend(assessment.problems)
         if assessment.checks_skipped:
@@ -1121,14 +1180,24 @@ def submit_adapted_file(
             "annotated_changes could not be checked against a diff because the file "
             "has no original in the application"
         )
+    unchanged_source_mention = (
+        next(
+            (
+                spelling
+                for spelling in source_spellings(config)
+                if spelling not in set(target_spellings(config)) and spelling in (original or "")
+            ),
+            None,
+        )
+        if unchanged
+        else None
+    )
     if unchanged:
         if original is None:
             problems.append("unchanged=true requires the file to exist in the application")
-        elif (
-            config.source_model_id != config.target_model_id and config.source_model_id in original
-        ):
+        elif unchanged_source_mention is not None:
             problems.append(
-                f"the file references the source model id {config.source_model_id!r}; "
+                f"the file references the source model id {unchanged_source_mention!r}; "
                 "it cannot be recorded as unchanged"
             )
         else:
@@ -1158,6 +1227,19 @@ def submit_adapted_file(
             ast.parse(adapted_content)
         except SyntaxError as exc:
             problems.append(f"the adapted Python content does not parse: {exc}")
+    selector_ids = [item for item in target_spellings(config) if item != config.target_model_id]
+    if (
+        not unchanged
+        and config.target_invocation_requires_selector
+        and selector_ids
+        and references_bare_alone(adapted_content, config.target_model_id, selector_ids)
+    ):
+        problems.append(
+            f"the adapted content references the bare platform model id "
+            f"{config.target_model_id!r}, which the reviewed profile states is not "
+            "invocable on demand; reference an invocation selector id instead: "
+            + ", ".join(selector_ids)
+        )
     if not changes and not annotations:
         problems.append(
             "at least one annotated change (or `changes` entry) describing the edit is required"
@@ -1172,21 +1254,25 @@ def submit_adapted_file(
             + "; ".join(problems)
             + (_FORMAT_REQUIREMENT_NOTE if format_problems else ""),
         )
-    if config.source_model_id != config.target_model_id:
-        if config.source_model_id in adapted_content:
-            warnings.append(
-                f"the source model id {config.source_model_id!r} still appears in the "
-                "adapted content"
-            )
-        if (
-            original is not None
-            and config.source_model_id in original
-            and config.target_model_id not in adapted_content
-        ):
-            warnings.append(
-                f"the original file referenced {config.source_model_id!r} but the adapted "
-                f"content never references the target model id {config.target_model_id!r}"
-            )
+    target_forms = target_spellings(config)
+    source_forms = [item for item in source_spellings(config) if item not in set(target_forms)]
+    remaining = [item for item in source_forms if item in adapted_content]
+    # Report the most specific spelling only (a bare id is a substring of its
+    # selector-qualified forms and would double-report).
+    for spelling in remaining:
+        if any(spelling != other and spelling in other for other in remaining):
+            continue
+        warnings.append(f"the source model id {spelling!r} still appears in the adapted content")
+    if (
+        original is not None
+        and any(item in original for item in source_forms)
+        and not any(item in adapted_content for item in target_forms)
+    ):
+        warnings.append(
+            "the original file referenced the source model id but the adapted "
+            f"content never references the target invocation model id "
+            f"{effective_target_id(config)!r}"
+        )
     output_path = Path(run_dir) / "output" / "files" / relative
     required_texts = {item.id: item.text for item in required_changes}
     entry = AdaptationEntry(

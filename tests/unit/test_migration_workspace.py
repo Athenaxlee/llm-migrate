@@ -94,7 +94,7 @@ def test_start_honors_explicit_output_dir_and_skip_research(
     start = service.start_migration_run(
         bedrock_app,
         "claude-sonnet-4-6",
-        "claude-sonnet-5",
+        "us.anthropic.claude-sonnet-5",
         source_platform="amazon-bedrock",
         target_platform="amazon-bedrock",
         target_endpoint="bedrock-runtime",
@@ -173,11 +173,11 @@ def test_submit_adapted_file_fails_closed_then_accepts(
     )
     assert not unchanged.accepted
 
-    adapted = original.replace("anthropic.claude-sonnet-4-6", "anthropic.claude-sonnet-5")
-    accepted = service.submit_adapted_file(
+    bare = original.replace("anthropic.claude-sonnet-4-6", "anthropic.claude-sonnet-5")
+    bare_rejected = service.submit_adapted_file(
         run_dir,
         "app.py",
-        adapted,
+        bare,
         "Sonnet 5 uses a new Bedrock model id.",
         ["Replaced the modelId value."],
         submitted_on=AS_OF,
@@ -187,6 +187,26 @@ def test_submit_adapted_file_fails_closed_then_accepts(
                 "anthropic.claude-sonnet-4-6",
                 "anthropic.claude-sonnet-5",
                 why="Sonnet 5 has its own Bedrock model id.",
+            )
+        ],
+    )
+    assert not bare_rejected.accepted
+    assert any("not invocable on demand" in problem for problem in bare_rejected.problems)
+
+    adapted = original.replace("anthropic.claude-sonnet-4-6", "us.anthropic.claude-sonnet-5")
+    accepted = service.submit_adapted_file(
+        run_dir,
+        "app.py",
+        adapted,
+        "Sonnet 5 uses a new Bedrock model id.",
+        ["Replaced the modelId value with the US inference-profile id."],
+        submitted_on=AS_OF,
+        guidance_dispositions=dispose_all(service, run_dir, "app.py"),
+        annotated_changes=[
+            edit_change(
+                "anthropic.claude-sonnet-4-6",
+                "us.anthropic.claude-sonnet-5",
+                why="Sonnet 5 on Bedrock is invoked through the US inference profile.",
             )
         ],
     )
@@ -311,20 +331,20 @@ def test_finalize_writes_manifest_report_and_coverage(
     assert "no adapted version was submitted" in Path(first.report_path).read_text(encoding="utf-8")
 
     original = (bedrock_app / "app.py").read_text(encoding="utf-8")
-    adapted = original.replace("anthropic.claude-sonnet-4-6", "anthropic.claude-sonnet-5")
+    adapted = original.replace("anthropic.claude-sonnet-4-6", "us.anthropic.claude-sonnet-5")
     submitted = service.submit_adapted_file(
         run_dir,
         "app.py",
         adapted,
         "Sonnet 5 uses a new Bedrock model id.",
-        ["Replaced the modelId value."],
+        ["Replaced the modelId value with the US inference-profile id."],
         submitted_on=AS_OF,
         guidance_dispositions=dispose_all(service, run_dir, "app.py"),
         annotated_changes=[
             edit_change(
                 "anthropic.claude-sonnet-4-6",
-                "anthropic.claude-sonnet-5",
-                why="Sonnet 5 has its own Bedrock model id.",
+                "us.anthropic.claude-sonnet-5",
+                why="Sonnet 5 on Bedrock is invoked through the US inference profile.",
             )
         ],
     )
@@ -335,7 +355,7 @@ def test_finalize_writes_manifest_report_and_coverage(
     report = Path(final.report_path).read_text(encoding="utf-8")
     assert "## Adaptation deliverables" in report
     assert "Sonnet 5 uses a new Bedrock model id." in report
-    assert "Replaced the modelId value." in report
+    assert "Replaced the modelId value with the US inference-profile id." in report
     manifest = yaml.safe_load(Path(final.manifest_path).read_text(encoding="utf-8"))
     assert manifest["migration"]["target"]["model_id"] == "anthropic.claude-sonnet-5"
     # The run workspace never leaks into the scan of the application itself.

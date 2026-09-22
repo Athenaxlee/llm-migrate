@@ -152,9 +152,9 @@ def test_mcp_guided_run_covers_the_vague_bedrock_scenario(tmp_path, project_root
     submission = mcp_submit_adapted_file(
         run_dir,
         "app.py",
-        original.replace("anthropic.claude-sonnet-4-6", "anthropic.claude-sonnet-5"),
+        original.replace("anthropic.claude-sonnet-4-6", "us.anthropic.claude-sonnet-5"),
         "Sonnet 5 uses a new Bedrock model id.",
-        ["Replaced the modelId value."],
+        ["Replaced the modelId value with the US inference-profile id."],
         guidance_dispositions=[
             {"guidance_id": item["id"], "disposition": "applied", "note": ""}
             for item in tasks["file_tasks"][0]["required_changes"]
@@ -163,8 +163,8 @@ def test_mcp_guided_run_covers_the_vague_bedrock_scenario(tmp_path, project_root
             {
                 "operation": "edit",
                 "original_anchor": "anthropic.claude-sonnet-4-6",
-                "adapted_anchor": "anthropic.claude-sonnet-5",
-                "why": "Sonnet 5 has its own Bedrock model id.",
+                "adapted_anchor": "us.anthropic.claude-sonnet-5",
+                "why": "Sonnet 5 on Bedrock is invoked through the US inference profile.",
                 "evidence": [{"kind": "mechanical"}],
             }
         ],
@@ -177,7 +177,7 @@ def test_mcp_guided_run_covers_the_vague_bedrock_scenario(tmp_path, project_root
         encoding="utf-8"
     )
     assert "## Adaptation deliverables" in report
-    assert "Replaced the modelId value." in report
+    assert "Replaced the modelId value with the US inference-profile id." in report
     assert (app / "app.py").read_text(encoding="utf-8") == original
 
 

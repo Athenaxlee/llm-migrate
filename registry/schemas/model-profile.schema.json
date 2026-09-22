@@ -198,6 +198,47 @@
       "title": "FreshnessMetadata",
       "type": "object"
     },
+    "InvocationSelector": {
+      "additionalProperties": false,
+      "description": "One named, reviewed way to invoke this platform representation on demand.\n\n`model_id` is the full id the platform accepts for invocation (e.g. the\nregional inference-profile id `us.anthropic.claude-sonnet-5`); `name` is\nits short selector label (e.g. `us`).",
+      "properties": {
+        "description": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Description"
+        },
+        "model_id": {
+          "minLength": 1,
+          "title": "Model Id",
+          "type": "string"
+        },
+        "name": {
+          "minLength": 1,
+          "title": "Name",
+          "type": "string"
+        },
+        "sources": {
+          "items": {
+            "$ref": "#/$defs/SourceReference"
+          },
+          "title": "Sources",
+          "type": "array"
+        }
+      },
+      "required": [
+        "name",
+        "model_id"
+      ],
+      "title": "InvocationSelector",
+      "type": "object"
+    },
     "LifecycleStatus": {
       "enum": [
         "active",
@@ -615,6 +656,17 @@
           "default": null,
           "title": "Endpoint"
         },
+        "invocation": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/PlatformInvocation"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
         "model_id": {
           "minLength": 1,
           "title": "Model Id",
@@ -645,6 +697,40 @@
         "model_id"
       ],
       "title": "PlatformAvailability",
+      "type": "object"
+    },
+    "PlatformInvocation": {
+      "additionalProperties": false,
+      "description": "Reviewed facts about how this representation is invoked on demand.\n\nFail-open: a platform representation without this block behaves exactly\nas before (the bare `model_id` is treated as the invocation id, with a\nreport warning). Only a block that states `bare_on_demand_supported:\nfalse` hard-requires an invocation selector.",
+      "properties": {
+        "bare_on_demand_supported": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Bare On Demand Supported"
+        },
+        "selectors": {
+          "items": {
+            "$ref": "#/$defs/InvocationSelector"
+          },
+          "title": "Selectors",
+          "type": "array"
+        },
+        "sources": {
+          "items": {
+            "$ref": "#/$defs/SourceReference"
+          },
+          "title": "Sources",
+          "type": "array"
+        }
+      },
+      "title": "PlatformInvocation",
       "type": "object"
     },
     "PricePerMillionTokens": {

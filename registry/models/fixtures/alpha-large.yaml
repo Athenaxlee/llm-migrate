@@ -11,6 +11,15 @@ platforms:
   - platform: fixture-api
     model_id: fixture.alpha-large-v1
     regions: [test-east, test-west]
+    invocation:
+      bare_on_demand_supported: false
+      selectors:
+        - name: test-east
+          model_id: test-east.fixture.alpha-large-v1
+          description: TEST/FIXTURE east routing profile.
+        - name: test-west
+          model_id: test-west.fixture.alpha-large-v1
+          description: TEST/FIXTURE west routing profile.
 lifecycle:
   status: legacy
 pricing:

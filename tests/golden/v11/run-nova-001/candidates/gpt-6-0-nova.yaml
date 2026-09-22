@@ -14,6 +14,7 @@ platforms:
   endpoint: responses
   regions: []
   capability_overrides: null
+  invocation: null
   sources: []
 lifecycle:
   status: active

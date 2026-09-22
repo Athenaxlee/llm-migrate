@@ -47,3 +47,7 @@ Sources:
 - openai-gpt-5-6-luna-2026-08-29
 
 Canonical registry files were not modified. Review this proposal before promotion.
+
+## Invocation identity (2026-09-22)
+
+- OpenAI API: the model id is directly invocable (`bare_on_demand_supported: true`), per the official model page.

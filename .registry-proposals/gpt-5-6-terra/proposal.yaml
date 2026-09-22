@@ -1,12 +1,21 @@
 schema_version: '1'
 model: gpt-5.6-terra
 proposal_date: '2026-08-29'
-changes: []
+changes:
+- field_path: platforms.openai-api.invocation
+  change_type: update
+  current_value: null
+  proposed_value: bare_on_demand_supported true
+  confidence: authoritative
+  risk: low
+  supporting_sources:
+  - openai-model-page-invocation-2026-09-22
+  reason: The official model page documents direct invocation by model id; recording the fact keeps invocation-identity
+    reports quiet for this platform.
 conflicts: []
 unknown_fields: []
 warnings:
-- The registry cannot yet represent long-context price multipliers or cache-write
-  pricing.
+- The registry cannot yet represent long-context price multipliers or cache-write pricing.
 candidate_errors: []
 review:
   status: approved_no_change
@@ -15,9 +24,12 @@ review:
   - field_path: freshness
     decision: approved
     disposition: promoted
-    rationale: The GPT-5.6 Terra model page and models catalog were refetched on
-      2026-08-29 and confirm the existing canonical facts unchanged, so only the
-      refreshed evidence, sources, and freshness metadata are promoted.
-  notes: Long-context price multipliers and cache-write pricing remain unrepresentable
-    in the current schema; a future schema change is tracked separately and does not
-    block this promotion.
+    rationale: The GPT-5.6 Terra model page and models catalog were refetched on 2026-08-29 and confirm
+      the existing canonical facts unchanged, so only the refreshed evidence, sources, and freshness metadata
+      are promoted.
+  - field_path: platforms.openai-api.invocation
+    decision: approved
+    disposition: promoted
+    rationale: The official model page documents direct invocation by model id (2026-09-22).
+  notes: Long-context price multipliers and cache-write pricing remain unrepresentable in the current
+    schema; a future schema change is tracked separately and does not block this promotion.

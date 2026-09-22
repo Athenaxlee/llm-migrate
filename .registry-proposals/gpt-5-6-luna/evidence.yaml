@@ -31,8 +31,7 @@ claims:
     regions: []
     capability_overrides: null
     sources: []
-  statement: GPT-5.6 Luna is available through the OpenAI Responses API under this
-    model ID.
+  statement: GPT-5.6 Luna is available through the OpenAI Responses API under this model ID.
   kind: fact
   evidence_type: direct
   confidence: authoritative
@@ -43,8 +42,7 @@ claims:
 - id: gpt-5-6-luna-lifecycle
   field_path: lifecycle.status
   value: active
-  statement: The current official catalog recommends GPT-5.6 Luna for cost-sensitive
-    workloads.
+  statement: The current official catalog recommends GPT-5.6 Luna for cost-sensitive workloads.
   kind: fact
   evidence_type: direct
   confidence: authoritative
@@ -80,8 +78,7 @@ claims:
       notes: null
       sources: []
     batch: null
-  statement: The official model page lists Luna input, cached-input, and output prices
-    per million tokens.
+  statement: The official model page lists Luna input, cached-input, and output prices per million tokens.
   kind: fact
   evidence_type: direct
   confidence: authoritative
@@ -92,8 +89,7 @@ claims:
 - id: gpt-5-6-luna-pricing-conflict-resolved
   field_path: evidence_conflicts
   value: []
-  statement: The official Luna model page and current official catalog now agree on
-    Luna pricing.
+  statement: The official Luna model page and current official catalog now agree on Luna pricing.
   kind: fact
   evidence_type: direct
   confidence: authoritative
@@ -238,8 +234,8 @@ claims:
   field_path: prompt_guidance.reasoning_guidance
   value:
   - Set reasoning.effort intentionally for the workload.
-  statement: Official guidance recommends setting reasoning effort intentionally and
-    evaluating it on the workload.
+  statement: Official guidance recommends setting reasoning effort intentionally and evaluating it on
+    the workload.
   kind: fact
   evidence_type: direct
   confidence: authoritative
@@ -247,6 +243,16 @@ claims:
   - openai-latest-model-guide-2026-08-29
   action: set
   notes: null
+- id: gpt-5-6-luna-api-invocation
+  field_path: platforms.openai-api.invocation
+  value:
+    bare_on_demand_supported: true
+  statement: The OpenAI API invokes the model directly by its model id.
+  kind: fact
+  evidence_type: direct
+  confidence: authoritative
+  sources:
+  - openai-model-page-invocation-2026-09-22
 sources:
 - id: openai-gpt-5-6-luna-2026-08-29
   url: https://developers.openai.com/api/docs/models/gpt-5.6-luna
@@ -290,9 +296,17 @@ sources:
   - parameters
   - prompt_guidance
   notes: null
+- id: openai-model-page-invocation-2026-09-22
+  url: https://developers.openai.com/models/gpt-5.6-luna
+  title: gpt-5.6-luna model page
+  source_type: official_documentation
+  authority_tier: 2
+  publisher: OpenAI
+  retrieved_at: '2026-09-22'
+  supports:
+  - platforms
 observations: []
 conflicts: []
 unresolved_questions:
-- The registry cannot yet represent long-context price multipliers or cache-write
-  pricing.
+- The registry cannot yet represent long-context price multipliers or cache-write pricing.
 warnings: []

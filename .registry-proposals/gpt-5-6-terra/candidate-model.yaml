@@ -14,6 +14,21 @@ platforms:
   endpoint: responses
   regions: []
   capability_overrides: null
+  invocation:
+    bare_on_demand_supported: true
+    selectors: []
+    sources:
+    - id: openai-model-page-invocation-2026-09-22
+      url: https://developers.openai.com/models/gpt-5.6-terra
+      title: gpt-5.6-terra model page
+      source_type: official_documentation
+      authority_tier: 2
+      publisher: OpenAI
+      retrieved_at: '2026-09-22'
+      published_at: null
+      supports:
+      - platforms
+      notes: null
   sources: []
 lifecycle:
   status: active

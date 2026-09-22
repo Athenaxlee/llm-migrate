@@ -87,7 +87,7 @@ def test_disposition_rejections_state_they_are_format_requirements(
     assert start.paths is not None
     run_dir = start.paths.run_dir
     original = (bedrock_app / "app.py").read_text(encoding="utf-8")
-    adapted = original.replace("anthropic.claude-sonnet-4-6", "anthropic.claude-sonnet-5")
+    adapted = original.replace("anthropic.claude-sonnet-4-6", "us.anthropic.claude-sonnet-5")
     result = service.submit_adapted_file(
         run_dir,
         "app.py",
@@ -98,8 +98,8 @@ def test_disposition_rejections_state_they_are_format_requirements(
         annotated_changes=[
             edit_change(
                 "anthropic.claude-sonnet-4-6",
-                "anthropic.claude-sonnet-5",
-                why="Sonnet 5 has its own Bedrock model id.",
+                "us.anthropic.claude-sonnet-5",
+                why="Sonnet 5 on Bedrock is invoked through the US inference profile.",
             )
         ],
     )
@@ -118,8 +118,8 @@ def test_disposition_rejections_state_they_are_format_requirements(
         annotated_changes=[
             edit_change(
                 "anthropic.claude-sonnet-4-6",
-                "anthropic.claude-sonnet-5",
-                why="Sonnet 5 has its own Bedrock model id.",
+                "us.anthropic.claude-sonnet-5",
+                why="Sonnet 5 on Bedrock is invoked through the US inference profile.",
             )
         ],
     )

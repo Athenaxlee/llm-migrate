@@ -16,6 +16,18 @@ platforms:
   endpoint: responses
   regions: []
   capability_overrides: null
+  invocation:
+    bare_on_demand_supported: true
+    sources:
+    - id: openai-model-page-invocation-2026-09-22
+      url: https://developers.openai.com/models/gpt-5.6-sol
+      title: gpt-5.6-sol model page
+      source_type: official_documentation
+      authority_tier: 2
+      publisher: OpenAI
+      retrieved_at: 2026-09-22
+      supports:
+      - platforms
   sources: []
 lifecycle:
   status: active

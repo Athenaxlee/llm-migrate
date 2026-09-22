@@ -46,7 +46,7 @@ from llm_migrate.core.models import (
 )
 from llm_migrate.core.recommendation import recommend_models
 from llm_migrate.core.registry import ModelRegistry, RegistryError
-from llm_migrate.core.resolver import effective_capabilities
+from llm_migrate.core.resolver import effective_capabilities, resolve_model
 from llm_migrate.core.runstate import atomic_write_text
 from llm_migrate.core.workspace import MigrationRunConfig, WorkspaceError
 
@@ -866,6 +866,51 @@ def _question(blocker: MigrationBlocker, options: list[ResolutionOption]) -> str
     )
 
 
+def _invocation_options(
+    registry: ModelRegistry,
+    config: MigrationRunConfig,
+    blocker: MigrationBlocker,
+    run_dir: str,
+) -> list[ResolutionOption]:
+    """One correction option per reviewed invocation selector of the target."""
+    try:
+        resolved = resolve_model(
+            registry, config.target.model, config.target.platform, config.target.endpoint
+        )
+    except RegistryError:
+        return []
+    platform = resolved.platform
+    if platform is None or platform.invocation is None:
+        return []
+    options: list[ResolutionOption] = []
+    for selector in platform.invocation.selectors:
+        evidence = [str(source.url) for source in selector.sources if source.url] or [
+            str(source.url) for source in platform.invocation.sources if source.url
+        ]
+        option_id = f"selector-{selector.name}"
+        options.append(
+            ResolutionOption(
+                id=option_id,
+                kind=ResolutionKind.CORRECTION,
+                summary=(
+                    f"Invoke the target through selector {selector.name!r}: every "
+                    f"deliverable references {selector.model_id}."
+                    + (f" {selector.description}" if selector.description else "")
+                ),
+                consequences=[
+                    f"The run records {selector.model_id!r} as the target invocation "
+                    "id; the worklist, submission checks, and report enforce it.",
+                    f"Adapted files that reference the bare id "
+                    f"{platform.model_id!r} alone are rejected.",
+                ],
+                evidence_urls=evidence[:2],
+                next_step=_next_step(run_dir, blocker, option_id, ResolutionKind.CORRECTION),
+                target_change=EndpointChange(invocation_selector=selector.name),
+            )
+        )
+    return options
+
+
 def build_blocker_resolutions(
     registry: ModelRegistry,
     config: MigrationRunConfig,
@@ -888,6 +933,8 @@ def build_blocker_resolutions(
             specific = _invalid_schema_options(blocker, run_dir)
         elif blocker.category is BlockerCategory.PARAMETER:
             specific = _parameter_options(registry, config, blocker, run_dir)
+        elif blocker.category is BlockerCategory.INVOCATION:
+            specific = _invocation_options(registry, config, blocker, run_dir)
         else:
             specific = []
         options = [*specific[:4], _accept_option(run_dir, blocker)]
@@ -945,11 +992,22 @@ def apply_decisions(
     for index, decision in enumerate(log.decisions):
         status: Literal["applied", "stale", "superseded"]
         if decision.kind in {ResolutionKind.RETARGET, ResolutionKind.CORRECTION}:
-            side = "target" if decision.kind is ResolutionKind.RETARGET else "source"
+            # A correction may fix either side; which change is set says which.
+            side = "target" if decision.target_change is not None else "source"
             identity = config.target if side == "target" else config.source
             change = decision.target_change if side == "target" else decision.source_change
             superseded = any(later.kind is decision.kind for later in log.decisions[index + 1 :])
-            if change is None or not _identity_matches(identity, change):
+            recorded_selector = (
+                config.target_invocation_selector
+                if side == "target"
+                else config.source_invocation_selector
+            )
+            selector_matches = (
+                change is None
+                or change.invocation_selector is None
+                or recorded_selector == change.invocation_selector
+            )
+            if change is None or not _identity_matches(identity, change) or not selector_matches:
                 if superseded:
                     # This decision was honored when recorded and a newer
                     # decision of the same kind moved the identity onward:

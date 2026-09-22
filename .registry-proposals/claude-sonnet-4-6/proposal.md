@@ -37,3 +37,8 @@ The proposal was generated without modifying canonical registry files.
 ## Review decision
 
 Approved on August 15, 2026. The 128K maximum-output correction and evidence refresh were promoted. The adaptive-thinking default remains unresolved.
+
+## Invocation identity (2026-09-22)
+
+- Amazon Bedrock: on-demand invocation requires a cross-region inference-profile id; the bare model id is not invocable on demand. Reviewed selectors recorded per the AWS inference-profile documentation.
+- Anthropic API: the model id is directly invocable (`bare_on_demand_supported: true`).

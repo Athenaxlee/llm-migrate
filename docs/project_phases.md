@@ -1748,6 +1748,75 @@ path-based validation, naive-timestamp boundaries, and the guided toolset.
 
 ---
 
+# 12.5. V1.5.0-a: Invocation Identity
+
+Motivated by the highest-priority finding of the audited v1.4.0 production
+Bedrock run: canonical identity (which model this is) was conflated with the
+invocation selector (which id the platform accepts for an on-demand call).
+Matching correctly normalized regional inference-profile prefixes away, but
+the run identity then recorded the bare id, and every downstream surface —
+worklist required changes, submission model-id checks, the sanctioned swap,
+unchanged-claim guards, the report — enforced referencing an id the platform
+cannot invoke on demand: toolkit-induced hallucination.
+
+## Scope
+
+- Registry schema: `PlatformAvailability` gains an optional `invocation`
+  block — `bare_on_demand_supported`, named `selectors` (full invocable ids,
+  e.g. regional inference profiles), per-fact sources. Fail-open: no block
+  means today's behavior plus a report warning; only a reviewed
+  `bare_on_demand_supported: false` hard-requires a selector (the schema
+  refuses `false` without selectors, duplicate names, duplicate ids).
+- Registry machinery: checked-in JSON Schema regenerated (parity test),
+  evidence-backed proposal-bundle updates for every canonical profile that
+  gained invocation facts (AWS inference-profile documentation for the
+  Bedrock representations; Anthropic/OpenAI model pages for the direct
+  APIs), fixture coverage (selector-requiring, bare-supported, and
+  fact-free fixtures), and regenerated goldens.
+- Run identity: `migration.yaml` records the invocation model id, the
+  chosen selector, whether the target requires one, and the reviewed
+  spelling set per side (all additive; pre-v1.5 configs still load). The
+  user's original spelling seeds the selector (typing `us.anthropic...`
+  selects the `us` profile); a selector-requiring target with several
+  selectors and no derivable choice returns `needs_confirmation` at start
+  with one candidate per selector, and a legacy run rides an
+  `invocation_selector_required` blocker whose options (one correction per
+  selector, evidence-linked) record the choice durably.
+- Resolution: selector ids are exact registry identifiers
+  (`IdentifierMatchType.INVOCATION_SELECTOR`), so `resolve_model` and
+  `match_model` accept the full inference-profile spelling and pin its
+  platform representation.
+- Downstream enforcement: the worklist carries the selector-qualified
+  invocation id (and rewrites plan-derived guidance that mentions the bare
+  id), submissions reject adapted content that references a bare id the
+  reviewed profile forbids (selector-qualified references stay untouched),
+  identity matching everywhere works on the spelling set (bare id plus every
+  selector form) for both sides — unchanged-claim guards, source-remains
+  warnings, target-reference warnings, and the sanctioned structured-config
+  model-id swap all accept or refuse by reviewed spellings — and the report
+  records the invocation identity (or warns when facts are unknown).
+
+## Boundary
+
+Honestly bounded: only reviewed selectors count (no invented prefixes), an
+absent invocation block never blocks (warning only; strict mode arrives in
+v1.5.0-d), and the source side never requires a selector — its spellings only
+widen the "no source configuration remains" checks.
+
+## Current status
+
+Implemented on 2026-09-22: schema and validators, the
+`core/invocation_identity.py` derivation/spelling/bare-reference machinery,
+resolver selector matching, run-identity seeding and the confirmation flow,
+the `invocation_selector_required` blocker with selector-correction options,
+worklist/submission/report enforcement, canonical registry facts with
+updated proposal bundles, regenerated schema and goldens, and unit coverage
+for the schema, derivation rules, bare-reference detection, resolution,
+seeding, enforcement, the legacy-run blocker path, and the sanctioned
+selector-qualified swap.
+
+---
+
 # 13. Cross-Phase Testing Strategy
 
 ## Unit tests

@@ -15,6 +15,21 @@ platforms:
   endpoint: null
   regions: []
   capability_overrides: null
+  invocation:
+    bare_on_demand_supported: true
+    selectors: []
+    sources:
+    - id: anthropic-models-overview-invocation-2026-09-22
+      url: https://platform.claude.com/docs/en/about-claude/models/overview
+      title: Models overview - Claude Docs
+      source_type: official_documentation
+      authority_tier: 2
+      publisher: Anthropic
+      retrieved_at: '2026-09-22'
+      published_at: null
+      supports:
+      - platforms
+      notes: null
   sources: []
 - platform: amazon-bedrock
   model_id: anthropic.claude-sonnet-5
@@ -37,6 +52,37 @@ platforms:
     batch_inference: null
     context_window_tokens: null
     maximum_output_tokens: null
+  invocation:
+    bare_on_demand_supported: false
+    selectors:
+    - name: us
+      model_id: us.anthropic.claude-sonnet-5
+      description: US cross-region inference profile.
+      sources: []
+    - name: eu
+      model_id: eu.anthropic.claude-sonnet-5
+      description: EU cross-region inference profile.
+      sources: []
+    - name: au
+      model_id: au.anthropic.claude-sonnet-5
+      description: Australia cross-region inference profile.
+      sources: []
+    - name: global
+      model_id: global.anthropic.claude-sonnet-5
+      description: Global cross-region inference profile.
+      sources: []
+    sources:
+    - id: aws-inference-profiles-sonnet-5-2026-09-22
+      url: https://docs.aws.amazon.com/bedrock/latest/userguide/inference-profiles-support.html
+      title: Supported cross-region inference profiles - Amazon Bedrock
+      source_type: official_documentation
+      authority_tier: 2
+      publisher: Amazon Web Services
+      retrieved_at: '2026-09-22'
+      published_at: null
+      supports:
+      - platforms
+      notes: null
   sources:
   - id: aws-sonnet-5-card-platform-2026-08-08
     url: https://docs.aws.amazon.com/bedrock/latest/userguide/model-card-anthropic-claude-sonnet-5.html
@@ -67,6 +113,21 @@ platforms:
     batch_inference: null
     context_window_tokens: null
     maximum_output_tokens: null
+  invocation:
+    bare_on_demand_supported: true
+    selectors: []
+    sources:
+    - id: aws-inference-profiles-sonnet-5-mantle-2026-09-22
+      url: https://docs.aws.amazon.com/bedrock/latest/userguide/inference-profiles-support.html
+      title: Supported cross-region inference profiles - Amazon Bedrock
+      source_type: official_documentation
+      authority_tier: 2
+      publisher: Amazon Web Services
+      retrieved_at: '2026-09-22'
+      published_at: null
+      supports:
+      - platforms
+      notes: null
   sources:
   - id: aws-sonnet-5-card-mantle-2026-08-08
     url: https://docs.aws.amazon.com/bedrock/latest/userguide/model-card-anthropic-claude-sonnet-5.html

@@ -1,71 +1,105 @@
-schema_version: "1"
+schema_version: '1'
 model: claude-sonnet-5
 proposal_date: 2026-08-09
 changes:
-  - field_path: freshness
-    change_type: update
-    current_value:
-      checked_at: 2026-08-08
-    proposed_value:
-      checked_at: 2026-08-09
-    confidence: authoritative
-    risk: low
-    supporting_sources:
-      - anthropic-models-overview-2026-08-08
-      - anthropic-sonnet-5-new-2026-08-08
-      - anthropic-model-deprecations-2026-08-08
-      - aws-sonnet-5-card-2026-08-08
-    reason: Official model, launch, lifecycle, and Bedrock documentation was rechecked.
-  - field_path: platforms.amazon-bedrock.sources
-    change_type: update
-    current_value: null
-    proposed_value: AWS model card attached as a platform-level source on both Bedrock entries
-    confidence: authoritative
-    risk: low
-    supporting_sources:
-      - aws-sonnet-5-card-2026-08-08
-    reason: The Bedrock capability overrides (structured_output false, prompt_caching and
-      streaming true) are platform-scoped facts documented by the AWS model card; attaching
-      the card to the platform entries lets override-derived claims cite their own evidence
-      instead of carrying no link.
+- field_path: freshness
+  change_type: update
+  current_value:
+    checked_at: 2026-08-08
+  proposed_value:
+    checked_at: 2026-08-09
+  confidence: authoritative
+  risk: low
+  supporting_sources:
+  - anthropic-models-overview-2026-08-08
+  - anthropic-sonnet-5-new-2026-08-08
+  - anthropic-model-deprecations-2026-08-08
+  - aws-sonnet-5-card-2026-08-08
+  reason: Official model, launch, lifecycle, and Bedrock documentation was rechecked.
+- field_path: platforms.amazon-bedrock.sources
+  change_type: update
+  current_value: null
+  proposed_value: AWS model card attached as a platform-level source on both Bedrock entries
+  confidence: authoritative
+  risk: low
+  supporting_sources:
+  - aws-sonnet-5-card-2026-08-08
+  reason: The Bedrock capability overrides (structured_output false, prompt_caching and streaming true)
+    are platform-scoped facts documented by the AWS model card; attaching the card to the platform entries
+    lets override-derived claims cite their own evidence instead of carrying no link.
+- field_path: platforms.amazon-bedrock.invocation
+  change_type: update
+  current_value: null
+  proposed_value: bare_on_demand_supported false with reviewed cross-region inference-profile selectors
+    (us, eu, au, global)
+  confidence: authoritative
+  risk: high
+  supporting_sources:
+  - aws-inference-profiles-2026-09-22
+  reason: AWS documents that on-demand invocation of this model requires a cross-region inference-profile
+    id; recording the reviewed selectors stops the toolkit from instructing a non-invocable bare id.
+- field_path: platforms.anthropic-api.invocation
+  change_type: update
+  current_value: null
+  proposed_value: bare_on_demand_supported true
+  confidence: authoritative
+  risk: low
+  supporting_sources:
+  - anthropic-models-invocation-2026-09-22
+  reason: The Anthropic API model id is directly invocable; recording the fact keeps invocation-identity
+    reports quiet for this platform.
 conflicts:
-  - field_path: parameters.adaptive_thinking.disable_supported
-    change_type: conflict
-    current_value: null
-    proposed_value:
-      anthropic-api: true
-      amazon-bedrock: false
-    confidence: authoritative
-    risk: high
-    supporting_sources:
-      - anthropic-sonnet-5-new-2026-08-08
-      - aws-sonnet-5-card-2026-08-08
-    reason: Anthropic documents thinking.type disabled for Sonnet 5, while the AWS model card says adaptive thinking is always on and cannot be disabled. This likely requires a platform-scoped parameter override.
+- field_path: parameters.adaptive_thinking.disable_supported
+  change_type: conflict
+  current_value: null
+  proposed_value:
+    anthropic-api: true
+    amazon-bedrock: false
+  confidence: authoritative
+  risk: high
+  supporting_sources:
+  - anthropic-sonnet-5-new-2026-08-08
+  - aws-sonnet-5-card-2026-08-08
+  reason: Anthropic documents thinking.type disabled for Sonnet 5, while the AWS model card says adaptive
+    thinking is always on and cannot be disabled. This likely requires a platform-scoped parameter override.
 unknown_fields:
-  - platforms.amazon-bedrock.parameters.adaptive_thinking
+- platforms.amazon-bedrock.parameters.adaptive_thinking
 warnings:
-  - The repository has no commit history, so the pre-research registry baseline cannot be reconstructed. This proposal compares against the files currently in registry/.
-  - Temperature, top_p, top_k, and manual-thinking restrictions are already present in the current canonical entry and were reverified rather than represented as new changes.
+- The repository has no commit history, so the pre-research registry baseline cannot be reconstructed.
+  This proposal compares against the files currently in registry/.
+- Temperature, top_p, top_k, and manual-thinking restrictions are already present in the current canonical
+  entry and were reverified rather than represented as new changes.
 candidate_errors: []
 review:
   status: approved_with_unresolved_conflict
   reviewed_at: 2026-08-15
   decisions:
-    - field_path: freshness
-      decision: approved
-      disposition: promoted
-      rationale: The cited official sources support the candidate and the evidence refresh.
-    - field_path: platforms.amazon-bedrock.sources
-      decision: approved
-      disposition: promoted
-      rationale: The AWS model card already backed these platform-scoped overrides at the
-        profile level; attaching it to the platform entries only makes that provenance
-        addressable where the override-derived claims are made (2026-09-18).
-    - field_path: parameters.adaptive_thinking.disable_supported
-      decision: approved_as_conflict
-      disposition: conflict_record_promoted
-      rationale: Both statements are authoritative in their own platform scope, so neither is promoted as a universal fact.
-    - field_path: platforms.amazon-bedrock.parameters.adaptive_thinking
-      decision: hold
-      disposition: remains_unknown
-      rationale: Bedrock-specific behavior remains unresolved pending more precise official or empirical evidence.
+  - field_path: freshness
+    decision: approved
+    disposition: promoted
+    rationale: The cited official sources support the candidate and the evidence refresh.
+  - field_path: platforms.amazon-bedrock.sources
+    decision: approved
+    disposition: promoted
+    rationale: The AWS model card already backed these platform-scoped overrides at the profile level;
+      attaching it to the platform entries only makes that provenance addressable where the override-derived
+      claims are made (2026-09-18).
+  - field_path: parameters.adaptive_thinking.disable_supported
+    decision: approved_as_conflict
+    disposition: conflict_record_promoted
+    rationale: Both statements are authoritative in their own platform scope, so neither is promoted as
+      a universal fact.
+  - field_path: platforms.amazon-bedrock.parameters.adaptive_thinking
+    decision: hold
+    disposition: remains_unknown
+    rationale: Bedrock-specific behavior remains unresolved pending more precise official or empirical
+      evidence.
+  - field_path: platforms.amazon-bedrock.invocation
+    decision: approved
+    disposition: promoted
+    rationale: The AWS inference-profile documentation states on-demand invocation requires an inference-profile
+      id; the reviewed selectors and their full ids match the documented profiles (2026-09-22).
+  - field_path: platforms.anthropic-api.invocation
+    decision: approved
+    disposition: promoted
+    rationale: The Anthropic models overview documents direct invocation by model id (2026-09-22).
