@@ -57,6 +57,15 @@ at start, or driven through an `invocation_selector_required` blocker), and
 every downstream surface enforces the invocable id through reviewed spelling
 sets. See the V1.5.0-a section below and `docs/project_phases.md` §12.5.
 
+V1.5.0-b/-c/-d — implemented on 2026-09-22, completing the v1.5.0 release:
+semantic config couplings with anchoring guardrails, one difference-propagation
+mechanism, the worklist diet with `confirm_unaffected`, and the cross-surface
+consistency gate (§12.6); the worklist snapshot with a complete staleness key,
+batched submissions and review decisions, disposition economics with visible
+defaults, schema-embedded research prompts, and `get_run_status` (§12.7); and
+strict production mode with the validation disposition and the generated
+contract-test deliverable (§12.8).
+
 ## Released foundation
 
 - Git tag `v1.4.1` is the current stable release; `v1.4.0`, `v1.3.0`,
@@ -698,6 +707,45 @@ source-target `MigrationKnowledge`, not only individual model profiles.
   source spelling to any reviewed target spelling, selector ids resolve as
   exact registry identifiers, and the report records the invocation
   identity (or warns when facts are unknown).
+
+## V1.5.0-b/-c/-d completed capabilities
+
+- Semantic config couplings (2026-09-22): anchored structured-config
+  documents (registry-matched model-id spelling, or values traced into a
+  detected invocation call chain) contribute model-id, sampling,
+  token-budget, region/routing, and pricing couplings; pricing alone is
+  never a coupling; anchored config files become worklist tasks.
+- One difference-propagation mechanism (2026-09-22): material model
+  differences attach required changes to exactly the files whose couplings
+  they govern; prompt-governing differences stay prompt guidance; unmapped
+  differences stay report facts.
+- Worklist diet (2026-09-22): incidental-SDK-import files live under
+  `unaffected_files` and close through one `confirm_unaffected` call with
+  per-file reviewed no-change entries.
+- Cross-surface consistency gate (2026-09-22): finalize checks the whole
+  effective deliverable set together — source references (including
+  review-rejection reverts), forbidden bare ids, mixed selectors, missing
+  target attribution, and undisposed dropped coupling markers.
+- Worklist snapshot (2026-09-22): the derived worklist and plan evidence
+  persist keyed by a complete staleness hash (application content,
+  migration.yaml, blocker decisions, session manifest, registry); statuses
+  recompute at read time; submissions stop re-deriving the plan.
+- Batching (2026-09-22): `submit_adaptations` (per-item accept/reject, one
+  locked atomic changes.yaml write), `record_change_decisions`, and
+  canonical-shadow selections surfaced together.
+- Disposition economics (2026-09-22): shared prompt guidance disposable once
+  per run; `default_disposition` expands into per-item records marked
+  `defaulted` and flagged DEFAULTED in the report.
+- Process legibility (2026-09-22): `get_run_status` reports the state
+  machine with the single next action; research prompts embed the exact
+  JSON Schema of their artifacts.
+- Strict production mode (2026-09-22): opt-in `strict` runs reject unknown
+  evidence URLs, block on missing invocation facts and incomplete prompt
+  coverage, and refuse to finalize cleanly while coverage gaps, consistency
+  findings, undecided changes, or a missing validation disposition remain;
+  `record_validation_disposition` records how the migration was validated,
+  and finalize emits a deterministic request-shape contract test under
+  `output/validation/` that the user runs themselves.
 
 ## Next work
 

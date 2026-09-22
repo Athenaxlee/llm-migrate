@@ -183,6 +183,10 @@ from llm_migrate.core.snapshot import (
     save_snapshot,
     snapshot_key,
 )
+from llm_migrate.core.validation_deliverable import (
+    CONTRACT_TEST_RELATIVE_PATH,
+    render_contract_test,
+)
 from llm_migrate.core.workspace import (
     AdaptationLog,
     AdaptationSubmission,
@@ -198,6 +202,7 @@ from llm_migrate.core.workspace import (
     ResearchNeed,
     RunStatus,
     UnaffectedConfirmation,
+    ValidationDisposition,
     apply_submissions,
     coverage_gaps,
     decision_matches_entry,
@@ -208,6 +213,7 @@ from llm_migrate.core.workspace import (
     load_adaptation_log,
     load_change_decision_log,
     load_run_config,
+    load_validation_disposition,
     prepare_adapted_file,
     prepare_adapted_prompt,
     read_original_prompt,
@@ -215,6 +221,7 @@ from llm_migrate.core.workspace import (
     render_adaptation_section,
     run_paths,
     sanitize_run_id,
+    save_validation_disposition,
     structured_submission_format,
     write_run_config,
 )
@@ -246,6 +253,41 @@ def _coerced_models(
         except ValidationError as exc:
             raise ValueError(f"invalid {label} {item!r}: {exc}") from exc
     return coerced
+
+
+def _render_validation_section(
+    disposition: ValidationDisposition | None, contract_test_path: str | None
+) -> str:
+    """The report section recording how the migration was (or was not) validated."""
+    lines = ["## Validation", ""]
+    if disposition is None:
+        lines.append(
+            "- No validation disposition is recorded yet. Validate with a BYOK "
+            "evaluation run (generate_eval_suite / run_migration_eval), run the "
+            "generated contract test, or record an explicit accept with "
+            "record_validation_disposition."
+        )
+    else:
+        labels = {
+            "byok_evaluation": "BYOK evaluation run",
+            "generated_tests": "user-executed generated contract tests",
+            "accepted_without_validation": "ACCEPTED WITHOUT VALIDATION",
+        }
+        line = (
+            f"- Validated via {labels[disposition.method]} ({disposition.decided_on.isoformat()})."
+        )
+        if disposition.rationale:
+            line += f" Rationale: {disposition.rationale}"
+        lines.append(line)
+    if contract_test_path is not None:
+        lines.append(
+            f"- Generated contract test: `{contract_test_path}` — a mocked "
+            "request-shape test for the target invocation; wire build_request() to "
+            "the adapted application and run it yourself (the toolkit never executes "
+            "application code)."
+        )
+    lines.append("")
+    return "\n".join(lines)
 
 
 class MigrationService:
@@ -1263,6 +1305,7 @@ class MigrationService:
         as_of: date | None = None,
         research: Literal["auto", "skip"] = "auto",
         prompt_sources: Sequence[str] | None = None,
+        strict: bool = False,
     ) -> MigrationRunStart:
         """Resolve both models registry-first and prepare one run workspace.
 
@@ -1399,6 +1442,7 @@ class MigrationService:
             target_invocation_requires_selector=target_choice.requires_selector,
             source_model_spellings=platform_spelling_set(source_resolution.platform),
             target_model_spellings=platform_spelling_set(target_resolution.platform),
+            strict=strict,
             created_on=as_of,
             prompt_sources=list(prompt_sources or []),
         )
@@ -1561,12 +1605,27 @@ class MigrationService:
                 "reference this id, not the bare platform model id."
             )
         elif invocation is None:
-            warnings.append(
-                "No reviewed invocation facts exist for "
-                f"{platform.platform}/{platform.model_id}; the bare platform model "
-                "id is used as the invocation id. Verify it is invocable on demand "
-                "before deploying."
-            )
+            if config.strict:
+                blockers.append(
+                    migration_blocker(
+                        code="invocation_facts_unknown",
+                        category=BlockerCategory.INVOCATION,
+                        message=(
+                            "STRICT MODE: no reviewed invocation facts exist for the "
+                            f"target platform representation {platform.platform}/"
+                            f"{platform.model_id}; research the invocation facts (or "
+                            "accept the risk explicitly) before deploying."
+                        ),
+                        data={"side": "target"},
+                    )
+                )
+            else:
+                warnings.append(
+                    "No reviewed invocation facts exist for "
+                    f"{platform.platform}/{platform.model_id}; the bare platform model "
+                    "id is used as the invocation id. Verify it is invocable on demand "
+                    "before deploying."
+                )
         if (
             invocation is not None
             and invocation.bare_on_demand_supported is False
@@ -1604,6 +1663,23 @@ class MigrationService:
                     },
                 )
             )
+        if config.strict:
+            coverage_issue = next(
+                (
+                    issue
+                    for issue in plan.validation_results
+                    if issue.code == "incomplete_prompt_coverage"
+                ),
+                None,
+            )
+            if coverage_issue is not None:
+                blockers.append(
+                    migration_blocker(
+                        code="incomplete_prompt_coverage",
+                        category=BlockerCategory.OTHER,
+                        message="STRICT MODE: " + coverage_issue.message,
+                    )
+                )
         if (
             warnings == list(plan.warnings)
             and blockers == list(plan.blockers)
@@ -2556,13 +2632,48 @@ class MigrationService:
             ),
         )
 
+    def record_validation_disposition(
+        self,
+        run_dir: Path | str,
+        method: Literal["byok_evaluation", "generated_tests", "accepted_without_validation"],
+        rationale: str = "",
+        *,
+        decided_on: date | None = None,
+    ) -> ValidationDisposition:
+        """Record how this run's migration was validated; durable per run.
+
+        `accepted_without_validation` requires the user's own free-text
+        rationale — it is never a default and never chosen by an agent.
+        """
+        workspace = Path(run_dir)
+        config = load_run_config(workspace)
+        placeholder = rationale.strip().startswith("<") and rationale.strip().endswith(">")
+        if method == "accepted_without_validation" and (not rationale.strip() or placeholder):
+            raise ValueError(
+                "accepting a migration without validation requires the user's own "
+                "free-text rationale; record their words, not a placeholder"
+            )
+        disposition = ValidationDisposition(
+            run_id=config.run_id,
+            method=method,
+            rationale=rationale.strip(),
+            decided_on=decided_on or date.today(),
+        )
+        save_validation_disposition(workspace, disposition)
+        return disposition
+
     def finalize_migration_run(
         self,
         run_dir: Path | str,
         *,
         now: datetime | None = None,
     ) -> MigrationRunFinalization:
-        """Write the manifest, the report with per-file changes/rationale, and gaps."""
+        """Write the manifest, the report with per-file changes/rationale, and gaps.
+
+        Also emits the deterministic contract-test deliverable under
+        output/validation/ (supported invocation mappings only) and, in strict
+        mode, lists every unmet strict requirement as a violation.
+        """
         workspace = Path(run_dir)
         config = load_run_config(workspace)
         analysis = self.scan_application(
@@ -2577,6 +2688,14 @@ class MigrationService:
         gaps = coverage_gaps(tasks)
         change_decisions = load_change_decision_log(workspace, config.run_id)
         consistency = check_cross_surface_consistency(workspace, config, analysis, log)
+        validation_disposition = load_validation_disposition(workspace, config.run_id)
+        contract_test_path: str | None = None
+        if plan.invocation_changes:
+            contract_test = render_contract_test(config, plan.invocation_changes[0])
+            if contract_test is not None:
+                contract_target = workspace / CONTRACT_TEST_RELATIVE_PATH
+                atomic_write_text(contract_target, contract_test)
+                contract_test_path = str(contract_target)
         report = self.migration_report(plan)
         report = (
             report.rstrip("\n")
@@ -2584,6 +2703,8 @@ class MigrationService:
             + render_adaptation_section(log, gaps, change_decisions)
             + "\n"
             + render_consistency_section(consistency)
+            + "\n"
+            + _render_validation_section(validation_disposition, contract_test_path)
             + "\n"
         )
         atomic_write_text(paths.report_path, report)
@@ -2628,6 +2749,26 @@ class MigrationService:
         )
         if stale:
             blocker_note += f" {len(stale)} recorded decision(s) are STALE and were not applied."
+        strict_violations: list[str] = []
+        if config.strict:
+            strict_violations.extend(
+                f"coverage gap: {gap} has no adaptation deliverable" for gap in gaps
+            )
+            strict_violations.extend(
+                f"unconfirmed unaffected file: {path}" for path in tasks.unaffected_files
+            )
+            strict_violations.extend(
+                f"consistency finding: {finding.rendered}" for finding in consistency
+            )
+            strict_violations.extend(
+                f"undecided annotated changes: {item}" for item in undecided_changes
+            )
+            if validation_disposition is None:
+                strict_violations.append(
+                    "no validation disposition is recorded (record_validation_disposition: "
+                    "byok_evaluation, generated_tests, or an explicit "
+                    "accepted_without_validation with the user's rationale)"
+                )
         return MigrationRunFinalization(
             run_id=config.run_id,
             manifest_path=paths.manifest_path,
@@ -2643,8 +2784,19 @@ class MigrationService:
             coverage_gaps=gaps,
             consistency_findings=[finding.rendered for finding in consistency],
             unconfirmed_unaffected=list(tasks.unaffected_files),
+            validation_disposition=(
+                validation_disposition.method if validation_disposition else None
+            ),
+            strict_violations=strict_violations,
+            contract_test_path=contract_test_path,
             message=(
-                "Migration run finalized. Review output/migration-report.md; "
+                (
+                    f"STRICT MODE: {len(strict_violations)} unmet requirement(s) — this "
+                    "run is NOT deliverable until they are resolved. "
+                    if strict_violations
+                    else ""
+                )
+                + "Migration run finalized. Review output/migration-report.md; "
                 + (
                     f"{len(gaps)} affected file(s) still lack an adaptation deliverable; "
                     if gaps

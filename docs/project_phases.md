@@ -1817,6 +1817,138 @@ selector-qualified swap.
 
 ---
 
+# 12.6. V1.5.0-b: Semantic Configuration Coupling and Consistency
+
+Motivated by F2/F3/F4/F7 of the audited v1.4.0 production run: the config file
+that carried the model id, sampling, budgets, and pricing was invisible to the
+scanner; breaking model differences reached only prompt guidance; nothing
+checked the deliverables against each other; and incidental SDK imports cost a
+full submission round-trip each.
+
+## Scope
+
+- Config couplings with precision guardrails: anchored structured-config
+  documents (a registry-matched model-id spelling appears, or values traced
+  into a detected invocation call chain through the same loader recognition
+  prompt discovery uses) contribute model-id, sampling, token-budget,
+  region/routing, and pricing couplings; pricing-shaped values without a
+  model anchor are never couplings. Anchored config files become worklist
+  tasks and feed the source-model requirements.
+- One difference-propagation mechanism: every material model difference
+  attaches a required change to exactly the files whose detected couplings
+  it governs (the location mapping the plan already computes); only
+  prompt-governing differences travel as shared prompt guidance; a
+  difference with no mapped coupling stays a report-level fact, never a
+  phantom task.
+- Worklist diet: files whose only coupling is an incidental SDK import are
+  listed once under `unaffected_files` (worklist schema 4) and closed with
+  one `confirm_unaffected(run_dir, paths, rationale)` call (MCP + CLI) that
+  records per-file reviewed no-change entries through the existing unchanged
+  guards; a full adaptation may still be submitted for any of them, and
+  coverage accounting flows through the same derived worklist.
+- Cross-surface consistency gate at finalize (`core/consistency.py`):
+  deterministic checks over the whole effective deliverable set — no active
+  source-model configuration remains (spelling-set matching, catching
+  review-rejection reverts), no forbidden bare target references, one
+  selector-qualified target across every surface, model-coupled files still
+  name the target, and scanner-recognized coupling markers cannot vanish
+  without an explicit disposition. Findings land in the report's consistency
+  section and the finalization payload; strict mode (V1.5.0-d) turns them
+  into violations.
+
+## Current status
+
+Implemented on 2026-09-22 with scan/v04/v05/v11 goldens regenerated and unit
+coverage for anchoring rules, usage anchoring, the pricing guardrail, the
+unaffected bucket and its confirmation flow, difference propagation, and the
+consistency gate's revert/mixed-selector/dropped-marker findings.
+
+---
+
+# 12.7. V1.5.0-c: Workflow Economics
+
+Motivated by F8/F9: the audited run paid one full plan derivation per
+submission, serial one-at-a-time decision round-trips, schema-shape research
+retries, and per-item disposition costs.
+
+## Scope
+
+- Worklist snapshot with a complete staleness key (`core/snapshot.py`):
+  `list_adaptation_tasks` persists the derived worklist and plan evidence,
+  keyed by a content hash over the scanned application files, the run's
+  `migration.yaml`, the blocker decision log, the session manifest, and the
+  registry content. Submissions and status checks reuse it until the key
+  changes; task statuses are recomputed from the adaptation log at read time,
+  never baked in; unreadable or foreign snapshots are discarded. Supersedes
+  the v1.4.0 "one scan per submission" accepted trade-off.
+- Batching with explicit semantics: `submit_adaptations` validates every
+  item independently (per-item accept/reject, never all-or-nothing) and
+  applies the accepted subset in ONE locked, atomic write to `changes.yaml`
+  (the workspace submissions split into prepare + apply);
+  `record_change_decisions` batches review decisions sequentially with
+  per-decision results; canonical-shadow selections surface together in one
+  error instead of one per retry.
+- Disposition economics with accountability preserved: shared prompt
+  guidance is disposable once per run, and `default_disposition` covers
+  every unlisted guidance id — expanded into full per-item records marked
+  `defaulted` in `changes.yaml` and flagged DEFAULTED in the report.
+- Research prompts embed the exact JSON Schema of the expected artifact,
+  generated from the same Pydantic models the toolkit validates with.
+- `get_run_status` (MCP + CLI `run status`): the state machine (research →
+  blockers → tasks → review → ready_to_finalize) with the single next
+  action, derived from the snapshot so it is cheap.
+
+## Current status
+
+Implemented on 2026-09-22 with unit coverage for snapshot reuse and every
+staleness input, read-time statuses, batch per-item semantics, default
+expansion and report marking, shared-guidance once-per-run, and the state
+machine walk.
+
+---
+
+# 12.8. V1.5.0-d: Strict Production Mode
+
+The policy layer over -a/-b/-c: a production run must not ship on warnings.
+
+## Scope
+
+- An opt-in `strict` flag recorded in `migration.yaml` (additive; MCP and
+  CLI `run start --strict`). In strict mode: unknown evidence URLs are
+  rejected at submission; missing invocation facts on the target profile
+  and incomplete prompt coverage become blockers (riding the normal
+  resolution flow, accept always offered); and finalization lists every
+  unmet requirement — coverage gaps, unconfirmed unaffected files,
+  consistency findings, undecided changes, and a missing validation
+  disposition — as loud strict violations.
+- Validation disposition: `record_validation_disposition` (MCP + CLI `run
+  record-validation`) durably records how the migration was validated —
+  BYOK evaluation run, user-executed generated contract tests, or an
+  explicit accept that REQUIRES the user's own rationale. The report gains
+  a Validation section.
+- Contract-test deliverable: finalize deterministically emits a mocked
+  request-shape test under `output/validation/` from the prepared
+  invocation representation (supported invocation mappings only): expected
+  invocation id and operation, forbidden source/bare ids, statically mapped
+  parameters. The user wires `build_request()` to their adapted application
+  and runs it themselves; the toolkit never executes application code.
+- The guided workflow surfaces the evaluation stage as an explicit
+  post-review step (workflow instructions step 7, run-status next actions).
+
+## Boundary
+
+The toolkit stays deterministic, local-first, and review-only: no
+application execution, no provider calls, no host-identity attestation.
+
+## Current status
+
+Implemented on 2026-09-22 with unit coverage for the strict flag, the
+missing-invocation-facts and incomplete-coverage blockers, strict evidence
+rejection, the validation disposition lifecycle, strict finalization
+violations, and the generated contract test's shape.
+
+---
+
 # 13. Cross-Phase Testing Strategy
 
 ## Unit tests

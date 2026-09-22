@@ -1095,6 +1095,15 @@ def run_start(
     skip_research: Annotated[
         bool, typer.Option("--skip-research", help="Never write a research request.")
     ] = False,
+    strict: Annotated[
+        bool,
+        typer.Option(
+            "--strict",
+            help="Production mode: unknown evidence, missing invocation facts, "
+            "incomplete coverage, and a missing validation disposition become "
+            "blockers/violations.",
+        ),
+    ] = False,
     registry: Annotated[Path | None, typer.Option(help="Registry root.")] = None,
 ) -> None:
     """Match models registry-first, create the run workspace, and report next steps."""
@@ -1113,6 +1122,7 @@ def run_start(
                 as_of=date.fromisoformat(as_of) if as_of else None,
                 research="skip" if skip_research else "auto",
                 prompt_sources=prompt_source,
+                strict=strict,
             )
         )
     except (RegistryError, ValueError) as exc:
@@ -1366,6 +1376,35 @@ def run_submit_file(
     _emit(result)
     if not result.accepted:
         raise typer.Exit(1)
+
+
+@run_app.command("record-validation")
+def run_record_validation(
+    run_dir: Path,
+    method: Annotated[
+        str,
+        typer.Argument(
+            metavar="METHOD",
+            help="byok_evaluation | generated_tests | accepted_without_validation",
+        ),
+    ],
+    rationale: Annotated[
+        str, typer.Option("--rationale", help="The user's own validation rationale.")
+    ] = "",
+    registry: Annotated[Path | None, typer.Option(help="Registry root.")] = None,
+) -> None:
+    """Record how this run's migration was validated (durable per run)."""
+    try:
+        _emit(
+            _service(registry).record_validation_disposition(
+                run_dir,
+                method,  # type: ignore[arg-type]
+                rationale,
+            )
+        )
+    except (RegistryError, ValueError) as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(2) from exc
 
 
 @run_app.command("status")

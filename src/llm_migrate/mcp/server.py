@@ -70,9 +70,14 @@ exposes only its tools):
    remaining coverage gaps and undecided changes.
 6. get_change_review(run_dir) lists every annotated change with its decision
    state; present each pending change VERBATIM, one at a time, and record the
-   user's accept or reject with record_change_decision (a rejection
+   user's accept or reject with record_change_decision(s) (a rejection
    deterministically regenerates the deliverable; a resubmission makes
    decisions stale — reported, never silently applied).
+7. Validate before rollout: offer the user the BYOK evaluation stage
+   (generate_eval_suite / run_migration_eval) or the generated contract test
+   under output/validation/, then record the outcome with
+   record_validation_disposition (an accept without validation requires the
+   user's own rationale).
 
 Never edit the user's application directly; everything is a reviewable
 deliverable in the run's output/ directory.
@@ -102,6 +107,7 @@ _GUIDED_TOOL_NAMES = frozenset(
         "get_change_review",
         "record_change_decision",
         "record_change_decisions",
+        "record_validation_disposition",
     }
 )
 
@@ -603,6 +609,7 @@ def start_migration(
     as_of: str | None = None,
     research: Literal["auto", "skip"] = "auto",
     prompt_sources: list[str] | None = None,
+    strict: bool = False,
 ) -> dict[str, Any]:
     """Start a guided migration run; the preferred entry point for a full migration.
 
@@ -610,7 +617,10 @@ def start_migration(
     is written and `candidates` must be shown to the user. Otherwise the run
     workspace is created, a bounded research request is written only when
     knowledge is missing or stale, and `next_steps` says exactly what to
-    call next.
+    call next. `strict=true` (production runs) turns unknown evidence URLs,
+    missing invocation facts, incomplete prompt coverage, consistency
+    findings, and a missing validation disposition into blockers/violations
+    instead of warnings.
     """
     start = _service().start_migration_run(
         Path(application_path),
@@ -625,6 +635,7 @@ def start_migration(
         as_of=date.fromisoformat(as_of) if as_of else None,
         research=research,
         prompt_sources=prompt_sources,
+        strict=strict,
     )
     result = _json(start)
     # The nested profiles are large; fetch one explicitly via get_model_profile.
@@ -881,6 +892,30 @@ def finalize_migration(run_dir: str, now: str | None = None) -> dict[str, Any]:
         _service().finalize_migration_run(
             run_dir,
             now=utc_moment(now),
+        )
+    )
+
+
+@_tool
+def record_validation_disposition(
+    run_dir: str,
+    method: Literal["byok_evaluation", "generated_tests", "accepted_without_validation"],
+    rationale: str = "",
+    decided_on: str | None = None,
+) -> dict[str, Any]:
+    """Record how this run's migration was validated; durable per run.
+
+    Methods: a BYOK evaluation run (generate_eval_suite / run_migration_eval),
+    the user-executed generated contract test under output/validation/, or an
+    explicit accept — which REQUIRES the user's own free-text rationale and is
+    never a default. Strict runs cannot finalize cleanly without one.
+    """
+    return _json(
+        _service().record_validation_disposition(
+            run_dir,
+            method,
+            rationale,
+            decided_on=date.fromisoformat(decided_on) if decided_on else None,
         )
     )
 

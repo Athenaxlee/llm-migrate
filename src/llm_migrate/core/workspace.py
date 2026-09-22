@@ -88,6 +88,7 @@ class MigrationRunConfig(StrictModel):
     target_invocation_requires_selector: bool = False
     source_model_spellings: list[str] = Field(default_factory=list)
     target_model_spellings: list[str] = Field(default_factory=list)
+    strict: bool = False
     created_on: date
     prompt_sources: list[str] = Field(default_factory=list)
 
@@ -281,6 +282,48 @@ def save_change_decision_log(run_dir: Path, log: ChangeDecisionLog) -> Path:
     return path
 
 
+VALIDATION_DISPOSITION_FILENAME = "validation-disposition.yaml"
+
+
+class ValidationDisposition(StrictModel):
+    """How this run's migration was (or was explicitly not) validated.
+
+    The toolkit never executes application code or provider calls itself:
+    validation is a BYOK evaluation run, user-executed generated contract
+    tests, or an explicit accept — which requires the user's own rationale.
+    """
+
+    schema_version: Literal["1"] = "1"
+    run_id: str
+    method: Literal["byok_evaluation", "generated_tests", "accepted_without_validation"]
+    rationale: str = ""
+    decided_on: date
+
+
+def load_validation_disposition(run_dir: Path, run_id: str) -> ValidationDisposition | None:
+    path = Path(run_dir) / VALIDATION_DISPOSITION_FILENAME
+    if not path.is_file():
+        return None
+    try:
+        disposition = ValidationDisposition.model_validate(
+            yaml.safe_load(path.read_text(encoding="utf-8"))
+        )
+    except (yaml.YAMLError, ValidationError) as exc:
+        raise WorkspaceError(f"invalid validation disposition {path}: {exc}") from exc
+    if disposition.run_id != run_id:
+        raise WorkspaceError(
+            f"{path} belongs to run {disposition.run_id!r}, not {run_id!r}; validation "
+            "dispositions never transfer between runs"
+        )
+    return disposition
+
+
+def save_validation_disposition(run_dir: Path, disposition: ValidationDisposition) -> Path:
+    path = Path(run_dir) / VALIDATION_DISPOSITION_FILENAME
+    atomic_write_text(path, yaml.safe_dump(disposition.model_dump(mode="json"), sort_keys=False))
+    return path
+
+
 def upsert_change_decision(log: ChangeDecisionLog, decision: ChangeDecision) -> ChangeDecisionLog:
     """One decision per (source_path, change_id); a new one replaces the old."""
     kept = [
@@ -465,6 +508,9 @@ class MigrationRunFinalization(StrictModel):
     coverage_gaps: list[str] = Field(default_factory=list)
     consistency_findings: list[str] = Field(default_factory=list)
     unconfirmed_unaffected: list[str] = Field(default_factory=list)
+    validation_disposition: str | None = None
+    strict_violations: list[str] = Field(default_factory=list)
+    contract_test_path: str | None = None
     message: str
 
 
@@ -1231,6 +1277,7 @@ def prepare_adapted_prompt(
                 decoded_adapted,
                 annotations,
                 known_evidence_urls=known_evidence_urls,
+                strict_evidence=config.strict,
             )
             blockers.extend(annotation_issues)
             format_problems.extend(annotation_issues)
@@ -1434,12 +1481,13 @@ def prepare_adapted_file(
             adapted_content,
             annotations,
             known_evidence_urls=known_evidence_urls,
+            strict_evidence=config.strict,
         )
         format_problems.extend(annotation_issues)
         warnings.extend(annotation_warnings)
     elif annotations and original is None:
         standalone_problems, standalone_warnings = standalone_annotation_problems(
-            annotations, known_evidence_urls
+            annotations, known_evidence_urls, strict_evidence=config.strict
         )
         format_problems.extend(standalone_problems)
         warnings.extend(standalone_warnings)

@@ -198,7 +198,7 @@ def _shape_problems(change: AnnotatedChange) -> list[str]:
 
 
 def _evidence_problems(
-    change: AnnotatedChange, known_urls: set[str]
+    change: AnnotatedChange, known_urls: set[str], strict_evidence: bool = False
 ) -> tuple[list[str], list[str]]:
     problems: list[str] = []
     warnings: list[str] = []
@@ -217,10 +217,14 @@ def _evidence_problems(
                 "needs a url or a reference"
             )
         elif entry.url.strip() and known_urls and entry.url not in known_urls:
-            warnings.append(
+            message = (
                 f"annotated change {_label(change)}: evidence URL {entry.url} is not "
                 "among the run's known evidence sources"
             )
+            if strict_evidence:
+                problems.append(message + " (strict mode: unknown evidence URLs are rejected)")
+            else:
+                warnings.append(message)
     return problems, warnings
 
 
@@ -241,6 +245,7 @@ def _duplicate_problems(changes: list[AnnotatedChange]) -> list[str]:
 def standalone_annotation_problems(
     changes: list[AnnotatedChange],
     known_evidence_urls: set[str] | None = None,
+    strict_evidence: bool = False,
 ) -> tuple[list[str], list[str]]:
     """Shape, evidence, and duplicate checks without a diff to reconcile against.
 
@@ -252,7 +257,9 @@ def standalone_annotation_problems(
     known_urls = known_evidence_urls or set()
     for change in changes:
         problems.extend(_shape_problems(change))
-        evidence_problems, evidence_warnings = _evidence_problems(change, known_urls)
+        evidence_problems, evidence_warnings = _evidence_problems(
+            change, known_urls, strict_evidence
+        )
         problems.extend(evidence_problems)
         warnings.extend(evidence_warnings)
     return problems, warnings
@@ -263,6 +270,7 @@ def annotation_problems(
     adapted: str,
     changes: list[AnnotatedChange],
     known_evidence_urls: set[str] | None = None,
+    strict_evidence: bool = False,
 ) -> tuple[list[str], list[str]]:
     """Fail-closed reconciliation of annotations against the real diff.
 
@@ -280,7 +288,9 @@ def annotation_problems(
     global_restructure = False
     for change in changes:
         problems.extend(_shape_problems(change))
-        evidence_problems, evidence_warnings = _evidence_problems(change, known_urls)
+        evidence_problems, evidence_warnings = _evidence_problems(
+            change, known_urls, strict_evidence
+        )
         problems.extend(evidence_problems)
         warnings.extend(evidence_warnings)
         original_anchor = (change.original_anchor or "").strip()
