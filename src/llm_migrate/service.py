@@ -140,6 +140,7 @@ from llm_migrate.core.models import (
     PromptAnalysis,
     PromptDiscoveryCoverage,
     PromptMigrationSpec,
+    PromptSourceConfidence,
     PromptValidationResult,
     RecommendationConstraints,
     RecommendationResult,
@@ -157,15 +158,18 @@ from llm_migrate.core.orchestration import (
     run_agent_research_workflow,
 )
 from llm_migrate.core.planning import (
+    apply_prompt_discovery_dismissals,
     generate_application_migration_plan,
     generate_migration_report,
     migration_manifest_as_yaml,
     out_of_scope_paths,
+    unreferenced_prompt_candidates,
 )
 from llm_migrate.core.prompt_documents import (
     PromptDocumentError,
     extract_prompt_components,
     parse_structured_document,
+    source_format,
 )
 from llm_migrate.core.proposals import propose_registry_update
 from llm_migrate.core.recommendation import recommend_models
@@ -209,18 +213,26 @@ from llm_migrate.core.workspace import (
     MigrationRunFinalization,
     MigrationRunStart,
     PendingSubmission,
+    PromptCandidate,
+    PromptConsumerConfirmation,
+    PromptDiscoveryDismissal,
+    PromptDiscoveryUpdate,
     PromptSubmissionResult,
     ResearchNeed,
     RunStatus,
     UnaffectedConfirmation,
     ValidationDisposition,
     apply_submissions,
+    consumer_confirmation_map,
     coverage_gaps,
     decision_matches_entry,
     default_run_dir,
     default_run_id,
     derive_adaptation_tasks,
+    dismissed_discovery_targets,
+    dynamic_prompt_consumers,
     entry_is_unchanged,
+    is_consumer_address,
     load_adaptation_log,
     load_change_decision_log,
     load_run_config,
@@ -244,7 +256,8 @@ from llm_migrate.core.workspace import (
     submit_adapted_prompt as workspace_submit_adapted_prompt,
 )
 from llm_migrate.scanners import scan_application
-from llm_migrate.scanners.python import scannable_files
+from llm_migrate.scanners.provenance import resolve_override
+from llm_migrate.scanners.python import application_path_resolver, scannable_files
 
 _ModelT = TypeVar("_ModelT", bound=BaseModel)
 _SubmissionResultT = TypeVar("_SubmissionResultT", PromptSubmissionResult, FileSubmissionResult)
@@ -268,6 +281,47 @@ def _coerced_models(
     return coerced
 
 
+def _discovery_action(run_dir: str, tasks: AdaptationTaskList, *, strict: bool) -> str:
+    """The exact calls that close the discovery_incomplete state.
+
+    A consumer's source is pre-filled only when exactly one prompt file
+    matches the keys it reads; with several matches the user must choose.
+    """
+    parts = [
+        f'Prompt discovery is incomplete (coverage {tasks.prompt_coverage}); run_dir="{run_dir}".'
+    ]
+    if tasks.prompt_candidates:
+        listed = ", ".join(f'"{item}"' for item in tasks.prompt_candidates)
+        parts.append(
+            f"Unreferenced candidate prompt file(s): {listed}. Ask the user which are live "
+            "prompts, then call add_prompt_sources(run_dir, paths=[...the live ones...]); "
+            "dismiss the rest with add_prompt_sources(run_dir, paths=[], dismiss=[...], "
+            'rationale="<the user\'s reason>").'
+        )
+    if strict and tasks.dynamic_prompt_consumers:
+        calls = []
+        for item in tasks.dynamic_prompt_consumers:
+            reads = f" reads {', '.join(item.access_keys)}" if item.access_keys else ""
+            if len(item.matching_sources) == 1:
+                source = f'"{item.matching_sources[0]}"'
+            elif item.matching_sources:
+                source = f"<ask the user: one of {', '.join(item.matching_sources)}>"
+            else:
+                source = "<the prompt file it reads>"
+            calls.append(
+                f"{item.location} ({item.keyword}{reads}): confirm_prompt_consumer(run_dir, "
+                f'location="{item.location}", source_path={source})'
+            )
+        parts.append(
+            "STRICT MODE: every dynamic prompt consumer must be confirmed or dismissed — "
+            + "; ".join(calls)
+            + ". Dismiss genuinely runtime-built consumers with add_prompt_sources(run_dir, "
+            'paths=[], dismiss=["<path:line>", ...], rationale="<the user\'s reason>"). '
+            "Ask the user; never decide for them."
+        )
+    return " ".join(parts)
+
+
 def _action_required_lines(
     plan: MigrationPlan,
     *,
@@ -289,14 +343,16 @@ def _action_required_lines(
     if stale:
         lines.append(f"**{len(stale)} STALE blocker decision(s)** — no longer applied; review.")
     if plan.prompt_discovery.coverage is not PromptDiscoveryCoverage.RESOLVED:
-        candidates = [item for item in plan.unknowns if "prompt_sources" in item]
+        candidates = unreferenced_prompt_candidates(plan)
         lines.append(
             f"**Prompt coverage is {plan.prompt_discovery.coverage.value}** — "
             + (
                 f"{len(candidates)} candidate prompt file(s) were not prepared; include "
-                "the real ones with prompt_sources (see Unresolved unknowns)."
+                "the real ones with add_prompt_sources, or dismiss them with the "
+                "user's rationale (see Unresolved unknowns)."
                 if candidates
-                else "some prompt consumers have no static source; review them manually."
+                else "some prompt consumers have no static source; confirm each with "
+                "confirm_prompt_consumer or dismiss it with the user's rationale."
             )
         )
     if gaps:
@@ -631,11 +687,27 @@ class MigrationService:
         root: Path | str,
         *,
         prompt_sources: Sequence[str] | None = None,
+        consumer_confirmations: Mapping[str, str] | None = None,
+        dismissed_consumers: Sequence[str] | None = None,
     ) -> ApplicationAnalysis:
         return scan_application(
             root,
             prompt_sources=prompt_sources,
             known_model_ids=self._model_id_spellings(),
+            consumer_confirmations=consumer_confirmations,
+            dismissed_consumers=dismissed_consumers,
+        )
+
+    def _scan_for_run(
+        self, config: MigrationRunConfig, service: MigrationService | None = None
+    ) -> ApplicationAnalysis:
+        """Scan a run's application with every recorded discovery decision."""
+        dismissed = dismissed_discovery_targets(config)
+        return (service or self).scan_application(
+            config.application_root,
+            prompt_sources=config.prompt_sources or None,
+            consumer_confirmations=consumer_confirmation_map(config) or None,
+            dismissed_consumers=[item for item in dismissed if is_consumer_address(item)] or None,
         )
 
     def query_live_pricing(
@@ -1429,11 +1501,17 @@ class MigrationService:
         research: Literal["auto", "skip"] = "auto",
         prompt_sources: Sequence[str] | None = None,
         strict: bool = False,
+        defer_prompt_candidates: bool = False,
     ) -> MigrationRunStart:
         """Resolve both models registry-first and prepare one run workspace.
 
         Nothing is written until both models resolve unambiguously; unresolved
         identifiers return candidates for explicit user confirmation instead.
+        Likewise, when the scan detects prompt consumers but resolves no
+        prompt source while parseable candidate files exist, the candidates
+        are returned for confirmation (retry with `prompt_sources`, or with
+        `defer_prompt_candidates=True` to decide on the live run through
+        add_prompt_sources) before anything is written.
         """
         as_of = as_of or date.today()
         source_match = self._platform_selected(
@@ -1542,6 +1620,27 @@ class MigrationService:
             endpoint=target_resolution.platform.endpoint,
         )
         analysis = self.scan_application(application_path, prompt_sources=prompt_sources)
+        candidates = self._unconfirmed_prompt_candidates(analysis)
+        if candidates and not defer_prompt_candidates:
+            return MigrationRunStart(
+                status="needs_confirmation",
+                source_match=source_match,
+                target_match=target_match,
+                prompt_candidates=candidates,
+                warnings=list(analysis.warnings),
+                next_steps=[
+                    f"Prompt discovery found {analysis.prompt_discovery.consumers} prompt "
+                    "consumer(s) but resolved no prompt source. Show each candidate in "
+                    "prompt_candidates (path, components, evidence) to the user and ask "
+                    "which are live prompts for this migration; never choose on their "
+                    "behalf. Nothing was written.",
+                    "Retry start_migration with prompt_sources set to the confirmed "
+                    "paths. If none is a live prompt (or the user wants to decide later), "
+                    "retry with defer_prompt_candidates=true: the run then reports "
+                    "discovery_incomplete until add_prompt_sources adds the live ones or "
+                    "dismisses the rest with the user's rationale.",
+                ],
+            )
         need = self._research_need(
             analysis,
             run_dir,
@@ -1577,6 +1676,16 @@ class MigrationService:
         )
         write_run_config(run_dir, config)
         next_steps: list[str] = []
+        discovery = analysis.prompt_discovery
+        if discovery.coverage is not PromptDiscoveryCoverage.RESOLVED:
+            next_steps.append(
+                f"WARNING: prompt coverage is {discovery.coverage.value} — "
+                f"{discovery.dynamic_consumers} prompt consumer(s) have no static source. "
+                "get_run_status lists them; confirm each that reads a prompt file with "
+                "confirm_prompt_consumer, include unreferenced prompt files with "
+                "add_prompt_sources, or dismiss genuinely runtime-built consumers there "
+                "with the user's rationale."
+            )
         if need.level == "recommended":
             next_steps.extend(
                 (
@@ -1644,6 +1753,28 @@ class MigrationService:
             next_steps=next_steps,
         )
 
+    @staticmethod
+    def _unconfirmed_prompt_candidates(analysis: ApplicationAnalysis) -> list[PromptCandidate]:
+        """Candidates needing start-time confirmation: consumers exist, zero
+        resolved sources, and parseable low-confidence candidates are present.
+
+        With unresolved consumers but no candidate there is nothing to
+        confirm, so start proceeds (dynamic chat-history apps pay nothing).
+        """
+        discovery = analysis.prompt_discovery
+        if not discovery.consumers or discovery.resolved_sources:
+            return []
+        return [
+            PromptCandidate(
+                path=source.path,
+                confidence=source.confidence.value,
+                components=[item.key or "(whole file)" for item in source.components],
+                evidence=list(source.provenance),
+            )
+            for source in analysis.prompt_sources
+            if source.confidence is PromptSourceConfidence.LOW and source.components
+        ]
+
     def get_research_prompts(self, run_dir: Path | str) -> ResearchPromptPack:
         """Scope-isolated researcher and reviewer prompts for a run's request."""
         return render_research_prompts(Path(run_dir))
@@ -1682,18 +1813,28 @@ class MigrationService:
         blocker-decision loop).
         """
         service, session_lines = run_service or self._run_service(run_dir, now=now)
+        if analysis is None:
+            analysis = self._scan_for_run(config, service)
         plan = service.generate_migration_plan(
-            analysis if analysis is not None else config.application_root,
+            analysis,
             config.source.model,
             config.target.model,
             source_platform=config.source.platform,
             target_platform=config.target.platform,
             source_endpoint=config.source.endpoint,
             target_endpoint=config.target.endpoint,
-            prompt_sources=config.prompt_sources or None,
         )
         if session_lines:
             plan = plan.model_copy(update={"warnings": [*plan.warnings, *session_lines]})
+        plan = apply_prompt_discovery_dismissals(
+            plan,
+            dismissed_discovery_targets(config),
+            [
+                f"{item.location.path}:{item.location.line}"
+                for item in analysis.findings
+                if (item.metadata or {}).get("dismissed")
+            ],
+        )
         plan = self._with_invocation_identity(plan, config, service)
         return apply_decisions(plan, load_decision_log(run_dir, config.run_id), config)
 
@@ -1859,9 +2000,19 @@ class MigrationService:
                 True,
             )
         run_service = self._run_service(workspace, now=now)
-        plan = self._plan_for_run(config, workspace, now=now, run_service=run_service)
+        analysis = self._scan_for_run(config, run_service[0])
+        plan = self._plan_for_run(
+            config, workspace, now=now, run_service=run_service, analysis=analysis
+        )
         base_tasks = derive_adaptation_tasks(
             config, plan, workspace, AdaptationLog(run_id=config.run_id)
+        )
+        base_tasks = base_tasks.model_copy(
+            update={
+                "dynamic_prompt_consumers": dynamic_prompt_consumers(
+                    analysis, frozenset(out_of_scope_paths(plan))
+                )
+            }
         )
         registry_evidence = self._run_registry_evidence(config, run_service[0])
         evidence = plan_evidence_urls(plan) | registry_evidence
@@ -1946,9 +2097,7 @@ class MigrationService:
         """One scan, one session-service build, one plan per blocker call."""
         config = load_run_config(workspace)
         run_service = self._run_service(workspace, now=now)
-        analysis = self.scan_application(
-            config.application_root, prompt_sources=config.prompt_sources or None
-        )
+        analysis = self._scan_for_run(config, run_service[0])
         plan = self._plan_for_run(
             config, workspace, now=now, run_service=run_service, analysis=analysis
         )
@@ -2588,6 +2737,7 @@ class MigrationService:
         if research_pending:
             state: Literal[
                 "research_pending",
+                "discovery_incomplete",
                 "blockers_pending",
                 "tasks_pending",
                 "review_pending",
@@ -2599,6 +2749,9 @@ class MigrationService:
                 + ", ".join(research_pending)
                 + ") and build_session_registry, or proceed to list_adaptation_tasks."
             )
+        elif tasks.prompt_coverage != "resolved" and (tasks.prompt_candidates or config.strict):
+            state = "discovery_incomplete"
+            next_action = _discovery_action(str(run_dir), tasks, strict=config.strict)
         elif tasks.blockers:
             state = "blockers_pending"
             next_action = (
@@ -2648,10 +2801,11 @@ class MigrationService:
                     "Unreferenced candidate prompt file(s): "
                     + ", ".join(tasks.prompt_candidates)
                     + "; ask the user which are live prompts and include them with "
-                    "prompt_sources (a new start_migration run). "
+                    "add_prompt_sources. "
                     if tasks.prompt_candidates
-                    else "Some prompt consumers have no static source; tell the user "
-                    "which need manual review. "
+                    else f"{len(tasks.dynamic_prompt_consumers)} prompt consumer(s) have no "
+                    "static source; confirm each with confirm_prompt_consumer or dismiss it "
+                    "with the user's rationale (add_prompt_sources dismiss=...). "
                 )
                 + next_action
             )
@@ -2664,7 +2818,198 @@ class MigrationService:
             unconfirmed_unaffected=len(tasks.unaffected_files),
             pending_review_changes=pending_review,
             research_scopes_pending=research_pending,
+            prompt_coverage=tasks.prompt_coverage,
+            prompt_candidates=tasks.prompt_candidates,
+            dynamic_prompt_consumers=len(tasks.dynamic_prompt_consumers),
             snapshot_reused=reused,
+        )
+
+    def add_prompt_sources(
+        self,
+        run_dir: Path | str,
+        paths: Sequence[str],
+        *,
+        dismiss: Sequence[str] = (),
+        rationale: str = "",
+        now: datetime | None = None,
+    ) -> PromptDiscoveryUpdate:
+        """Add prompt sources to a live run, or dismiss candidates/consumers.
+
+        Updates `migration.yaml` under the run lock, which changes the
+        worklist staleness key: the worklist re-derives, already-submitted
+        deliverables keep their entries, and newly covered prompt files appear
+        as pending prompt tasks. A dismissal names current unreferenced
+        candidate files or dynamic consumer `path:line` addresses and needs
+        the user's rationale; it is recorded, never silent. All-or-nothing:
+        any problem writes nothing.
+        """
+        workspace = Path(run_dir)
+        config = load_run_config(workspace)
+        before, _, _ = self._tasks_for_run(config, workspace, now=now)
+        resolver = application_path_resolver(config.application_root)
+        problems: list[str] = []
+        if not paths and not dismiss:
+            problems.append("nothing to add or dismiss: pass paths and/or dismiss")
+        if dismiss and not rationale.strip():
+            problems.append("a dismissal needs the user's rationale (why these are not prompts)")
+        added: list[str] = []
+        for raw in paths:
+            resolved = resolve_override(raw, resolver)
+            if resolved is None:
+                problems.append(f"{raw!r} is not a file inside the application")
+            elif source_format(resolved) is None:
+                problems.append(f"{raw!r} is not a supported prompt file format")
+            elif resolved not in config.prompt_sources and resolved not in added:
+                added.append(resolved)
+        dismissable = {
+            *before.prompt_candidates,
+            *(item.location for item in before.dynamic_prompt_consumers),
+        }
+        for target in dismiss:
+            if target not in dismissable:
+                problems.append(
+                    f"{target!r} is neither a current unreferenced candidate prompt file nor "
+                    "a dynamic prompt consumer address (path:line) of this run"
+                )
+        if problems:
+            return self._discovery_update(
+                config,
+                before,
+                accepted=False,
+                problems=problems,
+                message="Rejected: nothing was recorded. " + "; ".join(problems),
+            )
+        decided_on = (now or datetime.now(UTC)).date()
+        with run_state_lock(workspace):
+            config = load_run_config(workspace)
+            update: dict[str, Any] = {"prompt_sources": [*config.prompt_sources, *added]}
+            if dismiss:
+                update["prompt_discovery_dismissals"] = [
+                    *config.prompt_discovery_dismissals,
+                    PromptDiscoveryDismissal(
+                        targets=sorted(set(dismiss)),
+                        rationale=rationale.strip(),
+                        decided_on=decided_on,
+                    ),
+                ]
+            config = config.model_copy(update=update)
+            write_run_config(workspace, config)
+        after, _, _ = self._tasks_for_run(config, workspace, now=now)
+        return self._discovery_update(
+            config,
+            after,
+            accepted=True,
+            added=added,
+            dismissed=sorted(set(dismiss)),
+            before=before,
+            message=(
+                f"Recorded: {len(added)} prompt source(s) added, {len(set(dismiss))} "
+                "target(s) dismissed. The worklist re-derived; submitted deliverables "
+                "keep their entries."
+            ),
+        )
+
+    def confirm_prompt_consumer(
+        self,
+        run_dir: Path | str,
+        location: str,
+        source_path: str,
+        *,
+        now: datetime | None = None,
+    ) -> PromptDiscoveryUpdate:
+        """Record that one dynamic prompt consumer reads one prompt file.
+
+        The consumer (`path:line`, as listed by get_run_status /
+        list_adaptation_tasks) becomes source-backed and the file becomes a
+        prompt source with the confirmation as its provenance. Recorded in
+        `migration.yaml` under the run lock; the worklist re-derives.
+        """
+        workspace = Path(run_dir)
+        config = load_run_config(workspace)
+        before, _, _ = self._tasks_for_run(config, workspace, now=now)
+        resolver = application_path_resolver(config.application_root)
+        problems: list[str] = []
+        known = {item.location for item in before.dynamic_prompt_consumers} | set(
+            consumer_confirmation_map(config)
+        )
+        if location not in known:
+            problems.append(
+                f"{location!r} is not a dynamic prompt consumer of this run (use a "
+                "path:line address from dynamic_prompt_consumers)"
+            )
+        resolved = resolve_override(source_path, resolver)
+        if resolved is None:
+            problems.append(f"{source_path!r} is not a file inside the application")
+        elif source_format(resolved) is None:
+            problems.append(f"{source_path!r} is not a supported prompt file format")
+        if problems or resolved is None:
+            return self._discovery_update(
+                config,
+                before,
+                accepted=False,
+                problems=problems,
+                message="Rejected: nothing was recorded. " + "; ".join(problems),
+            )
+        with run_state_lock(workspace):
+            config = load_run_config(workspace)
+            confirmations = [
+                item for item in config.prompt_consumer_confirmations if item.location != location
+            ]
+            confirmations.append(
+                PromptConsumerConfirmation(
+                    location=location,
+                    source_path=resolved,
+                    decided_on=(now or datetime.now(UTC)).date(),
+                )
+            )
+            config = config.model_copy(update={"prompt_consumer_confirmations": confirmations})
+            write_run_config(workspace, config)
+        after, _, _ = self._tasks_for_run(config, workspace, now=now)
+        return self._discovery_update(
+            config,
+            after,
+            accepted=True,
+            confirmed=[location],
+            added=[resolved]
+            if resolved not in {t.source_path for t in before.prompt_tasks}
+            else [],
+            before=before,
+            message=(
+                f"Recorded: prompt consumer {location} reads {resolved}. The worklist "
+                "re-derived; submitted deliverables keep their entries."
+            ),
+        )
+
+    @staticmethod
+    def _discovery_update(
+        config: MigrationRunConfig,
+        tasks: AdaptationTaskList,
+        *,
+        accepted: bool,
+        message: str,
+        added: Sequence[str] = (),
+        confirmed: Sequence[str] = (),
+        dismissed: Sequence[str] = (),
+        problems: Sequence[str] = (),
+        before: AdaptationTaskList | None = None,
+    ) -> PromptDiscoveryUpdate:
+        previous = {item.source_path for item in before.prompt_tasks} if before else set()
+        return PromptDiscoveryUpdate(
+            run_id=config.run_id,
+            accepted=accepted,
+            added_sources=list(added),
+            confirmed_consumers=list(confirmed),
+            dismissed=list(dismissed),
+            new_prompt_tasks=sorted(
+                item.source_path for item in tasks.prompt_tasks if item.source_path not in previous
+            )
+            if before
+            else [],
+            prompt_coverage=tasks.prompt_coverage,
+            prompt_candidates=tasks.prompt_candidates,
+            dynamic_prompt_consumers=[item.location for item in tasks.dynamic_prompt_consumers],
+            problems=list(problems),
+            message=message,
         )
 
     def _with_reapplied_decisions(
@@ -2986,10 +3331,11 @@ class MigrationService:
         """
         workspace = Path(run_dir)
         config = load_run_config(workspace)
-        analysis = self.scan_application(
-            config.application_root, prompt_sources=config.prompt_sources or None
+        run_service = self._run_service(workspace, now=now)
+        analysis = self._scan_for_run(config, run_service[0])
+        plan = self._plan_for_run(
+            config, workspace, now=now, run_service=run_service, analysis=analysis
         )
-        plan = self._plan_for_run(config, workspace, now=now, analysis=analysis)
         log = load_adaptation_log(workspace, config.run_id)
         paths = run_paths(workspace)
         Path(paths.output_dir).mkdir(parents=True, exist_ok=True)

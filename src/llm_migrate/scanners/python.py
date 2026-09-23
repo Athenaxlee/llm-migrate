@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import ast
 import posixpath
-from collections.abc import Sequence
+from collections.abc import Collection, Mapping, Sequence
 from pathlib import Path
 from typing import Any, Literal
 
@@ -14,6 +14,7 @@ from llm_migrate.core.models import (
     ApplicationRequirements,
     CouplingKind,
     MultimodalInputContract,
+    PromptSourceConfidence,
     SourceLocation,
     StructuredOutputContract,
     ToolDefinition,
@@ -26,13 +27,20 @@ from llm_migrate.core.prompt_documents import (
 )
 from llm_migrate.scanners.config import (
     ConfigDocument,
+    PathResolver,
+    Resolution,
+    detect_case_insensitive,
     find_config_couplings,
     load_config_documents,
     lookup,
     resolve_reference,
 )
 from llm_migrate.scanners.provenance import (
+    DiscoveredSource,
+    apply_consumer_decisions,
     assemble_prompt_sources,
+    promote_key_matches,
+    resolve_override,
     summarize_prompt_discovery,
 )
 
@@ -83,6 +91,31 @@ def _normalize_relative(value: str) -> str | None:
         return None
     normalized = posixpath.normpath(value.replace("\\", "/"))
     return None if normalized.startswith("..") else normalized
+
+
+def _access_keys(node: ast.AST) -> list[str]:
+    """Literal keys a prompt expression reads: `x["k"]` and `x.get("k")`.
+
+    Captured for dynamic consumers so a candidate prompt document whose
+    top-level keys contain them can be matched (bounded key-match evidence,
+    never dataflow).
+    """
+    keys: set[str] = set()
+    for child in ast.walk(node):
+        if isinstance(child, ast.Subscript):
+            key = _literal(child.slice)
+            if isinstance(key, str):
+                keys.add(key)
+        elif (
+            isinstance(child, ast.Call)
+            and isinstance(child.func, ast.Attribute)
+            and child.func.attr == "get"
+            and child.args
+        ):
+            key = _literal(child.args[0])
+            if isinstance(key, str):
+                keys.add(key)
+    return sorted(keys)
 
 
 def _subscript_chain(node: ast.AST) -> tuple[str, tuple[str, ...]] | None:
@@ -166,11 +199,12 @@ class _Visitor(ast.NodeVisitor):
         self,
         path: str,
         catalog: dict[str, ConfigDocument] | None = None,
-        known_files: set[str] | None = None,
+        resolver: PathResolver | None = None,
     ) -> None:
         self.path = path
         self.catalog = catalog or {}
-        self.known_files = known_files or set()
+        self.resolver = resolver or PathResolver(frozenset())
+        self.known_files = self.resolver.known_files
         self.findings: list[ApplicationFinding] = []
         self.aliases: dict[str, str] = {}
         self.clients: dict[str, tuple[str | None, str | None]] = {}
@@ -185,7 +219,7 @@ class _Visitor(ast.NodeVisitor):
         self.document_vars: dict[str, tuple[str, tuple[str, ...]]] = {}
         self.prompt_document_vars: dict[str, str] = {}
         self.prompt_text_vars: dict[str, str] = {}
-        self.prompt_source_facts: dict[str, list[str]] = {}
+        self.prompt_source_facts: dict[str, DiscoveredSource] = {}
         # Config documents whose values were traced into an invocation call
         # chain; they anchor semantic config couplings (V1.5.0-b).
         self.config_invocation_usage: set[str] = set()
@@ -239,33 +273,79 @@ class _Visitor(ast.NodeVisitor):
             return None
         argument = call.args[0]
         if isinstance(argument, ast.Name):
-            return self.file_handles.get(argument.id)
-        if isinstance(argument, ast.Call):
-            opened = self._open_path(argument)
-            if opened is not None:
-                return opened
-            if isinstance(argument.func, ast.Attribute) and argument.func.attr == "read_text":
-                return self._static_path(argument.func.value)
+            opened = self.file_handles.get(argument.id)
+        elif isinstance(argument, ast.Call):
+            opened = self._open_path(argument) or self._text_load_path(argument)
+        else:
+            opened = None
+        resolution = self._resolve_code_path(opened) if opened is not None else None
+        return resolution.path if resolution is not None else None
+
+    def _text_load_path(self, call: ast.Call) -> str | None:
+        """Static path read by a bounded single-file text-load form, if any.
+
+        Recognized forms only: `Path(<path>).read_text(...)`,
+        `open(<path>, ...).read()`, and `<handle>.read()` on a handle opened
+        from a static path. Anything else stays unrecognized (no dataflow).
+        """
+        if not isinstance(call.func, ast.Attribute):
+            return None
+        if call.func.attr == "read_text":
+            return self._static_path(call.func.value)
+        if call.func.attr == "read":
+            target = call.func.value
+            if isinstance(target, ast.Call):
+                return self._open_path(target)
+            if isinstance(target, ast.Name):
+                return self.file_handles.get(target.id)
         return None
 
+    def _resolve_code_path(self, path: str) -> Resolution | None:
+        """Resolve a code-level static path against the root, then the module dir."""
+        return self.resolver.resolve(
+            path,
+            (("application_root", ""), ("code_dir", posixpath.dirname(self.path))),
+        )
+
     def _register_prompt_source(
-        self, path: str, provenance: list[str], *, prompt_hint: bool
-    ) -> bool:
-        """Record a discovered prompt source when the file qualifies as one."""
+        self,
+        path: str,
+        provenance: list[str],
+        *,
+        prompt_hint: bool,
+        resolution: Resolution | None = None,
+    ) -> str | None:
+        """Record a discovered prompt source when the file qualifies as one.
+
+        Returns the known-files spelling of the registered source, or None.
+        A path resolved only by leading-segment stripping ranks medium
+        confidence, never high, and records the rule in its provenance.
+        """
+        if resolution is None:
+            resolution = self._resolve_code_path(path)
+            if resolution is None:
+                return None
+        path = resolution.path
         if path in self.prompt_source_facts:
-            return True
+            return path
         if source_format(path) is None or path not in self.known_files:
-            return False
+            return None
         document = self.catalog.get(path)
         if document is not None:
             if not extract_prompt_components(document.data):
-                return False
+                return None
         elif "." + path.rsplit(".", 1)[-1].casefold() in STRUCTURED_SUFFIXES:
-            return False  # Structured file that failed to parse; already warned.
+            return None  # Structured file that failed to parse; already warned.
         elif not prompt_hint and "prompt" not in path.casefold():
-            return False
-        self.prompt_source_facts[path] = provenance
-        return True
+            return None
+        confidence = PromptSourceConfidence.HIGH
+        if resolution.rule == "stripped_prefix":
+            confidence = PromptSourceConfidence.MEDIUM
+            provenance = [*provenance, f"{path}: {resolution.description}"]
+        elif resolution.rule == "code_dir":
+            provenance = [*provenance, f"{path}: {resolution.description}"]
+        self.prompt_source_facts[path] = DiscoveredSource(provenance, confidence)
+        return path
 
     def _track_config_access(
         self, node: ast.Assign, targets: list[str], chain: tuple[str, tuple[str, ...]]
@@ -281,18 +361,20 @@ class _Visitor(ast.NodeVisitor):
         value = lookup(document, key_path) if document is not None else None
         if not isinstance(value, str):
             return
-        resolved = resolve_reference(document_path, value, self.known_files)
-        if resolved is None:
+        resolution = resolve_reference(document_path, value, self.resolver)
+        if resolution is None:
             return
+        resolved = resolution.path
         for name in targets:
             self.path_values[name] = resolved
         registered = self._register_prompt_source(
             resolved,
             [
                 f"{self.path} loads {document_path}",
-                f"{document_path}: {'.'.join(key_path)} -> {resolved}",
+                f"{document_path}: {'.'.join(key_path)} -> {resolved} ({resolution.description})",
             ],
             prompt_hint=any("prompt" in key.casefold() for key in key_path),
+            resolution=resolution,
         )
         if registered:
             self._add(
@@ -318,25 +400,26 @@ class _Visitor(ast.NodeVisitor):
                 for name in targets:
                     self.prompt_document_vars[name] = loaded
             return
-        if isinstance(call.func, ast.Attribute) and call.func.attr == "read_text":
-            file_path = self._static_path(call.func.value)
+        file_path = self._text_load_path(call)
+        if file_path is not None:
             promptish = any(
                 marker in name.casefold() for name in targets for marker in ("prompt", "system")
             )
-            if file_path is None or not (promptish or "prompt" in file_path.casefold()):
+            if not (promptish or "prompt" in file_path.casefold()):
                 return
-            if self._register_prompt_source(
+            registered = self._register_prompt_source(
                 file_path, [f"{self.path} loads {file_path}"], prompt_hint=True
-            ):
+            )
+            if registered is not None:
                 for name in targets:
-                    self.prompt_text_vars[name] = file_path
+                    self.prompt_text_vars[name] = registered
                 self._add(
                     node,
                     CouplingKind.PROMPT,
                     "loads prompt content from a file",
-                    value=file_path,
+                    value=registered,
                 )
-            elif file_path not in self.known_files and promptish:
+            elif self._resolve_code_path(file_path) is None and promptish:
                 self.notes.append(
                     f"{self.path}: prompt file {file_path!r} was not found in the application."
                 )
@@ -347,23 +430,36 @@ class _Visitor(ast.NodeVisitor):
                 argument_path = self._static_path(argument)
                 if argument_path is None:
                     continue
-                if argument_path in self.prompt_source_facts or self._register_prompt_source(
+                registered = self._register_prompt_source(
                     argument_path,
                     [f"{self.path} loads {argument_path}"],
                     prompt_hint=False,
-                ):
+                )
+                if registered is not None:
                     for name in targets:
-                        self.prompt_document_vars[name] = argument_path
+                        self.prompt_document_vars[name] = registered
                     break
 
     def _classify_prompt_value(self, node: ast.AST) -> tuple[str, list[str]]:
         """Classify a prompt argument as inline, source-backed, or dynamic."""
-        traced = {
+        traced: set[str | None] = {
             self.prompt_text_vars.get(child.id, self.prompt_document_vars.get(child.id))
             for child in ast.walk(node)
             if isinstance(child, ast.Name)
             and (child.id in self.prompt_text_vars or child.id in self.prompt_document_vars)
         }
+        # A bounded text-load form passed directly (`system=open(p).read()`).
+        for child in ast.walk(node):
+            if isinstance(child, ast.Call):
+                file_path = self._text_load_path(child)
+                if file_path is not None:
+                    traced.add(
+                        self._register_prompt_source(
+                            file_path,
+                            [f"{self.path} passes the content of {file_path} to a model call"],
+                            prompt_hint=True,
+                        )
+                    )
         source_paths = sorted(path for path in traced if path is not None)
         if source_paths:
             return "source", source_paths
@@ -659,6 +755,10 @@ class _Visitor(ast.NodeVisitor):
         for name in ("system", "messages", "input", "prompt"):
             if name in keyword_map and (is_invocation or root in self.clients):
                 resolution, source_paths = self._classify_prompt_value(keyword_map[name])
+                metadata: dict[str, Any] = {"resolution": resolution, "sources": source_paths}
+                access_keys = _access_keys(keyword_map[name]) if resolution == "dynamic" else []
+                if access_keys:
+                    metadata["access_keys"] = access_keys
                 self._add(
                     keyword_map[name],
                     CouplingKind.PROMPT,
@@ -666,7 +766,7 @@ class _Visitor(ast.NodeVisitor):
                     provider=provider,
                     platform=platform,
                     value=name,
-                    metadata={"resolution": resolution, "sources": source_paths},
+                    metadata=metadata,
                 )
         if any(marker in lowered for marker in ("json.loads", "model_validate_json", ".parse")):
             self._add(
@@ -1009,29 +1109,46 @@ def scannable_files(path: Path) -> tuple[list[Path], list[Path]]:
     return python_files, candidate_files
 
 
+def application_path_resolver(root: Path | str) -> PathResolver:
+    """The resolver one scan of `root` uses (same file set, same case rules)."""
+    path = Path(root)
+    base = path if path.is_dir() else path.parent
+    python_files, candidate_files = scannable_files(path)
+    relative = [item.relative_to(base).as_posix() for item in [*python_files, *candidate_files]]
+    return PathResolver.for_files(
+        set(relative), base, case_insensitive=detect_case_insensitive(base, relative)
+    )
+
+
 def scan_application(
     root: Path | str,
     *,
     prompt_sources: Sequence[str] | None = None,
     known_model_ids: Sequence[str] | None = None,
+    consumer_confirmations: Mapping[str, str] | None = None,
+    dismissed_consumers: Collection[str] | None = None,
 ) -> ApplicationAnalysis:
+    """Scan one application without executing it.
+
+    `consumer_confirmations` maps a prompt consumer's `path:line` to the
+    prompt file the user confirmed it reads; `dismissed_consumers` lists
+    consumer addresses the user dismissed as genuinely runtime-built content.
+    Both are recorded run decisions (`migration.yaml`), never inferred.
+    """
     path = Path(root)
     if not path.exists():
         raise ValueError(f"application path does not exist: {path}")
     base = path if path.is_dir() else path.parent
     python_files, candidate_files = scannable_files(path)
     candidate_relative = [item.relative_to(base).as_posix() for item in candidate_files]
-    known_files = {
-        *(item.relative_to(base).as_posix() for item in python_files),
-        *candidate_relative,
-    }
+    resolver = application_path_resolver(path)
     catalog, config_warnings = load_config_documents(base, candidate_relative)
     findings: list[ApplicationFinding] = []
     tool_definitions: list[ToolDefinition] = []
     structured_outputs: list[StructuredOutputContract] = []
     multimodal_inputs: list[MultimodalInputContract] = []
     warnings: list[str] = []
-    discovered: dict[str, list[str]] = {}
+    discovered: dict[str, DiscoveredSource] = {}
     config_usage: set[str] = set()
     for file_path in python_files:
         relative = file_path.relative_to(base).as_posix()
@@ -1040,7 +1157,7 @@ def scan_application(
         except (OSError, UnicodeError, SyntaxError) as exc:
             warnings.append(f"{relative}: {exc}")
             continue
-        visitor = _Visitor(relative, catalog, known_files)
+        visitor = _Visitor(relative, catalog, resolver)
         visitor.visit(tree)
         findings.extend(visitor.findings)
         tool_definitions.extend(visitor.tool_definitions)
@@ -1052,9 +1169,27 @@ def scan_application(
             discovered.setdefault(source_path, provenance)
     findings.extend(_config_coupling_findings(catalog, set(known_model_ids or ()), config_usage))
     warnings.extend(config_warnings)
-    sources, source_warnings = assemble_prompt_sources(
-        base, catalog, known_files, discovered, prompt_sources
+    confirmations: dict[str, str] = {}
+    for location, raw_source in (consumer_confirmations or {}).items():
+        resolved = resolve_override(raw_source, resolver)
+        if resolved is None:
+            warnings.append(
+                f"confirmed prompt source {raw_source!r} for consumer {location} does not "
+                "exist in the application; the confirmation was not applied"
+            )
+            continue
+        confirmations[location] = resolved
+    findings, decision_warnings = apply_consumer_decisions(
+        findings, confirmations, set(dismissed_consumers or ())
     )
+    warnings.extend(decision_warnings)
+    confirmed_by_source: dict[str, list[str]] = {}
+    for location, source_path in sorted(confirmations.items()):
+        confirmed_by_source.setdefault(source_path, []).append(location)
+    sources, source_warnings = assemble_prompt_sources(
+        base, catalog, resolver, discovered, prompt_sources, confirmed_by_source
+    )
+    sources = promote_key_matches(sources, findings, catalog)
     warnings.extend(source_warnings)
     findings.sort(
         key=lambda item: (item.location.path, item.location.line, item.kind.value, item.detail)

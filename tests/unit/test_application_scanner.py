@@ -8,14 +8,23 @@ import pytest
 from llm_migrate.core.models import CouplingKind, RecommendationConstraints
 from llm_migrate.service import MigrationService
 
+# Golden name -> scan root under tests/fixtures/applications (the field-pattern
+# fixture scans a SUBDIRECTORY of its repo, like the field run).
+SCAN_FIXTURES = {
+    "anthropic_app": "anthropic_app",
+    "openai_app": "openai_app",
+    "bedrock_app": "bedrock_app",
+    "configured_prompt_app": "configured_prompt_app",
+    "field_pattern_repo": "field_pattern_repo/app",
+    "probe_forms_app": "probe_forms_app",
+}
 
-@pytest.mark.parametrize(
-    "application", ["anthropic_app", "openai_app", "bedrock_app", "configured_prompt_app"]
-)
+
+@pytest.mark.parametrize("application", sorted(SCAN_FIXTURES))
 def test_scans_match_golden_outputs(
     service: MigrationService, project_root: Path, application: str
 ) -> None:
-    root = project_root / "tests" / "fixtures" / "applications" / application
+    root = project_root / "tests" / "fixtures" / "applications" / SCAN_FIXTURES[application]
     actual = service.scan_application(root).model_dump(mode="json")
     actual["root"] = "<fixture>"
     expected = json.loads(

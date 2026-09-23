@@ -1,0 +1,423 @@
+{
+  "files_scanned": 14,
+  "findings": [
+    {
+      "detail": "imports boto3",
+      "kind": "provider_sdk",
+      "location": {
+        "column": 0,
+        "end_line": 3,
+        "line": 3,
+        "path": "analysis/invoke_multimodal.py"
+      },
+      "metadata": null,
+      "platform": "amazon-bedrock",
+      "provider": null,
+      "value": "boto3"
+    },
+    {
+      "detail": "creates an Amazon Bedrock Runtime client",
+      "kind": "configuration",
+      "location": {
+        "column": 22,
+        "end_line": 17,
+        "line": 17,
+        "path": "analysis/invoke_multimodal.py"
+      },
+      "metadata": null,
+      "platform": "amazon-bedrock",
+      "provider": "anthropic",
+      "value": "bedrock-runtime"
+    },
+    {
+      "detail": "calls self.client.converse",
+      "kind": "invocation",
+      "location": {
+        "column": 19,
+        "end_line": 32,
+        "line": 20,
+        "path": "analysis/invoke_multimodal.py"
+      },
+      "metadata": null,
+      "platform": "amazon-bedrock",
+      "provider": null,
+      "value": "self.client.converse"
+    },
+    {
+      "detail": "supplies prompt content through system",
+      "kind": "prompt",
+      "location": {
+        "column": 19,
+        "end_line": 22,
+        "line": 22,
+        "path": "analysis/invoke_multimodal.py"
+      },
+      "metadata": {
+        "access_keys": [
+          "sys_prompt"
+        ],
+        "resolution": "dynamic",
+        "sources": []
+      },
+      "platform": "amazon-bedrock",
+      "provider": null,
+      "value": "system"
+    },
+    {
+      "detail": "supplies prompt content through messages",
+      "kind": "prompt",
+      "location": {
+        "column": 21,
+        "end_line": 30,
+        "line": 23,
+        "path": "analysis/invoke_multimodal.py"
+      },
+      "metadata": {
+        "access_keys": [
+          "user_prompt"
+        ],
+        "resolution": "dynamic",
+        "sources": []
+      },
+      "platform": "amazon-bedrock",
+      "provider": null,
+      "value": "messages"
+    },
+    {
+      "detail": "imports boto3",
+      "kind": "provider_sdk",
+      "location": {
+        "column": 0,
+        "end_line": 3,
+        "line": 3,
+        "path": "analysis/invoke_single.py"
+      },
+      "metadata": null,
+      "platform": "amazon-bedrock",
+      "provider": null,
+      "value": "boto3"
+    },
+    {
+      "detail": "creates an Amazon Bedrock Runtime client",
+      "kind": "configuration",
+      "location": {
+        "column": 22,
+        "end_line": 16,
+        "line": 16,
+        "path": "analysis/invoke_single.py"
+      },
+      "metadata": null,
+      "platform": "amazon-bedrock",
+      "provider": "anthropic",
+      "value": "bedrock-runtime"
+    },
+    {
+      "detail": "calls self.client.converse",
+      "kind": "invocation",
+      "location": {
+        "column": 19,
+        "end_line": 24,
+        "line": 20,
+        "path": "analysis/invoke_single.py"
+      },
+      "metadata": null,
+      "platform": "amazon-bedrock",
+      "provider": null,
+      "value": "self.client.converse"
+    },
+    {
+      "detail": "supplies prompt content through messages",
+      "kind": "prompt",
+      "location": {
+        "column": 21,
+        "end_line": 22,
+        "line": 22,
+        "path": "analysis/invoke_single.py"
+      },
+      "metadata": {
+        "resolution": "dynamic",
+        "sources": []
+      },
+      "platform": "amazon-bedrock",
+      "provider": null,
+      "value": "messages"
+    },
+    {
+      "detail": "configures model region/routing at models.claude.region",
+      "kind": "configuration",
+      "location": {
+        "column": 0,
+        "end_line": null,
+        "line": 1,
+        "path": "config/model_profiles.yaml"
+      },
+      "metadata": {
+        "config": "config/model_profiles.yaml",
+        "key_path": "models.claude.region",
+        "name": "region",
+        "value": "us-east-1",
+        "value_kind": "region"
+      },
+      "platform": null,
+      "provider": null,
+      "value": "region=us-east-1"
+    },
+    {
+      "detail": "configures model region/routing at models.llama.region",
+      "kind": "configuration",
+      "location": {
+        "column": 0,
+        "end_line": null,
+        "line": 1,
+        "path": "config/model_profiles.yaml"
+      },
+      "metadata": {
+        "config": "config/model_profiles.yaml",
+        "key_path": "models.llama.region",
+        "name": "region",
+        "value": "us-east-1",
+        "value_kind": "region"
+      },
+      "platform": null,
+      "provider": null,
+      "value": "region=us-east-1"
+    },
+    {
+      "detail": "configures a model identifier at models.claude.model_id",
+      "kind": "model_identifier",
+      "location": {
+        "column": 0,
+        "end_line": null,
+        "line": 1,
+        "path": "config/model_profiles.yaml"
+      },
+      "metadata": {
+        "config": "config/model_profiles.yaml",
+        "key_path": "models.claude.model_id",
+        "name": "model_id",
+        "value": "anthropic.claude-sonnet-4-6",
+        "value_kind": "model_id"
+      },
+      "platform": "amazon-bedrock",
+      "provider": "anthropic",
+      "value": "anthropic.claude-sonnet-4-6"
+    },
+    {
+      "detail": "configures a model identifier at models.llama.model_id",
+      "kind": "model_identifier",
+      "location": {
+        "column": 0,
+        "end_line": null,
+        "line": 1,
+        "path": "config/model_profiles.yaml"
+      },
+      "metadata": {
+        "config": "config/model_profiles.yaml",
+        "key_path": "models.llama.model_id",
+        "name": "model_id",
+        "value": "meta.llama3-70b-instruct-v1:0",
+        "value_kind": "model_id"
+      },
+      "platform": null,
+      "provider": null,
+      "value": "meta.llama3-70b-instruct-v1:0"
+    }
+  ],
+  "multimodal_inputs": [],
+  "prompt_discovery": {
+    "consumers": 3,
+    "coverage": "partial",
+    "dismissed_consumers": 0,
+    "dynamic_consumers": 3,
+    "inline_consumers": 0,
+    "low_confidence_sources": 2,
+    "resolved_sources": 5,
+    "source_backed_consumers": 0
+  },
+  "prompt_sources": [
+    {
+      "components": [
+        {
+          "content": "You are a column-mapping assistant.\nThink step by step before answering.\n",
+          "key": "sys_prompt",
+          "role": "system"
+        },
+        {
+          "content": "Map the supplied columns to the target schema.\n",
+          "key": "user_prompt",
+          "role": "user"
+        }
+      ],
+      "confidence": "medium",
+      "format": "yaml",
+      "origin": "discovered",
+      "path": "analysis/prompt_lib/claude_prompt_colmap.yaml",
+      "profile_model_ids": [
+        "anthropic.claude-sonnet-4-6"
+      ],
+      "provenance": [
+        "config/model_profiles.yaml: models.claude.prompts.colmap -> analysis/prompt_lib/claude_prompt_colmap.yaml (resolved by stripping leading 'app' (repo-root-relative value; matches the application root's trailing path); config reference; loading code not statically proven)"
+      ]
+    },
+    {
+      "components": [
+        {
+          "content": "You are a document analysis assistant.\nThink step by step before answering.\n",
+          "key": "sys_prompt",
+          "role": "system"
+        },
+        {
+          "content": "Analyze the supplied document and its images.\n",
+          "key": "user_prompt",
+          "role": "user"
+        }
+      ],
+      "confidence": "medium",
+      "format": "yaml",
+      "origin": "discovered",
+      "path": "analysis/prompt_lib/claude_prompt_multi.yaml",
+      "profile_model_ids": [
+        "anthropic.claude-sonnet-4-6"
+      ],
+      "provenance": [
+        "config/model_profiles.yaml: models.claude.prompts.multi -> analysis/prompt_lib/claude_prompt_multi.yaml (resolved by stripping leading 'app' (repo-root-relative value; matches the application root's trailing path); config reference; loading code not statically proven)"
+      ]
+    },
+    {
+      "components": [
+        {
+          "content": "You are a single-document summarizer.\nThink step by step before answering.\n",
+          "key": "sys_prompt",
+          "role": "system"
+        },
+        {
+          "content": "Summarize the supplied document in five bullet points.\n",
+          "key": "user_prompt",
+          "role": "user"
+        }
+      ],
+      "confidence": "medium",
+      "format": "yaml",
+      "origin": "discovered",
+      "path": "analysis/prompt_lib/claude_prompt_single.yaml",
+      "profile_model_ids": [
+        "anthropic.claude-sonnet-4-6"
+      ],
+      "provenance": [
+        "config/model_profiles.yaml: models.claude.prompts.single -> analysis/prompt_lib/claude_prompt_single.yaml (resolved by stripping leading 'app' (repo-root-relative value; matches the application root's trailing path); config reference; loading code not statically proven)"
+      ]
+    },
+    {
+      "components": [
+        {
+          "content": "You are a legacy document analyst.\nThink step by step before answering.\n",
+          "key": "sys_prompt",
+          "role": "system"
+        },
+        {
+          "content": "Analyze the document.\n",
+          "key": "user_prompt",
+          "role": "user"
+        }
+      ],
+      "confidence": "low",
+      "format": "yaml",
+      "origin": "discovered",
+      "path": "analysis/prompt_lib/llama2_prompt_multi.yaml",
+      "profile_model_ids": [],
+      "provenance": [
+        "prompt-like top-level keys; no reference from scanned code or configuration"
+      ]
+    },
+    {
+      "components": [
+        {
+          "content": "You are a legacy summarizer.\nThink step by step before answering.\n",
+          "key": "sys_prompt",
+          "role": "system"
+        },
+        {
+          "content": "Summarize the document.\n",
+          "key": "user_prompt",
+          "role": "user"
+        }
+      ],
+      "confidence": "low",
+      "format": "yaml",
+      "origin": "discovered",
+      "path": "analysis/prompt_lib/llama2_prompt_single.yaml",
+      "profile_model_ids": [],
+      "provenance": [
+        "prompt-like top-level keys; no reference from scanned code or configuration"
+      ]
+    },
+    {
+      "components": [
+        {
+          "content": "You are a document analysis assistant (llama).\nThink step by step before answering.\n",
+          "key": "sys_prompt",
+          "role": "system"
+        },
+        {
+          "content": "Analyze the document.\n",
+          "key": "user_prompt",
+          "role": "user"
+        }
+      ],
+      "confidence": "medium",
+      "format": "yaml",
+      "origin": "discovered",
+      "path": "analysis/prompt_lib/llama_prompt_multi.yaml",
+      "profile_model_ids": [
+        "meta.llama3-70b-instruct-v1:0"
+      ],
+      "provenance": [
+        "config/model_profiles.yaml: models.llama.prompts.multi -> analysis/prompt_lib/llama_prompt_multi.yaml (resolved by stripping leading 'app' (repo-root-relative value; matches the application root's trailing path); config reference; loading code not statically proven)"
+      ]
+    },
+    {
+      "components": [
+        {
+          "content": "You are a summarizer (llama).\nThink step by step before answering.\n",
+          "key": "sys_prompt",
+          "role": "system"
+        },
+        {
+          "content": "Summarize the document.\n",
+          "key": "user_prompt",
+          "role": "user"
+        }
+      ],
+      "confidence": "medium",
+      "format": "yaml",
+      "origin": "discovered",
+      "path": "analysis/prompt_lib/llama_prompt_single.yaml",
+      "profile_model_ids": [
+        "meta.llama3-70b-instruct-v1:0"
+      ],
+      "provenance": [
+        "config/model_profiles.yaml: models.llama.prompts.single -> analysis/prompt_lib/llama_prompt_single.yaml (resolved by stripping leading 'app' (repo-root-relative value; matches the application root's trailing path); config reference; loading code not statically proven)"
+      ]
+    }
+  ],
+  "requirements": {
+    "minimum_context_window": null,
+    "required_capabilities": [],
+    "required_parameters": [],
+    "source_models": [
+      "anthropic.claude-sonnet-4-6",
+      "meta.llama3-70b-instruct-v1:0"
+    ],
+    "source_platforms": [
+      "amazon-bedrock"
+    ],
+    "source_providers": [
+      "anthropic"
+    ]
+  },
+  "root": "<fixture>",
+  "schema_version": "3",
+  "structured_outputs": [],
+  "tool_definitions": [],
+  "warnings": []
+}

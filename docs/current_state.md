@@ -75,6 +75,15 @@ evidence-backed validation dispositions, a whole-application source-reference
 sweep, guidance applicability, an "Action required" report, and honest run
 status. See the V1.5.2 section below and `docs/project_phases.md` §12.10.
 
+V1.6.0-a: Prompt Discovery That Survives Real Repositories — implemented on
+2026-09-23 (ships with the v1.6.0 release), the second tranche of the same
+roadmap: the field run's repo-root-relative config prompt paths now resolve
+from a subdirectory scan root with zero configuration, remaining discovery
+gaps become a start-time confirmation or the `discovery_incomplete` run
+state, and a live run fixes discovery in place through `add_prompt_sources`
+and `confirm_prompt_consumer`. See the V1.6.0-a section below and
+`docs/project_phases.md` §12.11.
+
 V1.5.0-b/-c/-d — implemented on 2026-09-22, completing the v1.5.0 release:
 semantic config couplings with anchoring guardrails, one difference-propagation
 mechanism, the worklist diet with `confirm_unaffected`, and the cross-surface
@@ -838,6 +847,55 @@ source-target `MigrationKnowledge`, not only individual model profiles.
   validation flow; the server instructions order review before finalize;
   MCP `start_migration` returns paths relative to the run root; the README
   documents per-host MCP registration and verification.
+
+## V1.6.0-a completed capabilities
+
+- Bounded multi-base resolution (2026-09-23): every path value resolves
+  through one `PathResolver` whose result is always a scanned file; after
+  the config-directory and application-root bases, up to three leading
+  segments are stripped only when they equal the application root's trailing
+  path components (repo-root-relative values scanned from a subdirectory).
+  The rule is recorded in provenance, and a stripped resolution ranks
+  medium, never high.
+- Separator- and case-robust values (2026-09-23): backslashes normalize to
+  `/`; on a filesystem detected case-insensitive (probed once per scan on a
+  real file), lookups are case-folded and resolve to the scanned spelling.
+  CI gains a Windows leg for the resolution, scanner, discovery, and
+  run-state suites.
+- Chained single-file loaders (2026-09-23): `open(p).read()`,
+  `handle.read()` on a static handle, and `Path(p).read_text()`, assigned or
+  passed directly to a model call, trace to their prompt file.
+- Key-match promotion (2026-09-23): dynamic consumers record the literal
+  keys they read (`access_keys` in PROMPT coupling metadata); the unique
+  structured candidate containing them is promoted low → medium with the
+  match recorded, and ambiguous matches promote nothing.
+- Start-time confirmation (2026-09-23): with consumers, zero resolved
+  sources, and parseable candidates, `start_migration` returns
+  `needs_confirmation` with `prompt_candidates` (path, confidence,
+  components, evidence) and writes nothing; retry with `prompt_sources`, or
+  `defer_prompt_candidates=true` (CLI `--defer-prompt-candidates`) to decide
+  on the live run. Starts with unresolved consumers but no candidate proceed
+  with a coverage warning in `next_steps`.
+- Live-run discovery (2026-09-23): `add_prompt_sources` (CLI
+  `run add-prompt-source`) adds prompt files or records rationale-bearing
+  dismissals of candidates and consumer `path:line` addresses;
+  `confirm_prompt_consumer` (CLI `run confirm-consumer`) records which file
+  a dynamic consumer reads. Both write `migration.yaml` under the run lock,
+  all-or-nothing, and the worklist re-derives in place with prior entries
+  kept. Dismissed files render out of scope with the user's rationale;
+  dismissed consumers count in `dismissed_consumers`. The guided toolset is
+  21 tools.
+- `discovery_incomplete` (2026-09-23): `get_run_status` enters it after
+  research and before blockers while prompt coverage is unresolved and
+  candidates exist, or in strict mode while any consumer is unresolved; its
+  next action names the exact closing calls (a source is pre-filled only
+  when exactly one file matches the consumer's keys). The worklist carries
+  `dynamic_prompt_consumers`; the snapshot cache moved to v2 and its key
+  includes the toolkit version, so older derivations re-derive.
+- Regression fixtures (2026-09-23): `field_pattern_repo` (the field layout:
+  six prompt migrations, three consumers, four llama files out of scope) and
+  `probe_forms_app` (chained loaders and a backslash config value), both with
+  golden scans.
 
 ## Next work
 

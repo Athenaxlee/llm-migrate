@@ -11,11 +11,17 @@ Submissions validate against the snapshot and re-derive only when the key
 changes. Task *statuses* are never baked in: they are recomputed at read time
 from the adaptation log. When in doubt the snapshot is discarded and
 re-derived — correctness always wins over the saved scan.
+
+The key also carries the installed toolkit version, and the snapshot schema
+version moves whenever derivation output changes shape (v2, v1.6.0-a:
+dynamic prompt consumers and the multi-base resolver), so an upgrade never
+reuses a worklist derived by older discovery rules.
 """
 
 from __future__ import annotations
 
 import hashlib
+from importlib import metadata
 from pathlib import Path
 from typing import Literal
 
@@ -55,13 +61,20 @@ def worklist_requested(run_dir: Path) -> bool:
 class WorklistSnapshot(StrictModel):
     """The derived worklist plus plan evidence, valid while `key` matches."""
 
-    schema_version: Literal["1"] = "1"
+    schema_version: Literal["2"] = "2"
     run_id: str
     key: str
     tasks: AdaptationTaskList
     evidence_urls: list[str] = Field(default_factory=list)
     # The subset of evidence_urls recorded in the reviewed registry (v1.5.2).
     registry_evidence_urls: list[str] = Field(default_factory=list)
+
+
+def _toolkit_version() -> str:
+    try:
+        return metadata.version("llm-migrate")
+    except metadata.PackageNotFoundError:
+        return "unknown"
 
 
 def _file_digest(path: Path) -> str:
@@ -76,6 +89,7 @@ def snapshot_key(run_dir: Path, config: MigrationRunConfig, registry_digest: str
     application = Path(config.application_root)
     digest = hashlib.sha256()
     digest.update(f"registry:{registry_digest}\n".encode())
+    digest.update(f"toolkit:{_toolkit_version()}\n".encode())
     base = application if application.is_dir() else application.parent
     if application.exists():
         python_files, candidate_files = scannable_files(application)

@@ -53,6 +53,8 @@ def test_all_service_operations_are_exposed_as_mcp_tools() -> None:
         "submit_adapted_prompt",
         "submit_adapted_file",
         "confirm_unaffected",
+        "add_prompt_sources",
+        "confirm_prompt_consumer",
         "submit_adaptations",
         "record_change_decisions",
         "get_run_status",

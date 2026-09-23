@@ -137,6 +137,7 @@
   "prompt_discovery": {
     "consumers": 2,
     "coverage": "resolved",
+    "dismissed_consumers": 0,
     "dynamic_consumers": 0,
     "inline_consumers": 0,
     "low_confidence_sources": 0,
@@ -165,7 +166,7 @@
         "anthropic.claude-sonnet-4-6"
       ],
       "provenance": [
-        "model_profiles.yaml: models.claude.prompts.single -> prompt_lib/claude_prompt.yaml (config reference; loading code not statically proven)"
+        "model_profiles.yaml: models.claude.prompts.single -> prompt_lib/claude_prompt.yaml (resolved relative to the configuration file; config reference; loading code not statically proven)"
       ]
     },
     {
@@ -189,7 +190,7 @@
         "anthropic.claude-sonnet-4-6"
       ],
       "provenance": [
-        "model_profiles.yaml: models.claude.prompts.colmap -> prompt_lib/claude_prompt_colmap.yaml (config reference; loading code not statically proven)"
+        "model_profiles.yaml: models.claude.prompts.colmap -> prompt_lib/claude_prompt_colmap.yaml (resolved relative to the configuration file; config reference; loading code not statically proven)"
       ]
     },
     {
@@ -212,7 +213,7 @@
       "profile_model_ids": [],
       "provenance": [
         "app.py loads model_profiles.yaml",
-        "model_profiles.yaml: models.claude.prompts.multi -> prompt_lib/claude_prompt_multimodal.yaml"
+        "model_profiles.yaml: models.claude.prompts.multi -> prompt_lib/claude_prompt_multimodal.yaml (resolved relative to the configuration file)"
       ]
     }
   ],

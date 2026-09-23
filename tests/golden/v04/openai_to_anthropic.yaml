@@ -25,6 +25,7 @@ migration:
     inline_consumers: 1
     source_backed_consumers: 0
     dynamic_consumers: 0
+    dismissed_consumers: 0
     resolved_sources: 0
     low_confidence_sources: 0
     coverage: resolved

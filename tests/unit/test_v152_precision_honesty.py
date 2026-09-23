@@ -488,9 +488,14 @@ def test_status_warns_on_incomplete_prompt_coverage(
 ) -> None:
     (plain_app / "prompts/system.txt").unlink()
     _write(plain_app, {"prompt_lib/claude_prompt.yaml": "sys_prompt: You classify rooms.\n"})
-    start = _start(service, plain_app)
+    # v1.6.0-a: zero resolved sources with a candidate asks at start; deferring
+    # lands the run in discovery_incomplete, which names the candidate.
+    assert service.start_migration_run(
+        plain_app, SOURCE, TARGET, as_of=AS_OF, research="skip"
+    ).prompt_candidates
+    start = _start(service, plain_app, defer_prompt_candidates=True)
     status = service.get_run_status(start.paths.run_dir)
-    assert "WARNING: prompt coverage is" in status.next_action
+    assert status.state == "discovery_incomplete"
     assert "prompt_lib/claude_prompt.yaml" in status.next_action
 
 

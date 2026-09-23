@@ -2059,6 +2059,85 @@ No schema version changed; every contract change is an additive field.
 
 ---
 
+# 12.11. V1.6.0-a: Prompt Discovery That Survives Real Repositories
+
+## Purpose
+
+Second tranche of the roadmap driven by the 2026-09-23 field run, whose
+config-driven prompt library (repo-root-relative paths, a loader in one
+module, consumers in another) produced zero prompt tasks and said so only
+at finalize. Make that pattern resolve with zero configuration, make every
+remaining discovery gap a start-time or state-machine decision, and let a
+live run fix discovery in place.
+
+## Scope
+
+- Bounded multi-base path resolution: config-directory and application-root
+  bases, then leading-segment stripping (at most three segments, only when
+  they equal the application root's trailing components, only into the
+  scanned file set); the resolving rule recorded in provenance; stripped
+  resolutions rank medium, never high.
+- Separator- and case-robust values: backslashes normalized; case folding
+  only on a filesystem detected case-insensitive, always resolving to the
+  scanned spelling.
+- Chained single-file loaders (`open(p).read()`, `handle.read()`,
+  `Path(p).read_text()`), assigned or passed directly to a model call.
+- Consumer access keys in PROMPT coupling metadata and unique key-match
+  promotion (low -> medium, recorded evidence; ambiguous matches promote
+  nothing).
+- Start-time prompt-source confirmation (`prompt_candidates`,
+  `defer_prompt_candidates`), writing nothing until confirmed.
+- Live-run discovery: `add_prompt_sources` (sources and rationale-bearing
+  dismissals) and `confirm_prompt_consumer`, recorded in `migration.yaml`
+  and re-deriving the worklist in place; CLI `run add-prompt-source` and
+  `run confirm-consumer`. The guided toolset grows to 21 tools.
+- The `discovery_incomplete` run state, ordered after research and before
+  blockers.
+- A Windows CI leg for the resolution, scanner, discovery, and run-state
+  suites.
+
+## Boundary
+
+Still no execution and no general dataflow: anything beyond the enumerated
+forms stays dynamic and remains under the v1.5.2 whole-application
+source-reference sweep. Typed actionable unknowns remain v1.6.0-b.
+
+## Exit criteria
+
+- The field-pattern fixture yields six prompt migrations (three prompt
+  files, two components each) with zero configuration, three prompt
+  consumers, the four foreign or sibling llama files out of scope, and the
+  stripping rule recorded in provenance.
+- Stripping never resolves outside the scanned file set or past three
+  segments, and requires the dropped prefix to match the application root.
+- Backslash config values and the chained-loader probe forms resolve.
+- A start with consumers, zero resolved sources, and candidates returns
+  `needs_confirmation` with the candidates and writes nothing; the retry with
+  `prompt_sources` proceeds.
+- `add_prompt_sources` on a live run re-derives the worklist, keeps prior
+  entries, and adds pending prompt tasks; dismissals require a rationale,
+  refuse unknown targets, and are reported out of scope with the rationale.
+- `discovery_incomplete` is entered only under its condition (a non-strict
+  dynamic chat-history application with no candidates never is) and closes
+  through an addition, a consumer confirmation, or a dismissal.
+- The Windows CI leg runs green.
+
+## Current status
+
+Implemented on 2026-09-23 (ships with the v1.6.0 release), with unit
+coverage for every exit criterion (`tests/unit/test_v160a_prompt_discovery.py`)
+and golden scans for the two new fixtures (`field_pattern_repo`,
+`probe_forms_app`). No schema version changed except the worklist snapshot
+cache (v2, so pre-v1.6.0-a snapshots re-derive); every contract change is an
+additive field (`PromptDiscoverySummary.dismissed_consumers`,
+`MigrationRunConfig.prompt_consumer_confirmations` /
+`prompt_discovery_dismissals`, `MigrationRunStart.prompt_candidates`,
+`AdaptationTaskList.dynamic_prompt_consumers`, the `RunStatus` discovery
+fields and `discovery_incomplete` state, and PROMPT coupling
+`access_keys` metadata).
+
+---
+
 # 13. Cross-Phase Testing Strategy
 
 ## Unit tests
@@ -2165,6 +2244,7 @@ When working from this roadmap, Codex should:
 | V1.5 | Invocation identity, semantic config couplings, worklist snapshot, consistency gate, strict production mode |
 | V1.5.1 | Review-fix patch: alias-aware reference detection, reviewed new files, read-only run status |
 | V1.5.2 | Precision and honesty patch: consumer precision, prompt scoping, evidence-backed validation, whole-app source-reference sweep |
+| V1.6.0-a | Prompt discovery on real repo layouts: bounded multi-base resolution, chained loaders, start-time confirmation, live-run discovery tools, `discovery_incomplete` |
 
 The critical sequencing rule is:
 

@@ -271,6 +271,43 @@ deterministic local propagation of common idioms (`open`, `Path` joins,
 `__file__`-relative paths, `yaml.safe_load`/`json.load`/`tomllib.load`, nested
 config subscripts, loader-style helper calls).
 
+V1.6.0-a makes discovery survive real repository layouts without widening
+those bounds. Every path value — config value or code literal — resolves
+through one `PathResolver` (`scanners/config.py`) whose result is always a
+lookup in the scanned file set, so no rule can reach a file outside the
+application. Values are separator-normalized (backslashes become `/`); on a
+case-insensitive filesystem, detected once per scan by probing a real file
+rather than assumed from the OS, lookups are case-folded and the result is
+always the scanned spelling. After the config-directory and
+application-root bases, bounded leading-segment stripping resolves
+repo-root-relative values scanned from a subdirectory: drop up to three
+leading segments only when they equal the application root's trailing path
+components. Every resolution records its rule in the provenance chain, and a
+stripped resolution ranks `medium`, never `high`. Chained single-file loaders
+(`open(p).read()`, `handle.read()` on a static handle, `Path(p).read_text()`,
+assigned or passed directly to a model call) are recognized forms. Dynamic
+consumers record the literal keys they read (`["sys_prompt"]`,
+`.get("user_prompt")`) in the PROMPT coupling's metadata; a low candidate
+that is the UNIQUE structured document containing those keys is promoted one
+level with the match as recorded evidence, and several matches promote
+nothing (the application selects among them at runtime — a user decision).
+
+Discovery gaps are decisions, not silent outcomes. `start_migration` returns
+`needs_confirmation` with `prompt_candidates` when consumers exist, no prompt
+source resolved, and parseable candidates exist, before writing anything.
+Live runs record discovery decisions in `migration.yaml` —
+`prompt_sources` added by `add_prompt_sources`, consumer confirmations by
+`confirm_prompt_consumer`, and rationale-bearing dismissals of candidates or
+consumers — so the snapshot staleness key changes and the worklist re-derives
+in place (submitted deliverables keep their entries). The scan folds recorded
+consumer decisions into its findings (confirmed consumers become
+source-backed; dismissed ones stop counting as dynamic and are counted in
+`dismissed_consumers`), and planning lists dismissed candidates out of scope
+with the user's rationale. `get_run_status` enters `discovery_incomplete`
+(after research, before blockers) while prompt coverage is not resolved and
+candidates exist — or, in strict mode, any consumer is unresolved — with the
+exact closing calls as its next action.
+
 ---
 
 ## 5. Model Intelligence Architecture
@@ -1045,6 +1082,9 @@ confirm_unaffected             (run confirm-unaffected)
 get_run_status                 (run status; read-only state machine + next action)
 record_validation_disposition  (run record-validation)
 validate_research_artifact     (research validate-artifact; v1.4.1)
+add_prompt_sources             (run add-prompt-source; live-run sources and
+                                dismissals, v1.6.0-a)
+confirm_prompt_consumer        (run confirm-consumer; v1.6.0-a)
 ```
 
 V1.5.2 adds a whole-application source-reference sweep to the consistency
@@ -1060,7 +1100,7 @@ manifest hash) and are re-checked at finalize, and registry guidance tagged
 `applies_when` is pre-disposed not applicable when the application never
 exhibits its trigger under resolved coverage.
 
-`LLM_MIGRATE_TOOLSET=guided` exposes only the 19 guided-workflow MCP tools
+`LLM_MIGRATE_TOOLSET=guided` exposes only the 21 guided-workflow MCP tools
 for hosts with tight inline-tool budgets; the full surface stays the default.
 
 ---
@@ -1154,6 +1194,10 @@ prompts (get_research_prompts) → session overlay
  ↓
 list_adaptation_tasks (snapshot-backed per-file worklist; incidental files
 land under unaffected_files)
+ ↓
+discovery_incomplete? → user decides → add_prompt_sources /
+confirm_prompt_consumer / dismissal with rationale (recorded in
+migration.yaml; the worklist re-derives in place)
  ↓
 blockers? → get_blocker_resolutions → user decides →
 record_blocker_decision (durable in decisions.yaml, re-applied on every

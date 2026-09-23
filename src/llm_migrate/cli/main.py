@@ -1104,9 +1104,21 @@ def run_start(
             "blockers/violations.",
         ),
     ] = False,
+    defer_prompt_candidates: Annotated[
+        bool,
+        typer.Option(
+            "--defer-prompt-candidates",
+            help="Start even though prompt candidates await confirmation; decide on the "
+            "live run with `run add-prompt-source`.",
+        ),
+    ] = False,
     registry: Annotated[Path | None, typer.Option(help="Registry root.")] = None,
 ) -> None:
-    """Match models registry-first, create the run workspace, and report next steps."""
+    """Match models registry-first, create the run workspace, and report next steps.
+
+    Prints `needs_confirmation` with the candidate list (and writes nothing)
+    when prompt consumers exist but no prompt source resolved.
+    """
     try:
         _emit(
             _service(registry).start_migration_run(
@@ -1123,6 +1135,7 @@ def run_start(
                 research="skip" if skip_research else "auto",
                 prompt_sources=prompt_source,
                 strict=strict,
+                defer_prompt_candidates=defer_prompt_candidates,
             )
         )
     except (RegistryError, ValueError) as exc:
@@ -1470,6 +1483,53 @@ def run_confirm_unaffected(
         raise typer.Exit(2) from exc
     _emit(confirmation)
     if confirmation.confirmed != len(confirmation.results):
+        raise typer.Exit(1)
+
+
+@run_app.command("add-prompt-source")
+def run_add_prompt_source(
+    run_dir: Path,
+    paths: Annotated[list[str] | None, typer.Argument(metavar="[PATH...]")] = None,
+    dismiss: Annotated[
+        list[str] | None,
+        typer.Option(
+            "--dismiss",
+            help="Candidate file or consumer path:line the user says is not a prompt; repeatable.",
+        ),
+    ] = None,
+    rationale: Annotated[
+        str, typer.Option("--rationale", help="The user's reason (required with --dismiss).")
+    ] = "",
+    registry: Annotated[Path | None, typer.Option(help="Registry root.")] = None,
+) -> None:
+    """Add prompt sources to a live run (or dismiss candidates); the worklist re-derives."""
+    try:
+        update = _service(registry).add_prompt_sources(
+            run_dir, paths or [], dismiss=dismiss or [], rationale=rationale
+        )
+    except (RegistryError, ValueError) as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(2) from exc
+    _emit(update)
+    if not update.accepted:
+        raise typer.Exit(1)
+
+
+@run_app.command("confirm-consumer")
+def run_confirm_consumer(
+    run_dir: Path,
+    location: Annotated[str, typer.Argument(metavar="PATH:LINE")],
+    source_path: Annotated[str, typer.Argument(metavar="PROMPT_FILE")],
+    registry: Annotated[Path | None, typer.Option(help="Registry root.")] = None,
+) -> None:
+    """Record that one dynamic prompt consumer reads one prompt file."""
+    try:
+        update = _service(registry).confirm_prompt_consumer(run_dir, location, source_path)
+    except (RegistryError, ValueError) as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(2) from exc
+    _emit(update)
+    if not update.accepted:
         raise typer.Exit(1)
 
 

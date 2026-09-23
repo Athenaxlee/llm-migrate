@@ -1,0 +1,6 @@
+sys_prompt: |
+  You are a single-document summarizer.
+  Think step by step before answering.
+
+user_prompt: |
+  Summarize the supplied document in five bullet points.

@@ -727,12 +727,12 @@ research, carry retrieval/freshness metadata, and expire according to local
 policy. Users may explicitly persist a run for audit or export its proposal
 bundle for upstream maintainer review.
 
-### Guided run workspace surface (V1.2, extended through V1.5)
+### Guided run workspace surface (V1.2, extended through V1.6.0-a)
 
 The recommended agent entry point is the guided run workspace: one workspace
 per migration under `<application>/.llm-migrate/runs/<run-id>/`, every
 deliverable under its `output/`, and the application tree never mutated.
-`LLM_MIGRATE_TOOLSET=guided` exposes exactly these 19 tools for hosts with
+`LLM_MIGRATE_TOOLSET=guided` exposes exactly these 21 tools for hosts with
 tight inline-tool budgets (the full surface stays the default):
 
 ```text
@@ -753,6 +753,8 @@ submit_adapted_prompt            (V1.2)
 submit_adapted_file              (V1.2)
 submit_adaptations               (V1.5, batched)
 confirm_unaffected               (V1.5)
+add_prompt_sources               (V1.6.0-a; live-run sources and dismissals)
+confirm_prompt_consumer          (V1.6.0-a)
 
 get_change_review                (V1.4)
 record_change_decision           (V1.4)
@@ -794,6 +796,8 @@ start_migration  (matches both models registry-first, scans, decides whether
  validate_research_artifact → build_session_registry]
       ↓
 get_run_status / list_adaptation_tasks
+      ↓
+[discovery_incomplete: add_prompt_sources / confirm_prompt_consumer]
       ↓
 get_blocker_resolutions → user decides → record_blocker_decision
       ↓

@@ -1,0 +1,21 @@
+# Model profiles. Prompt paths are written relative to the REPOSITORY root
+# (one level above this application directory), as in the field report.
+models:
+  claude:
+    model_id: anthropic.claude-sonnet-4-6
+    region: us-east-1
+    prompts:
+      multi: app/analysis/prompt_lib/claude_prompt_multi.yaml
+      single: app/analysis/prompt_lib/claude_prompt_single.yaml
+      colmap: app/analysis/prompt_lib/claude_prompt_colmap.yaml
+  llama:
+    model_id: meta.llama3-70b-instruct-v1:0
+    region: us-east-1
+    prompts:
+      multi: app/analysis/prompt_lib/llama_prompt_multi.yaml
+      single: app/analysis/prompt_lib/llama_prompt_single.yaml
+  # llama_legacy:
+  #   model_id: meta.llama2-70b-chat-v1
+  #   prompts:
+  #     multi: app/analysis/prompt_lib/llama2_prompt_multi.yaml
+  #     single: app/analysis/prompt_lib/llama2_prompt_single.yaml

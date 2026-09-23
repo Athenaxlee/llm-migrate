@@ -33,8 +33,10 @@ from llm_migrate.core.invocation_identity import (
     references_bare_alone,
 )
 from llm_migrate.core.models import (
+    ApplicationAnalysis,
     ComparisonSeverity,
     CompatibilityState,
+    CouplingKind,
     MigrationAdvice,
     MigrationPlan,
     ModelMatchResult,
@@ -64,6 +66,26 @@ DEFAULT_RUNS_SUBDIR = Path(".llm-migrate") / "runs"
 
 class WorkspaceError(ValueError):
     """A run workspace operation cannot proceed as requested."""
+
+
+class PromptConsumerConfirmation(StrictModel):
+    """The user confirmed that one dynamic prompt consumer reads one file."""
+
+    location: str = Field(min_length=1)
+    source_path: str = Field(min_length=1)
+    decided_on: date
+
+
+class PromptDiscoveryDismissal(StrictModel):
+    """The user dismissed candidates or consumers, with their rationale.
+
+    Targets are candidate prompt-file paths (not live prompts) or consumer
+    `path:line` addresses (genuinely runtime-built content).
+    """
+
+    targets: list[str] = Field(min_length=1)
+    rationale: str = Field(min_length=1)
+    decided_on: date
 
 
 class MigrationRunConfig(StrictModel):
@@ -98,6 +120,73 @@ class MigrationRunConfig(StrictModel):
     strict: bool = False
     created_on: date
     prompt_sources: list[str] = Field(default_factory=list)
+    # Live-run prompt discovery decisions (additive, v1.6.0-a): recorded
+    # through add_prompt_sources / confirm_prompt_consumer, never inferred.
+    prompt_consumer_confirmations: list[PromptConsumerConfirmation] = Field(default_factory=list)
+    prompt_discovery_dismissals: list[PromptDiscoveryDismissal] = Field(default_factory=list)
+
+
+_CONSUMER_ADDRESS = re.compile(r":\d+$")
+
+
+def is_consumer_address(target: str) -> bool:
+    """Whether a discovery target is a consumer `path:line` (not a file path)."""
+    return bool(_CONSUMER_ADDRESS.search(target))
+
+
+def dynamic_prompt_consumers(
+    analysis: ApplicationAnalysis, excluded_paths: set[str] | frozenset[str] = frozenset()
+) -> list[DynamicPromptConsumer]:
+    """Prompt consumers still counting as dynamic, each with its key matches.
+
+    `matching_sources` names the in-scope prompt sources whose component keys
+    contain every literal key the consumer reads — the candidates a
+    confirm_prompt_consumer call would most plausibly name.
+    """
+    component_keys = {
+        source.path: {
+            (component.key or "").split("[", 1)[0]
+            for component in source.components
+            if component.key
+        }
+        for source in analysis.prompt_sources
+        if source.path not in excluded_paths
+    }
+    consumers: list[DynamicPromptConsumer] = []
+    for finding in analysis.findings:
+        metadata = finding.metadata or {}
+        if (
+            finding.kind is not CouplingKind.PROMPT
+            or not finding.detail.startswith("supplies prompt content")
+            or metadata.get("resolution") != "dynamic"
+        ):
+            continue
+        access = [str(key) for key in metadata.get("access_keys") or []]
+        consumers.append(
+            DynamicPromptConsumer(
+                location=f"{finding.location.path}:{finding.location.line}",
+                keyword=str(finding.value),
+                access_keys=access,
+                matching_sources=sorted(
+                    path for path, keys in component_keys.items() if access and set(access) <= keys
+                ),
+            )
+        )
+    return consumers
+
+
+def consumer_confirmation_map(config: MigrationRunConfig) -> dict[str, str]:
+    """Consumer address -> confirmed prompt file (the latest decision wins)."""
+    return {item.location: item.source_path for item in config.prompt_consumer_confirmations}
+
+
+def dismissed_discovery_targets(config: MigrationRunConfig) -> dict[str, str]:
+    """Dismissed candidate path or consumer address -> the user's rationale."""
+    return {
+        target: item.rationale
+        for item in config.prompt_discovery_dismissals
+        for target in item.targets
+    }
 
 
 def source_spellings(config: MigrationRunConfig) -> list[str]:
@@ -180,8 +269,24 @@ class ResearchNeed(StrictModel):
     request_path: str | None = None
 
 
+class PromptCandidate(StrictModel):
+    """One unreferenced candidate prompt file offered for user confirmation."""
+
+    path: str
+    confidence: str
+    components: list[str] = Field(default_factory=list)
+    evidence: list[str] = Field(default_factory=list)
+
+
 class MigrationRunStart(StrictModel):
-    """Result of starting (or attempting to start) a guided migration run."""
+    """Result of starting (or attempting to start) a guided migration run.
+
+    `prompt_candidates` (additive, v1.6.0-a) is populated with
+    `needs_confirmation` when prompt consumers were detected, no prompt
+    source resolved, and parseable candidate files exist: the user confirms
+    which are live prompts (retry with `prompt_sources`) before anything is
+    written, exactly like an ambiguous model identifier.
+    """
 
     schema_version: Literal["1"] = "1"
     status: Literal["ready", "needs_confirmation"]
@@ -190,6 +295,7 @@ class MigrationRunStart(StrictModel):
     run: MigrationRunConfig | None = None
     paths: MigrationRunPaths | None = None
     research: ResearchNeed | None = None
+    prompt_candidates: list[PromptCandidate] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)
     next_steps: list[str] = Field(default_factory=list)
 
@@ -436,6 +542,15 @@ class FileAdaptationTask(StrictModel):
     required_changes: list[GuidanceItem] = Field(default_factory=list)
 
 
+class DynamicPromptConsumer(StrictModel):
+    """One prompt consumer with no statically resolved source."""
+
+    location: str
+    keyword: str
+    access_keys: list[str] = Field(default_factory=list)
+    matching_sources: list[str] = Field(default_factory=list)
+
+
 class AdaptationTaskList(StrictModel):
     """Everything still needed to produce a complete adaptation output set.
 
@@ -464,6 +579,9 @@ class AdaptationTaskList(StrictModel):
     # when prompt adaptation is incomplete instead of reporting "ready".
     prompt_coverage: Literal["resolved", "partial", "unresolved"] = "resolved"
     prompt_candidates: list[str] = Field(default_factory=list)
+    # Dynamic prompt consumers still counting against coverage (additive,
+    # v1.6.0-a), each closable by confirm_prompt_consumer or a dismissal.
+    dynamic_prompt_consumers: list[DynamicPromptConsumer] = Field(default_factory=list)
 
 
 class PromptSubmissionResult(StrictModel):
@@ -531,6 +649,7 @@ class RunStatus(StrictModel):
     run_id: str
     state: Literal[
         "research_pending",
+        "discovery_incomplete",
         "blockers_pending",
         "tasks_pending",
         "review_pending",
@@ -542,7 +661,28 @@ class RunStatus(StrictModel):
     unconfirmed_unaffected: int = 0
     pending_review_changes: int = 0
     research_scopes_pending: list[str] = Field(default_factory=list)
+    # Prompt discovery state (additive, v1.6.0-a).
+    prompt_coverage: Literal["resolved", "partial", "unresolved"] = "resolved"
+    prompt_candidates: list[str] = Field(default_factory=list)
+    dynamic_prompt_consumers: int = 0
     snapshot_reused: bool = False
+
+
+class PromptDiscoveryUpdate(StrictModel):
+    """Outcome of add_prompt_sources / confirm_prompt_consumer on a live run."""
+
+    schema_version: Literal["1"] = "1"
+    run_id: str
+    accepted: bool
+    added_sources: list[str] = Field(default_factory=list)
+    confirmed_consumers: list[str] = Field(default_factory=list)
+    dismissed: list[str] = Field(default_factory=list)
+    new_prompt_tasks: list[str] = Field(default_factory=list)
+    prompt_coverage: Literal["resolved", "partial", "unresolved"] = "resolved"
+    prompt_candidates: list[str] = Field(default_factory=list)
+    dynamic_prompt_consumers: list[str] = Field(default_factory=list)
+    problems: list[str] = Field(default_factory=list)
+    message: str
 
 
 class MigrationRunFinalization(StrictModel):

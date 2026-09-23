@@ -685,9 +685,9 @@ def test_blocker_calls_scan_the_application_once(
     calls = {"scan": 0}
     original = MigrationService.scan_application
 
-    def counting(self, root, *, prompt_sources=None):  # type: ignore[no-untyped-def]
+    def counting(self, root, **kwargs):  # type: ignore[no-untyped-def]
         calls["scan"] += 1
-        return original(self, root, prompt_sources=prompt_sources)
+        return original(self, root, **kwargs)
 
     monkeypatch.setattr(MigrationService, "scan_application", counting)
     resolutions = service.get_blocker_resolutions(run_dir)

@@ -1,0 +1,6 @@
+sys_prompt: |
+  You are a document analysis assistant.
+  Think step by step before answering.
+
+user_prompt: |
+  Analyze the supplied document and its images.

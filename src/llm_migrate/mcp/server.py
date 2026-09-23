@@ -43,6 +43,9 @@ exposes only its tools):
 1. start_migration(application_path, source, target, ...) — registry-first
    matching (asks for user confirmation when identifiers are vague), scans the
    application, creates the run workspace, and reports whether research helps.
+   When prompt consumers exist but no prompt source resolved, it returns
+   `prompt_candidates` with needs_confirmation instead: ask the user which are
+   live prompts, then retry with prompt_sources (or defer_prompt_candidates).
 2. If research is recommended and the user agrees: get_research_prompts(run_dir),
    run each researcher/reviewer prompt with a separate agent, validate each
    artifact with validate_research_artifact(run_dir, scope), then
@@ -51,6 +54,11 @@ exposes only its tools):
    prompt task, and submission results confirm acceptance, so never re-list
    between submissions; get_run_status(run_dir) is the cheap way to check
    where the run stands and what to do next.
+3a. If get_run_status reports discovery_incomplete: ask the user, then call
+   add_prompt_sources(run_dir, paths) for live prompt files,
+   confirm_prompt_consumer(run_dir, location, source_path) for a dynamic
+   consumer that reads a file, or add_prompt_sources(run_dir, [], dismiss=[...],
+   rationale=...) with the user's reason; the worklist re-derives in place.
 3b. If the worklist reports blockers: get_blocker_resolutions(run_dir); present
    each blocker's question, options, consequences, and evidence VERBATIM, one
    blocker at a time, and record each user answer with record_blocker_decision.
@@ -103,6 +111,8 @@ _GUIDED_TOOL_NAMES = frozenset(
         "submit_adapted_file",
         "submit_adaptations",
         "confirm_unaffected",
+        "add_prompt_sources",
+        "confirm_prompt_consumer",
         "get_run_status",
         "finalize_migration",
         "get_change_review",
@@ -611,11 +621,16 @@ def start_migration(
     research: Literal["auto", "skip"] = "auto",
     prompt_sources: list[str] | None = None,
     strict: bool = False,
+    defer_prompt_candidates: bool = False,
 ) -> dict[str, Any]:
     """Start a guided migration run; the preferred entry point for a full migration.
 
     Both models match registry-first; if either needs confirmation, nothing
-    is written and `candidates` must be shown to the user. Otherwise the run
+    is written and `candidates` must be shown to the user. Likewise, when
+    prompt consumers exist but no prompt source resolved, `prompt_candidates`
+    lists candidate files to confirm with the user: retry with
+    `prompt_sources`, or `defer_prompt_candidates=true` to decide on the live
+    run with add_prompt_sources. Otherwise the run
     workspace is created, a bounded research request is written only when
     knowledge is missing or stale, and `next_steps` says exactly what to
     call next. `strict=true` (production runs) turns unknown evidence URLs,
@@ -637,6 +652,7 @@ def start_migration(
         research=research,
         prompt_sources=prompt_sources,
         strict=strict,
+        defer_prompt_candidates=defer_prompt_candidates,
     )
     result = _json(start)
     # The nested profiles are large; fetch one explicitly via get_model_profile.
@@ -867,8 +883,11 @@ def record_change_decisions(
 def get_run_status(run_dir: str, now: str | None = None) -> dict[str, Any]:
     """The run's state machine position with the single next action.
 
-    States: research_pending -> blockers_pending -> tasks_pending ->
-    review_pending -> ready_to_finalize, with pending counts. Served from the
+    States: research_pending -> discovery_incomplete -> blockers_pending ->
+    tasks_pending -> review_pending -> ready_to_finalize, with pending counts.
+    discovery_incomplete (prompt coverage unresolved with candidate files, or
+    any unresolved consumer in strict mode) names the exact
+    add_prompt_sources / confirm_prompt_consumer calls. Served from the
     worklist snapshot (re-derived only when the application, run identity,
     decisions, or registry changed), so it is cheap to call between steps.
     """
@@ -901,6 +920,46 @@ def confirm_unaffected(
             acknowledge_source_references=acknowledge_source_references,
             now=utc_moment(now),
         )
+    )
+
+
+@_tool
+def add_prompt_sources(
+    run_dir: str,
+    paths: list[str],
+    dismiss: list[str] | None = None,
+    rationale: str = "",
+    now: str | None = None,
+) -> dict[str, Any]:
+    """Add prompt source files to a LIVE run, or dismiss discovery candidates.
+
+    `paths` are application-relative prompt files the user confirmed are
+    live prompts; the worklist re-derives (submitted deliverables keep their
+    entries) and `new_prompt_tasks` lists the added pending tasks. `dismiss`
+    names unreferenced candidate files or dynamic consumer `path:line`
+    addresses the USER says are not prompts / genuinely runtime-built, with
+    the user's `rationale` (required). Nothing is written on any problem.
+    """
+    return _json(
+        _service().add_prompt_sources(
+            run_dir, paths, dismiss=dismiss or [], rationale=rationale, now=utc_moment(now)
+        )
+    )
+
+
+@_tool
+def confirm_prompt_consumer(
+    run_dir: str, location: str, source_path: str, now: str | None = None
+) -> dict[str, Any]:
+    """Record that one dynamic prompt consumer reads one prompt file.
+
+    `location` is a `path:line` from the run's dynamic_prompt_consumers
+    (get_run_status / list_adaptation_tasks); `source_path` is the file the
+    USER confirmed it reads. The consumer becomes source-backed, the file a
+    prompt source, and the worklist re-derives.
+    """
+    return _json(
+        _service().confirm_prompt_consumer(run_dir, location, source_path, now=utc_moment(now))
     )
 
 

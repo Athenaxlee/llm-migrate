@@ -1,0 +1,3 @@
+# Written on a Windows host: backslash-separated prompt path.
+prompts:
+  summary: prompt_lib\summary.yaml

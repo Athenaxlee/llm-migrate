@@ -12,7 +12,7 @@ are traced into a detected invocation call chain.
 from __future__ import annotations
 
 import posixpath
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Literal
 
@@ -35,12 +35,154 @@ class ConfigDocument:
 
 
 @dataclass(frozen=True)
+class Resolution:
+    """A path value resolved to one known application file, and how."""
+
+    path: str
+    rule: Literal["config_dir", "application_root", "code_dir", "stripped_prefix"]
+    stripped: tuple[str, ...] = ()
+
+    @property
+    def description(self) -> str:
+        """Human-readable resolution rule for provenance chains."""
+        if self.rule == "stripped_prefix":
+            return (
+                f"resolved by stripping leading {'/'.join(self.stripped)!r} "
+                "(repo-root-relative value; matches the application root's trailing path)"
+            )
+        return {
+            "config_dir": "resolved relative to the configuration file",
+            "application_root": "resolved relative to the application root",
+            "code_dir": "resolved relative to the loading module",
+        }[self.rule]
+
+
+_MAX_STRIPPED_SEGMENTS = 3
+
+
+@dataclass(frozen=True)
+class PathResolver:
+    """Resolve path values to files INSIDE the application, never outside it.
+
+    Resolution is always a lookup in `known_files` (the scanned file set), so
+    no rule can reach a file outside the application. Values are normalized
+    first (backslashes become `/`). On a case-insensitive filesystem —
+    detected once per scan by `detect_case_insensitive`, never assumed from
+    the OS — lookups and the stripping rule's segment comparison are
+    case-folded, and the resolved path is always the `known_files` spelling.
+
+    Bases are tried in order (the config file's directory, then the
+    application root), then bounded leading-segment stripping: for k = 1..3,
+    drop the value's first k segments when they equal the last k components
+    of the application root's real path (a value written relative to a repo
+    root above the scanned directory) and accept the remainder when known.
+    """
+
+    known_files: frozenset[str]
+    root_tail: tuple[str, ...] = ()
+    case_insensitive: bool = False
+    _folded: dict[str, str | None] = field(default_factory=dict, compare=False, repr=False)
+
+    def __post_init__(self) -> None:
+        for item in self.known_files:
+            key = item.casefold()
+            # Two spellings folding together cannot both exist on a
+            # case-insensitive filesystem; stay unresolved if they do.
+            self._folded[key] = None if key in self._folded else item
+
+    @classmethod
+    def for_files(
+        cls,
+        known_files: set[str] | frozenset[str],
+        root: Path | None = None,
+        *,
+        case_insensitive: bool = False,
+    ) -> PathResolver:
+        # parts[0] of an absolute path is its anchor ("/" or "C:\\").
+        tail = tuple(root.resolve().parts[1:][-_MAX_STRIPPED_SEGMENTS:]) if root else ()
+        return cls(frozenset(known_files), tail, case_insensitive)
+
+    def canonical(self, path: str) -> str | None:
+        """The known-files spelling of one normalized relative path, if known."""
+        if path in self.known_files:
+            return path
+        if self.case_insensitive:
+            return self._folded.get(path.casefold())
+        return None
+
+    def _same(self, left: str, right: str) -> bool:
+        return left.casefold() == right.casefold() if self.case_insensitive else left == right
+
+    def resolve(self, value: str, bases: tuple[tuple[str, str], ...]) -> Resolution | None:
+        """Resolve one raw value against (rule, directory) bases, then stripping."""
+        normalized = normalize_value(value)
+        if normalized is None or source_format(normalized) is None:
+            return None
+        for rule, prefix in bases:
+            joined = (
+                posixpath.normpath(posixpath.join(prefix, normalized)) if prefix else normalized
+            )
+            if joined.startswith(".."):
+                continue
+            found = self.canonical(joined)
+            if found is not None:
+                return Resolution(path=found, rule=rule)  # type: ignore[arg-type]
+        segments = normalized.split("/")
+        for count in range(1, min(_MAX_STRIPPED_SEGMENTS, len(segments) - 1) + 1):
+            if count > len(self.root_tail):
+                break
+            dropped = segments[:count]
+            expected = self.root_tail[-count:]
+            if not all(self._same(a, b) for a, b in zip(dropped, expected, strict=True)):
+                continue
+            found = self.canonical("/".join(segments[count:]))
+            if found is not None:
+                return Resolution(path=found, rule="stripped_prefix", stripped=tuple(dropped))
+        return None
+
+
+def normalize_value(value: str) -> str | None:
+    """Normalize a config/code path value; None for absolute or unusable values."""
+    if not value or value != value.strip() or "\n" in value:
+        return None
+    candidate = value.replace("\\", "/")
+    if candidate.startswith(("/", "~")) or (len(candidate) > 1 and candidate[1] == ":"):
+        return None
+    normalized = posixpath.normpath(candidate)
+    if normalized.startswith("..") or normalized == ".":
+        return None
+    return normalized
+
+
+def detect_case_insensitive(base: Path, relative_files: list[str]) -> bool:
+    """Whether the filesystem holding `base` folds case, probed on real files.
+
+    Checks one scanned file whose name has letters: if its case-swapped
+    spelling names the same file, the filesystem is case-insensitive. Never
+    writes anything and never assumes from the operating system.
+    """
+    for relative in relative_files:
+        name = posixpath.basename(relative)
+        swapped = name.swapcase()
+        if swapped == name:
+            continue
+        original = base / relative
+        probe = original.with_name(swapped)
+        try:
+            return probe.exists() and probe.samefile(original)
+        except OSError:
+            return False
+    return False
+
+
+@dataclass(frozen=True)
 class ConfigPathReference:
     """A config value that names an existing candidate prompt file."""
 
     config_path: str
     key_path: tuple[str, ...]
     target_path: str
+    resolution: Resolution | None = None
 
     @property
     def prompt_scoped(self) -> bool:
@@ -69,28 +211,26 @@ def load_config_documents(
     return catalog, warnings
 
 
-def resolve_reference(config_path: str, value: str, known_files: set[str]) -> str | None:
+def resolve_reference(
+    config_path: str, value: str, resolver: PathResolver | set[str] | frozenset[str]
+) -> Resolution | None:
     """Resolve a config string value to a known prompt-bearing file, if any.
 
     Values are tried relative to the config file's directory first, then
-    relative to the application base. Absolute paths and path traversal
+    relative to the application base, then by bounded leading-segment
+    stripping (see `PathResolver`). Absolute paths and path traversal
     outside the application are never resolved.
     """
-    if not value or value != value.strip() or "\n" in value or value.startswith(("/", "~")):
-        return None
-    if source_format(value) is None:
-        return None
-    for prefix in (posixpath.dirname(config_path), ""):
-        candidate = posixpath.normpath(posixpath.join(prefix, value)) if prefix else value
-        if candidate.startswith(".."):
-            continue
-        if candidate in known_files:
-            return candidate
-    return None
+    if not isinstance(resolver, PathResolver):
+        resolver = PathResolver(frozenset(resolver))
+    return resolver.resolve(
+        value,
+        (("config_dir", posixpath.dirname(config_path)), ("application_root", "")),
+    )
 
 
 def find_prompt_path_references(
-    document: ConfigDocument, known_files: set[str]
+    document: ConfigDocument, resolver: PathResolver | set[str] | frozenset[str]
 ) -> list[ConfigPathReference]:
     """Find config values under prompt-scoped keys that name existing files."""
     references: list[ConfigPathReference] = []
@@ -104,13 +244,14 @@ def find_prompt_path_references(
             for item in node:
                 walk(item, key_path)
         elif isinstance(node, str) and any("prompt" in key.casefold() for key in key_path):
-            target = resolve_reference(document.path, node, known_files)
-            if target is not None:
+            resolution = resolve_reference(document.path, node, resolver)
+            if resolution is not None:
                 references.append(
                     ConfigPathReference(
                         config_path=document.path,
                         key_path=key_path,
-                        target_path=target,
+                        target_path=resolution.path,
+                        resolution=resolution,
                     )
                 )
 

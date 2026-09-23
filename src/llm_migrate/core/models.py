@@ -629,6 +629,9 @@ class PromptDiscoverySummary(StrictModel):
     inline_consumers: int = Field(default=0, ge=0)
     source_backed_consumers: int = Field(default=0, ge=0)
     dynamic_consumers: int = Field(default=0, ge=0)
+    # Consumers the user dismissed as genuinely runtime-built content
+    # (additive, v1.6.0-a); they no longer count as dynamic.
+    dismissed_consumers: int = Field(default=0, ge=0)
     resolved_sources: int = Field(default=0, ge=0)
     low_confidence_sources: int = Field(default=0, ge=0)
     coverage: PromptDiscoveryCoverage = PromptDiscoveryCoverage.RESOLVED

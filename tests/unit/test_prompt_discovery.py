@@ -61,7 +61,7 @@ def test_config_driven_prompt_path_resolves_with_provenance(configured_app: Path
     assert multi.provenance == [
         "app.py loads model_profiles.yaml",
         "model_profiles.yaml: models.claude.prompts.multi -> "
-        "prompt_lib/claude_prompt_multimodal.yaml",
+        "prompt_lib/claude_prompt_multimodal.yaml (resolved relative to the configuration file)",
     ]
     for referenced in ("prompt_lib/claude_prompt.yaml", "prompt_lib/claude_prompt_colmap.yaml"):
         assert by_path[referenced].confidence is PromptSourceConfidence.MEDIUM

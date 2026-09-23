@@ -49,3 +49,24 @@ jobs:
 
       - name: Build wheel
         run: python -m pip wheel --no-deps . --wheel-dir dist
+
+  windows:
+    # The field host runs on Windows: path resolution, scanning, prompt
+    # discovery, and the run-state lock must hold there too.
+    runs-on: windows-latest
+    steps:
+      - name: Keep fixture line endings byte-identical to the goldens
+        run: git config --global core.autocrlf false
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+          cache: pip
+      - name: Install project
+        run: python -m pip install --upgrade pip && python -m pip install -e '.[dev]'
+      - name: Resolution, scanner, discovery, and run-state suites
+        run: >-
+          pytest tests/unit/test_v160a_prompt_discovery.py
+          tests/unit/test_prompt_discovery.py
+          tests/unit/test_application_scanner.py
+          tests/unit/test_runstate.py

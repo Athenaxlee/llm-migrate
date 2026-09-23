@@ -1,0 +1,346 @@
+{
+  "files_scanned": 7,
+  "findings": [
+    {
+      "detail": "imports anthropic",
+      "kind": "provider_sdk",
+      "location": {
+        "column": 0,
+        "end_line": 3,
+        "line": 3,
+        "path": "app.py"
+      },
+      "metadata": null,
+      "platform": "anthropic-api",
+      "provider": "anthropic",
+      "value": "anthropic"
+    },
+    {
+      "detail": "loads prompt content from a file",
+      "kind": "prompt",
+      "location": {
+        "column": 0,
+        "end_line": 5,
+        "line": 5,
+        "path": "app.py"
+      },
+      "metadata": null,
+      "platform": null,
+      "provider": null,
+      "value": "prompts/system.txt"
+    },
+    {
+      "detail": "loads prompt content from a file",
+      "kind": "prompt",
+      "location": {
+        "column": 4,
+        "end_line": 8,
+        "line": 8,
+        "path": "app.py"
+      },
+      "metadata": null,
+      "platform": null,
+      "provider": null,
+      "value": "prompts/guidelines.txt"
+    },
+    {
+      "detail": "calls client.messages.create",
+      "kind": "invocation",
+      "location": {
+        "column": 11,
+        "end_line": 22,
+        "line": 14,
+        "path": "app.py"
+      },
+      "metadata": null,
+      "platform": "anthropic-api",
+      "provider": "anthropic",
+      "value": "client.messages.create"
+    },
+    {
+      "detail": "passes a literal model identifier",
+      "kind": "model_identifier",
+      "location": {
+        "column": 14,
+        "end_line": 15,
+        "line": 15,
+        "path": "app.py"
+      },
+      "metadata": null,
+      "platform": "anthropic-api",
+      "provider": "anthropic",
+      "value": "claude-sonnet-4-6"
+    },
+    {
+      "detail": "sets generation parameter max_tokens",
+      "kind": "parameter",
+      "location": {
+        "column": 19,
+        "end_line": 16,
+        "line": 16,
+        "path": "app.py"
+      },
+      "metadata": {
+        "name": "max_tokens",
+        "value": 512
+      },
+      "platform": "anthropic-api",
+      "provider": "anthropic",
+      "value": "max_tokens=512"
+    },
+    {
+      "detail": "supplies prompt content through system",
+      "kind": "prompt",
+      "location": {
+        "column": 15,
+        "end_line": 17,
+        "line": 17,
+        "path": "app.py"
+      },
+      "metadata": {
+        "resolution": "source",
+        "sources": [
+          "prompts/guidelines.txt",
+          "prompts/system.txt"
+        ]
+      },
+      "platform": "anthropic-api",
+      "provider": "anthropic",
+      "value": "system"
+    },
+    {
+      "detail": "supplies prompt content through messages",
+      "kind": "prompt",
+      "location": {
+        "column": 17,
+        "end_line": 21,
+        "line": 18,
+        "path": "app.py"
+      },
+      "metadata": {
+        "resolution": "source",
+        "sources": [
+          "prompts/user.txt"
+        ]
+      },
+      "platform": "anthropic-api",
+      "provider": "anthropic",
+      "value": "messages"
+    },
+    {
+      "detail": "imports anthropic",
+      "kind": "provider_sdk",
+      "location": {
+        "column": 0,
+        "end_line": 1,
+        "line": 1,
+        "path": "summarize.py"
+      },
+      "metadata": null,
+      "platform": "anthropic-api",
+      "provider": "anthropic",
+      "value": "anthropic"
+    },
+    {
+      "detail": "resolves a prompt file path from configuration",
+      "kind": "prompt",
+      "location": {
+        "column": 0,
+        "end_line": 7,
+        "line": 7,
+        "path": "summarize.py"
+      },
+      "metadata": {
+        "config": "settings.yaml",
+        "key_path": "prompts.summary"
+      },
+      "platform": null,
+      "provider": null,
+      "value": "prompt_lib/summary.yaml"
+    },
+    {
+      "detail": "calls client.messages.create",
+      "kind": "invocation",
+      "location": {
+        "column": 11,
+        "end_line": 21,
+        "line": 16,
+        "path": "summarize.py"
+      },
+      "metadata": null,
+      "platform": "anthropic-api",
+      "provider": "anthropic",
+      "value": "client.messages.create"
+    },
+    {
+      "detail": "passes a literal model identifier",
+      "kind": "model_identifier",
+      "location": {
+        "column": 14,
+        "end_line": 17,
+        "line": 17,
+        "path": "summarize.py"
+      },
+      "metadata": null,
+      "platform": "anthropic-api",
+      "provider": "anthropic",
+      "value": "claude-sonnet-4-6"
+    },
+    {
+      "detail": "sets generation parameter max_tokens",
+      "kind": "parameter",
+      "location": {
+        "column": 19,
+        "end_line": 18,
+        "line": 18,
+        "path": "summarize.py"
+      },
+      "metadata": {
+        "name": "max_tokens",
+        "value": 1024
+      },
+      "platform": "anthropic-api",
+      "provider": "anthropic",
+      "value": "max_tokens=1024"
+    },
+    {
+      "detail": "supplies prompt content through system",
+      "kind": "prompt",
+      "location": {
+        "column": 15,
+        "end_line": 19,
+        "line": 19,
+        "path": "summarize.py"
+      },
+      "metadata": {
+        "resolution": "source",
+        "sources": [
+          "prompt_lib/summary.yaml"
+        ]
+      },
+      "platform": "anthropic-api",
+      "provider": "anthropic",
+      "value": "system"
+    },
+    {
+      "detail": "supplies prompt content through messages",
+      "kind": "prompt",
+      "location": {
+        "column": 17,
+        "end_line": 20,
+        "line": 20,
+        "path": "summarize.py"
+      },
+      "metadata": {
+        "resolution": "dynamic",
+        "sources": []
+      },
+      "platform": "anthropic-api",
+      "provider": "anthropic",
+      "value": "messages"
+    }
+  ],
+  "multimodal_inputs": [],
+  "prompt_discovery": {
+    "consumers": 4,
+    "coverage": "partial",
+    "dismissed_consumers": 0,
+    "dynamic_consumers": 1,
+    "inline_consumers": 0,
+    "low_confidence_sources": 0,
+    "resolved_sources": 4,
+    "source_backed_consumers": 3
+  },
+  "prompt_sources": [
+    {
+      "components": [
+        {
+          "content": "You summarize documents for claude-sonnet-4-6 users.\n",
+          "key": "system",
+          "role": "system"
+        }
+      ],
+      "confidence": "high",
+      "format": "yaml",
+      "origin": "discovered",
+      "path": "prompt_lib/summary.yaml",
+      "profile_model_ids": [],
+      "provenance": [
+        "summarize.py loads settings.yaml",
+        "settings.yaml: prompts.summary -> prompt_lib/summary.yaml (resolved relative to the configuration file)"
+      ]
+    },
+    {
+      "components": [
+        {
+          "content": "Follow the house style guide.\n",
+          "key": null,
+          "role": "unknown"
+        }
+      ],
+      "confidence": "high",
+      "format": "text",
+      "origin": "discovered",
+      "path": "prompts/guidelines.txt",
+      "profile_model_ids": [],
+      "provenance": [
+        "app.py loads prompts/guidelines.txt"
+      ]
+    },
+    {
+      "components": [
+        {
+          "content": "You are a concise assistant running on claude-sonnet-4-6.\n",
+          "key": null,
+          "role": "unknown"
+        }
+      ],
+      "confidence": "high",
+      "format": "text",
+      "origin": "discovered",
+      "path": "prompts/system.txt",
+      "profile_model_ids": [],
+      "provenance": [
+        "app.py loads prompts/system.txt"
+      ]
+    },
+    {
+      "components": [
+        {
+          "content": "Answer the question below.\n",
+          "key": null,
+          "role": "unknown"
+        }
+      ],
+      "confidence": "high",
+      "format": "text",
+      "origin": "discovered",
+      "path": "prompts/user.txt",
+      "profile_model_ids": [],
+      "provenance": [
+        "app.py passes the content of prompts/user.txt to a model call"
+      ]
+    }
+  ],
+  "requirements": {
+    "minimum_context_window": null,
+    "required_capabilities": [],
+    "required_parameters": [
+      "max_tokens"
+    ],
+    "source_models": [
+      "claude-sonnet-4-6"
+    ],
+    "source_platforms": [
+      "anthropic-api"
+    ],
+    "source_providers": [
+      "anthropic"
+    ]
+  },
+  "root": "<fixture>",
+  "schema_version": "3",
+  "structured_outputs": [],
+  "tool_definitions": [],
+  "warnings": []
+}

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import posixpath
+from collections.abc import Mapping, Sequence
 from typing import Any
 
 import yaml
@@ -296,12 +297,14 @@ def _prompt_inputs(
             out_of_scope.append(
                 f"{item.path}: not referenced by the application's code or configuration, "
                 f"while sibling prompt file(s) {', '.join(siblings)} are; treated as out of "
-                "scope. Name it in prompt_sources to include it."
+                "scope. Include it with add_prompt_sources (or prompt_sources at start) if "
+                "it is live."
             )
             continue
         unknowns.append(
             f"{item.path} contains prompt-like keys but nothing references it; it was "
-            "not prepared automatically. Name it in prompt_sources to include it."
+            "not prepared automatically. Include it with add_prompt_sources (or "
+            "prompt_sources at start) if it is live."
         )
     discovery = application.prompt_discovery
     if discovery.dynamic_consumers:
@@ -787,18 +790,61 @@ def unreferenced_prompt_candidates(plan: MigrationPlan) -> list[str]:
     )
 
 
+def apply_prompt_discovery_dismissals(
+    plan: MigrationPlan,
+    dismissed: Mapping[str, str],
+    dismissed_consumers: Sequence[str] = (),
+) -> MigrationPlan:
+    """Move user-dismissed candidates and consumers out of the unknowns.
+
+    A dismissed candidate prompt file (recorded with the user's rationale in
+    `migration.yaml`) leaves the unknowns and is listed out of scope with
+    that rationale — replacing any heuristic out-of-scope line for the same
+    file, since the user's recorded reason is the stronger evidence.
+    Dismissed consumers the scan applied are listed the same way. Nothing is
+    dropped silently: every dismissal stays visible.
+    """
+    if not dismissed:
+        return plan
+    unknowns: list[str] = []
+    out_of_scope: list[str] = []
+
+    def dismissal(path: str) -> str:
+        return f"{path}: dismissed by the user as not a live prompt — {dismissed[path]}"
+
+    for item in plan.out_of_scope:
+        scoped = item.split(": ", 1)[0]
+        out_of_scope.append(dismissal(scoped) if scoped in dismissed else item)
+    for item in plan.unknowns:
+        candidate = item.split(_CANDIDATE_MARKER, 1)[0] if _CANDIDATE_MARKER in item else None
+        if candidate is not None and candidate in dismissed:
+            out_of_scope.append(dismissal(candidate))
+            continue
+        unknowns.append(item)
+    out_of_scope.extend(
+        f"{location}: prompt consumer dismissed by the user as runtime-built content — "
+        f"{dismissed[location]}"
+        for location in dismissed_consumers
+        if location in dismissed
+    )
+    return plan.model_copy(update={"unknowns": unknowns, "out_of_scope": sorted(set(out_of_scope))})
+
+
 def unknown_action(unknown: str) -> str:
     """The concrete next action for one unresolved unknown."""
     if _CANDIDATE_MARKER in unknown:
         path = unknown.split(_CANDIDATE_MARKER, 1)[0]
         return (
-            f"If `{path}` is a live prompt, include it: start a new run with "
-            f'prompt_sources=["{path}"]; otherwise nothing to do.'
+            f"If `{path}` is a live prompt, include it on the live run with "
+            f'add_prompt_sources(run_dir, ["{path}"]); otherwise dismiss it with '
+            f'add_prompt_sources(run_dir, [], dismiss=["{path}"], rationale="...").'
         )
     if "prompt consumer(s) supply dynamically built content" in unknown:
         return (
-            "Review each dynamic consumer; name any static prompt file it loads with "
-            "prompt_sources, or leave it if the content is genuinely runtime-built."
+            "Review each dynamic consumer (get_run_status lists them): "
+            "confirm_prompt_consumer(run_dir, location, source_path) when it reads a "
+            "static prompt file, or dismiss it with a rationale when the content is "
+            "genuinely runtime-built."
         )
     if unknown.startswith("One or both values for "):
         field = unknown.split("'")[1] if "'" in unknown else "this capability"

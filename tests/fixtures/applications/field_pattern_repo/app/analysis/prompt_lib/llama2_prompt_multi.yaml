@@ -1,0 +1,6 @@
+sys_prompt: |
+  You are a legacy document analyst.
+  Think step by step before answering.
+
+user_prompt: |
+  Analyze the document.
