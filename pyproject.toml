@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "llm-migrate"
-version = "1.5.1"
+version = "1.5.2"
 description = "Local-first, provider-neutral LLM application migration toolkit"
 readme = "README.md"
 requires-python = ">=3.11"

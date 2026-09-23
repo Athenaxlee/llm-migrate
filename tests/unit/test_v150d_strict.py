@@ -180,10 +180,16 @@ def test_validation_disposition_and_contract_test_deliverable(
     # Recording the disposition needs a real rationale for accepts.
     with pytest.raises(ValueError, match="user's own"):
         service.record_validation_disposition(run_dir, "accepted_without_validation", "  ")
+    with pytest.raises(ValueError, match="run_passed"):
+        service.record_validation_disposition(
+            run_dir, "generated_tests", "Wired the test.", decided_on=AS_OF
+        )
     disposition = service.record_validation_disposition(
         run_dir,
         "generated_tests",
         "Ran output/validation/test_target_invocation.py against the adapted app.",
+        outcome="run_passed",
+        outcome_summary="1 passed in 0.08s",
         decided_on=AS_OF,
     )
     assert load_validation_disposition(run_dir, disposition.run_id) is not None

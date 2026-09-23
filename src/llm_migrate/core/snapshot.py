@@ -60,6 +60,8 @@ class WorklistSnapshot(StrictModel):
     key: str
     tasks: AdaptationTaskList
     evidence_urls: list[str] = Field(default_factory=list)
+    # The subset of evidence_urls recorded in the reviewed registry (v1.5.2).
+    registry_evidence_urls: list[str] = Field(default_factory=list)
 
 
 def _file_digest(path: Path) -> str:

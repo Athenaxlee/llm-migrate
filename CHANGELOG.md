@@ -3,6 +3,43 @@
 All notable changes are documented here. The project follows semantic
 versioning.
 
+## 1.5.2 — 2026-09-23
+
+Precision and honesty patch, driven by a real v1.5.1 guided run of a
+production Bedrock application whose config-driven prompt library produced
+zero prompt tasks and whose report raised problems without directions. No
+schema version changed; every contract change is an additive field.
+
+- Prompt consumers are recorded only on model invocations or provider-client
+  calls; helpers taking `input=` no longer inflate the consumer count.
+- Out-of-scope prompt files: prompts referenced only by another model's
+  configuration profile, and unreferenced candidates beside selected
+  siblings, move from unknowns to the plan's new `out_of_scope` list and are
+  never prepared.
+- Unknowns the scan already answers (for example `parallel_tool_use` in an
+  app with no tools) are not raised; the XML-formatting finding is dropped on
+  same-provider moves.
+- Known evidence includes every source URL recorded in the run's resolved
+  registry profiles and pair knowledge; change review shows each citation's
+  verification state (registry-recorded, plan-carried, or UNKNOWN).
+- Evidence-backed validation: `generated_tests` needs the user's passing
+  outcome and summary line, and `byok_evaluation` needs the evaluation-run
+  artifact bound to the finalized manifest. Finalize re-checks the binding
+  and reports NOT VALIDATED otherwise (a strict violation).
+- Whole-application source-reference sweep: finalize reports any scanned
+  file still naming the source model that nothing accounts for
+  (`source_reference_uncovered`; strict blocks). Intentional mentions close
+  through `confirm_unaffected(acknowledge_source_references=true)` with the
+  user's rationale.
+- Registry guidance about structured output, tool use, or reasoning is
+  pre-disposed not applicable, with the reason, when the application never
+  exhibits the trigger under fully resolved prompt coverage.
+- The run report opens with "Action required" and gives unknowns an Action
+  column; run status warns while prompt coverage is incomplete and states
+  the two-pass validation flow; server instructions order review before
+  finalize; MCP `start_migration` returns paths relative to the run root.
+- README documents per-host MCP registration and verification.
+
 ## 1.5.1 — 2026-09-22
 
 Review-fix patch: a same-day multi-axis review of v1.5.0 confirmed three

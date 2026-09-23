@@ -14,9 +14,9 @@ from __future__ import annotations
 
 import hashlib
 from difflib import SequenceMatcher
-from typing import Literal
+from typing import Any, Literal
 
-from pydantic import Field
+from pydantic import BaseModel, Field
 
 from llm_migrate.core.models import (
     MigrationPlan,
@@ -376,6 +376,30 @@ def plan_evidence_urls(plan: MigrationPlan) -> set[str]:
         urls.update(source for source in difference.supporting_sources if source.startswith("http"))
     for blocker in plan.blockers:
         urls.update(blocker.evidence_urls)
+    return urls
+
+
+def _collect_urls(node: Any, urls: set[str]) -> None:
+    if isinstance(node, dict):
+        for value in node.values():
+            _collect_urls(value, urls)
+    elif isinstance(node, list):
+        for item in node:
+            _collect_urls(item, urls)
+    elif isinstance(node, str) and node.startswith("https://"):
+        urls.add(node)
+
+
+def registry_evidence_urls(*records: BaseModel) -> set[str]:
+    """Every HTTPS source URL recorded anywhere in reviewed registry records.
+
+    Model profiles (profile, platform-entry, field-level, and invocation
+    selector sources) and pair migration knowledge are reviewed evidence the
+    run already relies on, so a citation of one of them is not "unknown".
+    """
+    urls: set[str] = set()
+    for record in records:
+        _collect_urls(record.model_dump(mode="json"), urls)
     return urls
 
 

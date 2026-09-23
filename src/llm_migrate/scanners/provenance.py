@@ -33,7 +33,11 @@ from llm_migrate.core.prompt_documents import (
     source_format,
     text_component,
 )
-from llm_migrate.scanners.config import ConfigDocument, find_prompt_path_references
+from llm_migrate.scanners.config import (
+    ConfigDocument,
+    find_prompt_path_references,
+    profile_model_id,
+)
 
 CONSUMER_DETAIL_PREFIX = "supplies prompt content"
 OVERRIDE_PROVENANCE = "explicit prompt source override"
@@ -96,6 +100,13 @@ def assemble_prompt_sources(
         )
         if source is not None:
             sources[path] = source
+    references_by_target: dict[str, list[str | None]] = {}
+    for config_path in sorted(catalog):
+        for reference in find_prompt_path_references(catalog[config_path], known_files):
+            if reference.prompt_scoped:
+                references_by_target.setdefault(reference.target_path, []).append(
+                    profile_model_id(catalog[config_path], reference.key_path)
+                )
     for config_path in sorted(catalog):
         for reference in find_prompt_path_references(catalog[config_path], known_files):
             if reference.target_path in sources or not reference.prompt_scoped:
@@ -115,6 +126,11 @@ def assemble_prompt_sources(
             )
             if source is None:
                 continue
+            profile_ids = references_by_target.get(reference.target_path, [])
+            if profile_ids and all(item is not None for item in profile_ids):
+                source = source.model_copy(
+                    update={"profile_model_ids": sorted({item for item in profile_ids if item})}
+                )
             if not source.components:
                 warnings.append(
                     f"{reference.config_path} references {reference.target_path} under "

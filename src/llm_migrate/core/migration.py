@@ -20,13 +20,22 @@ from llm_migrate.core.models import (
     ValidationLevel,
 )
 
+_GUIDANCE_TRIGGERS: dict[str, Literal["structured_output", "tool_use", "reasoning"]] = {
+    "structured_output_guidance": "structured_output",
+    "tool_use_guidance": "tool_use",
+    "reasoning_guidance": "reasoning",
+}
+
 
 def _advice(
     text: str,
     basis: AdviceBasis = AdviceBasis.HEURISTIC,
     evidence_urls: list[str] | None = None,
+    applies_when: Literal["structured_output", "tool_use", "reasoning"] | None = None,
 ) -> MigrationAdvice:
-    return MigrationAdvice(text=text, basis=basis, evidence_urls=evidence_urls or [])
+    return MigrationAdvice(
+        text=text, basis=basis, evidence_urls=evidence_urls or [], applies_when=applies_when
+    )
 
 
 def _guidance_evidence(profile: ModelProfile) -> list[str]:
@@ -59,6 +68,18 @@ def prepare_prompt_migration(
         target.platform.platform if isinstance(target, ResolvedModel) and target.platform else None
     )
     analysis = analyze_prompt(prompt)
+    if source_profile.identity.provider == target_profile.identity.provider:
+        # Provider-specific formatting is a risk only when the provider
+        # changes; a same-provider move keeps the provider's own conventions.
+        analysis = analysis.model_copy(
+            update={
+                "findings": [
+                    item
+                    for item in analysis.findings
+                    if item.category != "provider_specific_formatting"
+                ]
+            }
+        )
     categories = {finding.category for finding in analysis.findings}
     preserve: list[MigrationAdvice] = []
     if "structured_output" in categories:
@@ -121,8 +142,15 @@ def prepare_prompt_migration(
                 AdviceBasis.DETERMINISTIC,
             )
         )
+    target_triggers = {
+        item: _GUIDANCE_TRIGGERS[field]
+        for field in guidance_fields
+        if field in _GUIDANCE_TRIGGERS
+        for item in getattr(target_profile.prompt_guidance, field)
+    }
     strengthening = [
-        _advice(item, AdviceBasis.DETERMINISTIC, target_evidence) for item in target_structure
+        _advice(item, AdviceBasis.DETERMINISTIC, target_evidence, target_triggers.get(item))
+        for item in target_structure
     ]
     target_features: list[MigrationAdvice] = []
     if target_capabilities.structured_output and "structured_output" in categories:
@@ -140,7 +168,7 @@ def prepare_prompt_migration(
             )
         )
     reasoning = [
-        _advice(item, AdviceBasis.DETERMINISTIC, target_evidence)
+        _advice(item, AdviceBasis.DETERMINISTIC, target_evidence, "reasoning")
         for item in target_profile.prompt_guidance.reasoning_guidance
     ]
     if "explicit_chain_of_thought" in categories:
@@ -151,7 +179,7 @@ def prepare_prompt_migration(
             )
         )
     structured = [
-        _advice(item, AdviceBasis.DETERMINISTIC, target_evidence)
+        _advice(item, AdviceBasis.DETERMINISTIC, target_evidence, "structured_output")
         for item in target_profile.prompt_guidance.structured_output_guidance
     ]
     risks: list[MigrationAdvice] = []

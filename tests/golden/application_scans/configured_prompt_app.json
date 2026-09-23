@@ -161,6 +161,9 @@
       "format": "yaml",
       "origin": "discovered",
       "path": "prompt_lib/claude_prompt.yaml",
+      "profile_model_ids": [
+        "anthropic.claude-sonnet-4-6"
+      ],
       "provenance": [
         "model_profiles.yaml: models.claude.prompts.single -> prompt_lib/claude_prompt.yaml (config reference; loading code not statically proven)"
       ]
@@ -182,6 +185,9 @@
       "format": "yaml",
       "origin": "discovered",
       "path": "prompt_lib/claude_prompt_colmap.yaml",
+      "profile_model_ids": [
+        "anthropic.claude-sonnet-4-6"
+      ],
       "provenance": [
         "model_profiles.yaml: models.claude.prompts.colmap -> prompt_lib/claude_prompt_colmap.yaml (config reference; loading code not statically proven)"
       ]
@@ -203,6 +209,7 @@
       "format": "yaml",
       "origin": "discovered",
       "path": "prompt_lib/claude_prompt_multimodal.yaml",
+      "profile_model_ids": [],
       "provenance": [
         "app.py loads model_profiles.yaml",
         "model_profiles.yaml: models.claude.prompts.multi -> prompt_lib/claude_prompt_multimodal.yaml"

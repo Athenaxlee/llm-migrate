@@ -118,6 +118,24 @@ def find_prompt_path_references(
     return references
 
 
+def profile_model_id(document: ConfigDocument, key_path: tuple[str, ...]) -> str | None:
+    """The model id declared by the nearest enclosing profile of a config value.
+
+    Walks from the value's parent mapping toward the document root and
+    returns the first sibling value under a model-id key (`model`,
+    `model_id`, `*_model`, ...). None when no enclosing mapping declares one
+    — the reference then cannot be scoped to a model.
+    """
+    for depth in range(len(key_path) - 1, -1, -1):
+        node = lookup(document, key_path[:depth])
+        if not isinstance(node, dict):
+            continue
+        for key, value in node.items():
+            if isinstance(key, str) and _value_kind(key, value) == "model_id":
+                return str(value)
+    return None
+
+
 def lookup(document: ConfigDocument, key_path: tuple[str, ...]) -> Any:
     """Follow one literal key path through a parsed document; None when absent."""
     node = document.data

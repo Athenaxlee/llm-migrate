@@ -609,6 +609,11 @@ class PromptSource(StrictModel):
     provenance: list[str] = Field(default_factory=list)
     confidence: PromptSourceConfidence
     origin: PromptSourceOrigin = PromptSourceOrigin.DISCOVERED
+    # Model ids declared by the config profiles that reference this file;
+    # empty when any referencing profile declares none (the file is then not
+    # scopable to a model). Planning excludes a file referenced only by
+    # profiles for other models.
+    profile_model_ids: list[str] = Field(default_factory=list)
 
 
 class PromptDiscoveryCoverage(StrEnum):
@@ -739,6 +744,10 @@ class MigrationAdvice(StrictModel):
     text: str
     basis: AdviceBasis
     evidence_urls: list[str] = Field(default_factory=list)
+    # The application usage this advice is conditional on (additive, v1.5.2):
+    # registry guidance about structured output, tool use, or reasoning only
+    # applies where the prompt or application exhibits it.
+    applies_when: Literal["structured_output", "tool_use", "reasoning"] | None = None
 
 
 class SemanticDiffState(StrEnum):
@@ -1166,6 +1175,9 @@ class MigrationPlan(StrictModel):
     decisions: list[AppliedBlockerDecision] = Field(default_factory=list)
     warnings: list[str]
     unknowns: list[str]
+    # Prompt files the scan shows this migration does not govern (additive,
+    # v1.5.2): never prepared, never tasks, never unknowns.
+    out_of_scope: list[str] = Field(default_factory=list)
     prompt_changes: list[PromptMigrationSpec]
     invocation_changes: list[InvocationMigrationSpec]
     tool_changes: list[PlannedMigrationChange]

@@ -65,6 +65,16 @@ set with nothing for change review to decide, and a second `get_run_status`
 call silently steered the host past the research question. See the V1.5.1
 section below and `docs/project_phases.md` §12.9.
 
+V1.5.2: Precision and Honesty Patch — released as `v1.5.2` on 2026-09-23,
+the first tranche of the next roadmap, driven by a real v1.5.1 guided run of
+a production Bedrock application whose config-driven prompt library produced
+zero prompt tasks and whose report raised problems without directions:
+invocation-gated prompt consumers, out-of-scope prompt scoping, scan-answered
+unknowns, same-provider noise removal, widened and visible evidence,
+evidence-backed validation dispositions, a whole-application source-reference
+sweep, guidance applicability, an "Action required" report, and honest run
+status. See the V1.5.2 section below and `docs/project_phases.md` §12.10.
+
 V1.5.0-b/-c/-d — implemented on 2026-09-22, completing the v1.5.0 release:
 semantic config couplings with anchoring guardrails, one difference-propagation
 mechanism, the worklist diet with `confirm_unaffected`, and the cross-surface
@@ -76,7 +86,7 @@ contract-test deliverable (§12.8).
 
 ## Released foundation
 
-- Git tag `v1.5.1` is the current stable release; `v1.5.0`, `v1.4.1`,
+- Git tag `v1.5.2` is the current stable release; `v1.5.1`, `v1.5.0`, `v1.4.1`,
   `v1.4.0`, `v1.3.0`, `v1.2.0`, `v1.1.0`, `v1.0.0`, and `v0.1.0` remain
   prior recorded release tags.
 - The V0.1 reviewed registry, proposal workflow, provenance, freshness, model
@@ -782,6 +792,52 @@ source-target `MigrationKnowledge`, not only individual model profiles.
   `list_adaptation_tasks`, a recorded blocker decision, or a submission —
   a second status call can no longer silently steer the host past the
   research question.
+
+## V1.5.2 completed capabilities
+
+- Consumer precision (2026-09-23): prompt-keyword couplings
+  (`system`/`messages`/`input`/`prompt`) are recorded only on model
+  invocations or calls on a detected provider client; helper functions that
+  take an `input=` argument are no longer prompt consumers.
+- Out-of-scope prompt files (2026-09-23): a config-referenced prompt whose
+  referencing profiles all declare another model, and an unreferenced
+  candidate whose directory sibling was selected by code, configuration, or
+  override, are listed in the plan's additive `out_of_scope` instead of
+  `unknowns` and are never prepared. `PromptSource.profile_model_ids`
+  records the referencing profiles' models (additive).
+- Answered unknowns and same-provider noise (2026-09-23): an unknown
+  capability difference whose capability the application does not use is
+  not emitted (the differences table marks it "not used by this
+  application"); the XML-structure formatting finding is dropped on
+  same-provider moves.
+- Evidence (2026-09-23): the run's known evidence includes every source URL
+  recorded in the two resolved profiles and their pair knowledge (session
+  overlay included); `get_change_review` reports each citation's
+  verification state (registry-recorded / plan-carried / UNKNOWN /
+  mechanical / reference only).
+- Evidence-backed validation (2026-09-23): `generated_tests` needs the
+  user's `run_passed` outcome and summary line; `byok_evaluation` needs the
+  evaluation-run artifact bound to the finalized manifest. Finalize re-checks
+  the binding; a legacy record without evidence, a failing outcome, or an
+  evaluation of a superseded plan renders NOT VALIDATED and is a strict
+  violation.
+- Whole-application source-reference sweep (2026-09-23): finalize reports
+  every scanned application file that names the source model and is not
+  accounted for (`source_reference_uncovered`; strict blocks), the
+  deterministic net under the discovery heuristics. Intentional mentions
+  close through `confirm_unaffected(acknowledge_source_references=true)`
+  with the user's rationale and render ACKNOWLEDGED SOURCE REFERENCE.
+- Guidance applicability (2026-09-23): registry guidance about structured
+  output, tool use, or reasoning carries `applies_when`; when neither the
+  prompt nor the scanned invocations show the trigger and prompt coverage is
+  resolved with no UNKNOWN invocation compatibility, the worklist pre-disposes
+  it `not_applicable` with the reason (PRE-DISPOSED in the report).
+- Legibility (2026-09-23): the run report opens with "Action required" and
+  renders unknowns with an Action column; run status warns while prompt
+  coverage is incomplete (naming candidate files) and states the two-pass
+  validation flow; the server instructions order review before finalize;
+  MCP `start_migration` returns paths relative to the run root; the README
+  documents per-host MCP registration and verification.
 
 ## Next work
 

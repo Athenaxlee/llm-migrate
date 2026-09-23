@@ -51,9 +51,12 @@ reports the position and the single next action at any point:
    decisions durably.
 4. Review every annotated change like a pull request — accept or reject each
    one; rejections regenerate the deliverable deterministically.
-5. Record how the migration was validated, then finalize: the whole
-   deliverable set is checked together and the manifest, report, change log,
-   and a generated request-shape contract test are written.
+5. Finalize, validate, and finalize again. The first finalize checks the
+   whole deliverable set together and writes the manifest, the report (which
+   opens with an "Action required" list), the change log, and a generated
+   request-shape contract test. You run that test or a BYOK evaluation, the
+   agent records the outcome, and a second finalize records the migration
+   as validated.
 
 If the canonical registry already has fresh coverage, the research request is
 refused and the agent continues with the reviewed local knowledge. "Live
@@ -215,8 +218,20 @@ The installed stdio server is:
 llm-migrate-mcp
 ```
 
-Point your MCP client to the executable inside the virtual environment. This is
-a generic example; the configuration filename and wrapper syntax vary by host.
+**Each agent host keeps its own MCP registry.** Registering the server in one
+host does not make it available in another — a server added to VS Code's
+`mcp.json` serves GitHub Copilot there but is invisible to Claude Code, and vice
+versa. Register it in every host you use, always pointing at the executable
+inside the virtual environment:
+
+| Host | How to register |
+| --- | --- |
+| Claude Code | `claude mcp add llm-migrate -- /absolute/path/to/llm-migrate/.venv/bin/llm-migrate-mcp` |
+| VS Code (GitHub Copilot) | add the server to `.vscode/mcp.json` (workspace) or your user `mcp.json` |
+| Codex and other hosts | add the server to that host's MCP configuration file |
+
+A generic configuration block (the filename and wrapper syntax vary by host;
+on Windows the executable is `.venv\Scripts\llm-migrate-mcp.exe`):
 
 ```json
 {
@@ -227,6 +242,12 @@ a generic example; the configuration filename and wrapper syntax vary by host.
   }
 }
 ```
+
+Verify in each host after restarting or reloading it: the host's tool list
+should include `start_migration` (in Claude Code, `claude mcp list` shows the
+server as connected). If the agent says it has no llm-migrate tools, the
+server is registered in a different host — or the host was not restarted
+after registration.
 
 The agent host must provide its own generative model and web/search capability.
 The `llm-migrate` MCP server does not contain an embedded model or general web
@@ -306,7 +327,22 @@ Key behaviors during the run:
 - Finalize checks the whole effective deliverable set together: lingering
   source references (including reviewed aliases of the source model),
   forbidden bare target ids, mixed selectors, missing target attribution,
-  and undisposed dropped couplings.
+  and undisposed dropped couplings. It also sweeps every scanned application
+  file: a file that still names the source model with no deliverable or
+  recorded review is reported, whatever the scanner failed to trace. A
+  mention you want to keep (documentation, history) is acknowledged with
+  `confirm_unaffected(acknowledge_source_references=true)` and your own
+  rationale.
+- Validation must be evidenced: `generated_tests` needs your passing test
+  result and its summary line, and `byok_evaluation` needs the evaluation
+  run artifact bound to the current manifest. An evaluation of an older plan,
+  or a record without evidence, is reported NOT VALIDATED.
+- Noise stays out of your way: prompt files referenced only by another
+  model's configuration profile (or unreferenced next to selected siblings)
+  are reported out of scope, unknowns the scan already answers are not
+  raised, and registry guidance whose trigger (structured output, tool use,
+  reasoning) your application never exhibits is pre-marked not applicable
+  with the reason.
 
 ## MCP tool guide
 
@@ -328,7 +364,7 @@ for manual composition.
 | `submit_adapted_prompt` / `submit_adapted_file` / `submit_adaptations` | The agent wrote adaptations | Validates fail-closed (dispositions, annotated changes, decoded-value diffs, selector enforcement) and stores deliverables; `submit_adaptations` batches |
 | `confirm_unaffected` | Incidental-SDK files remain | Records reviewed no-change entries for them in one call |
 | `get_change_review` / `record_change_decision` / `record_change_decisions` | Deliverables await review | Presents each annotated change verbatim; your accept/reject regenerates the deliverable deterministically |
-| `record_validation_disposition` | Before finalizing | Records how the migration was validated |
+| `record_validation_disposition` | After the first finalize | Records how the migration was validated (a passing test result, or an evaluation run bound to the current manifest) |
 | `finalize_migration` | Everything is decided | Runs the cross-surface consistency gate and writes the manifest, report, change log, and contract test |
 | `resolve_model` / `get_model_profile` | Identity questions during the run | Registry-first resolution and full reviewed profiles |
 

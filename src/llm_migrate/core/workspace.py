@@ -34,16 +34,18 @@ from llm_migrate.core.invocation_identity import (
 )
 from llm_migrate.core.models import (
     ComparisonSeverity,
+    CompatibilityState,
     MigrationAdvice,
     MigrationPlan,
     ModelMatchResult,
+    PromptDiscoveryCoverage,
     PromptMigrationSpec,
     PromptSourceFormat,
     PromptValidationResult,
     StrictModel,
     ValidationLevel,
 )
-from llm_migrate.core.planning import difference_governs_prompts
+from llm_migrate.core.planning import difference_governs_prompts, unreferenced_prompt_candidates
 from llm_migrate.core.prompt_documents import (
     STRUCTURED_SUFFIXES,
     build_candidate_document,
@@ -203,6 +205,11 @@ class GuidanceItem(StrictModel):
 
     id: str
     text: str
+    # Set when the toolkit pre-disposes the item `not_applicable` (additive,
+    # v1.5.2): its trigger (structured output, tool use, reasoning) is absent
+    # from the prompt AND the application under fully resolved coverage. The
+    # agent owes nothing for it; it is still recorded and reported.
+    not_applicable_reason: str | None = None
 
 
 def guidance_item(text: str) -> GuidanceItem:
@@ -227,6 +234,9 @@ class GuidanceDisposition(StrictModel):
     note: str = ""
     guidance: str = ""
     defaulted: bool = False
+    # Recorded automatically for a guidance item the toolkit pre-disposed as
+    # not applicable (v1.5.2); `note` carries the deterministic reason.
+    pre_disposed: bool = False
 
 
 class AdaptationEntry(StrictModel):
@@ -244,6 +254,10 @@ class AdaptationEntry(StrictModel):
     unchanged: bool = False
     guidance_dispositions: list[GuidanceDisposition] = Field(default_factory=list)
     annotated_changes: list[AnnotatedChange] = Field(default_factory=list)
+    # A reviewed no-change entry whose file intentionally keeps its source-model
+    # reference (documentation, history), acknowledged with the user's
+    # rationale (additive, v1.5.2). Never set for worklist tasks.
+    source_reference_acknowledged: bool = False
 
 
 def entry_is_unchanged(entry: AdaptationEntry) -> bool:
@@ -335,6 +349,15 @@ class ValidationDisposition(StrictModel):
     method: Literal["byok_evaluation", "generated_tests", "accepted_without_validation"]
     rationale: str = ""
     decided_on: date
+    # Evidence behind the method (additive, v1.5.2). A record written before
+    # v1.5.2 has none and is reported "outcome not recorded", never as
+    # validated. `outcome` is the host's attestation of a run the toolkit
+    # never executes; `bound_manifest_sha256` is the manifest hash the
+    # evaluation suite was generated against.
+    outcome: Literal["run_passed", "run_failed", "not_run"] | None = None
+    outcome_summary: str = ""
+    evaluation_run_path: str | None = None
+    bound_manifest_sha256: str | None = None
 
 
 def load_validation_disposition(run_dir: Path, run_id: str) -> ValidationDisposition | None:
@@ -437,6 +460,10 @@ class AdaptationTaskList(StrictModel):
     blockers: list[str] = Field(default_factory=list)
     guidance: list[str] = Field(default_factory=list)
     shared_prompt_guidance: list[GuidanceItem] = Field(default_factory=list)
+    # Prompt discovery state of the plan (additive, v1.5.2), so status can say
+    # when prompt adaptation is incomplete instead of reporting "ready".
+    prompt_coverage: Literal["resolved", "partial", "unresolved"] = "resolved"
+    prompt_candidates: list[str] = Field(default_factory=list)
 
 
 class PromptSubmissionResult(StrictModel):
@@ -684,15 +711,59 @@ _CURATION_FINDING_CATEGORIES = {
 }
 
 
-def _spec_guidance(spec: PromptMigrationSpec) -> list[str]:
+def _spec_guidance_advice(spec: PromptMigrationSpec) -> list[MigrationAdvice]:
     return [
-        *_advice_texts(spec.requirements_to_preserve),
-        *_advice_texts(spec.assumptions_to_reconsider),
-        *_advice_texts(spec.instructions_needing_strengthening),
-        *_advice_texts(spec.target_features_replacing_prompt_text),
-        *_advice_texts(spec.reasoning_configuration),
-        *_advice_texts(spec.structured_output),
+        *spec.requirements_to_preserve,
+        *spec.assumptions_to_reconsider,
+        *spec.instructions_needing_strengthening,
+        *spec.target_features_replacing_prompt_text,
+        *spec.reasoning_configuration,
+        *spec.structured_output,
     ]
+
+
+_PROMPT_FINDING_TRIGGERS = {
+    "structured_output": "structured_output",
+    "json_only_prompting": "structured_output",
+    "assistant_prefill": "structured_output",
+    "tool_instructions": "tool_use",
+    "explicit_chain_of_thought": "reasoning",
+}
+_REASONING_PARAMETER_NAMES = {"thinking", "reasoning", "reasoning_effort", "effort"}
+_TRIGGER_LABELS = {
+    "structured_output": "structured output or JSON formatting",
+    "tool_use": "tool use",
+    "reasoning": "reasoning or thinking configuration",
+}
+
+
+def _application_triggers(plan: MigrationPlan) -> tuple[set[str], bool]:
+    """(capabilities the scanned invocations exercise, whether that is certain).
+
+    Uncertain when prompt coverage is not resolved or an invocation's
+    tool/structured-output compatibility is UNKNOWN (for example a
+    `**kwargs`-built request): absence of evidence is then not evidence of
+    absence, and nothing is pre-disposed.
+    """
+    triggers: set[str] = set()
+    certain = plan.prompt_discovery.coverage is PromptDiscoveryCoverage.RESOLVED
+    for invocation in plan.invocation_changes:
+        analysis = invocation.source_analysis
+        if analysis.tool_definitions or analysis.tool_fields:
+            triggers.add("tool_use")
+        if analysis.structured_outputs or analysis.structured_output_fields:
+            triggers.add("structured_output")
+        if analysis.response_parsers or analysis.parser_assumptions:
+            triggers.add("structured_output")
+        if analysis.reasoning_controls or _REASONING_PARAMETER_NAMES & set(analysis.parameters):
+            triggers.add("reasoning")
+        for assessment in (
+            analysis.tool_compatibility,
+            analysis.structured_output_compatibility,
+        ):
+            if assessment is not None and assessment.state is CompatibilityState.UNKNOWN:
+                certain = False
+    return triggers, certain
 
 
 def _structured_candidate(
@@ -758,12 +829,35 @@ def derive_adaptation_tasks(
         for item in plan.model_differences.differences
         if item.severity is not ComparisonSeverity.INFO and difference_governs_prompts(item)
     ]
+    application_triggers, triggers_certain = _application_triggers(plan)
+
+    def _applicability(
+        item: GuidanceItem, trigger: str | None, prompt_triggers: set[str]
+    ) -> GuidanceItem:
+        if (
+            trigger is None
+            or not triggers_certain
+            or trigger in prompt_triggers
+            or trigger in application_triggers
+        ):
+            return item
+        return item.model_copy(
+            update={
+                "not_applicable_reason": (
+                    f"no {_TRIGGER_LABELS[trigger]} was detected in this prompt or in "
+                    "the scanned invocations (prompt coverage resolved)"
+                )
+            }
+        )
+
     for source_path, specs in sorted(specs_by_path.items()):
         prompt_paths.add(source_path)
         components = [spec.source_component for spec in specs if spec.source_component]
         structured = bool(components)
         guidance: list[str] = []
         risks: list[str] = []
+        prompt_triggers: set[str] = set()
+        line_triggers: dict[str, str] = {}
         if structured:
             guidance.append(
                 "This is a structured prompt document. Adapt only the prompt component "
@@ -787,8 +881,14 @@ def derive_adaptation_tasks(
                 guidance.append(
                     f"{prefix}In-prompt finding ({finding.category}): {finding.message}{evidence}"
                 )
-            for text in _spec_guidance(spec):
-                line = invocation_qualified(prefix + text)
+            for finding in spec.source_prompt_analysis.findings:
+                trigger = _PROMPT_FINDING_TRIGGERS.get(finding.category)
+                if trigger is not None:
+                    prompt_triggers.add(trigger)
+            for advice in _spec_guidance_advice(spec):
+                line = invocation_qualified(prefix + _advice_texts([advice])[0])
+                if advice.applies_when is not None:
+                    line_triggers.setdefault(line, advice.applies_when)
                 if line not in guidance:
                     guidance.append(line)
             for text in _advice_texts(spec.migration_risks):
@@ -807,7 +907,10 @@ def derive_adaptation_tasks(
                 status=("submitted" if ("prompt", source_path) in submitted else "pending"),
                 verbatim_source=candidate,
                 components=components,
-                guidance=[guidance_item(line) for line in guidance],
+                guidance=[
+                    _applicability(guidance_item(line), line_triggers.get(line), prompt_triggers)
+                    for line in guidance
+                ],
                 risks=risks,
             )
         )
@@ -984,6 +1087,8 @@ def derive_adaptation_tasks(
             "beneath the run's output/ directory.",
         ],
         shared_prompt_guidance=shared_prompt_guidance,
+        prompt_coverage=plan.prompt_discovery.coverage.value,
+        prompt_candidates=unreferenced_prompt_candidates(plan),
     )
 
 
@@ -1061,7 +1166,21 @@ def _expanded_dispositions(
     visibly `defaulted` record per item, so the accountability trail survives
     and rubber-stamping stays visible in the log and the report.
     """
-    owed = [item for item in required if item.id not in predisposed]
+    explicit = {item.guidance_id for item in dispositions}
+    pre_disposed = [
+        GuidanceDisposition(
+            guidance_id=item.id,
+            disposition="not_applicable",
+            note=item.not_applicable_reason or "",
+            pre_disposed=True,
+        )
+        for item in required
+        if item.not_applicable_reason and item.id not in predisposed and item.id not in explicit
+    ]
+    dispositions = [*dispositions, *pre_disposed]
+    owed = [
+        item for item in required if item.id not in predisposed and not item.not_applicable_reason
+    ]
     if default_disposition is None:
         return owed, dispositions
     explicit = {item.guidance_id for item in dispositions}
@@ -1470,6 +1589,7 @@ def prepare_adapted_file(
     default_disposition: Literal["applied", "not_applicable", "declined"] | None = None,
     default_disposition_note: str = "",
     predisposed: set[str] | None = None,
+    acknowledge_source_reference: bool = False,
 ) -> tuple[FileSubmissionResult, PendingSubmission | None]:
     """Validate one adapted file; persisting is the caller's (batchable) step.
 
@@ -1565,7 +1685,7 @@ def prepare_adapted_file(
     if unchanged:
         if original is None:
             problems.append("unchanged=true requires the file to exist in the application")
-        elif unchanged_source_mention is not None:
+        elif unchanged_source_mention is not None and not acknowledge_source_reference:
             problems.append(
                 f"the file references the source model id {unchanged_source_mention!r}; "
                 "it cannot be recorded as unchanged"
@@ -1664,6 +1784,9 @@ def prepare_adapted_file(
             for item in dispositions
         ],
         annotated_changes=with_change_ids(annotations),
+        source_reference_acknowledged=bool(
+            unchanged and acknowledge_source_reference and unchanged_source_mention is not None
+        ),
     )
     return (
         FileSubmissionResult(
@@ -1696,6 +1819,7 @@ def submit_adapted_file(
     default_disposition: Literal["applied", "not_applicable", "declined"] | None = None,
     default_disposition_note: str = "",
     predisposed: set[str] | None = None,
+    acknowledge_source_reference: bool = False,
 ) -> FileSubmissionResult:
     """Validate and persist one adapted application file beneath output/files/."""
     result, pending = prepare_adapted_file(
@@ -1715,6 +1839,7 @@ def submit_adapted_file(
         default_disposition=default_disposition,
         default_disposition_note=default_disposition_note,
         predisposed=predisposed,
+        acknowledge_source_reference=acknowledge_source_reference,
     )
     if pending is not None:
         apply_submissions(run_dir, config, [pending])
@@ -1837,7 +1962,13 @@ def _render_dispositions(entry: AdaptationEntry) -> list[str]:
     for item in entry.guidance_dispositions:
         text = item.guidance or item.guidance_id
         note = f" (note: {item.note})" if item.note.strip() else ""
-        defaulted = " (DEFAULTED — covered by default_disposition)" if item.defaulted else ""
+        defaulted = (
+            " (DEFAULTED — covered by default_disposition)"
+            if item.defaulted
+            else " (PRE-DISPOSED by the toolkit)"
+            if item.pre_disposed
+            else ""
+        )
         lines.append(f"  - {_DISPOSITION_LABELS[item.disposition]}{defaulted} — {text}{note}")
     return lines
 
@@ -1892,6 +2023,11 @@ def render_adaptation_section(
                     f"- Why no change: {entry.rationale}",
                 )
             )
+            if entry.source_reference_acknowledged:
+                lines.append(
+                    "- **ACKNOWLEDGED SOURCE REFERENCE:** this file intentionally keeps "
+                    "its source-model mention (recorded with the user's rationale above)."
+                )
             if review_notes:
                 lines.append("- Review notes:")
                 lines.extend(f"  - {note}" for note in review_notes)

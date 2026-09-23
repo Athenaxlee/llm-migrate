@@ -73,6 +73,34 @@ class ChangeReviewItem(StrictModel):
     status: Literal["pending", "accepted", "rejected"]
     note: str = ""
     decided_on: date | None = None
+    # One verification state per `change.evidence` entry, in order (v1.5.2),
+    # so the accept/reject decision sees what the submission gate saw.
+    evidence_status: list[str] = Field(default_factory=list)
+
+
+UNKNOWN_EVIDENCE_STATUS = "UNKNOWN — not among this run's plan or registry evidence"
+
+
+def evidence_status(
+    change: AnnotatedChange, known: set[str] | None, registry: set[str]
+) -> list[str]:
+    """Verification state of each evidence entry of one annotated change."""
+    states: list[str] = []
+    for item in change.evidence:
+        if item.url:
+            if known is None:
+                states.append("not verified (run evidence unavailable)")
+            elif item.url in registry:
+                states.append("registry-recorded")
+            elif item.url in known:
+                states.append("plan-carried")
+            else:
+                states.append(UNKNOWN_EVIDENCE_STATUS)
+        elif item.kind == "mechanical":
+            states.append("mechanical (no citation required)")
+        else:
+            states.append(f"reference only: {item.reference}")
+    return states
 
 
 class FileChangeReview(StrictModel):
@@ -214,7 +242,13 @@ def _decoded_diff(entry: AdaptationEntry, original: str, submission: str) -> str
     )
 
 
-def build_change_review(run_dir: Path, config: MigrationRunConfig) -> ChangeReviewSet:
+def build_change_review(
+    run_dir: Path,
+    config: MigrationRunConfig,
+    *,
+    known_evidence_urls: set[str] | None = None,
+    registry_evidence_urls: set[str] | None = None,
+) -> ChangeReviewSet:
     """Every deliverable's annotated changes paired with their decision state."""
     log = load_adaptation_log(run_dir, config.run_id)
     decision_log = load_change_decision_log(run_dir, config.run_id)
@@ -251,6 +285,9 @@ def build_change_review(run_dir: Path, config: MigrationRunConfig) -> ChangeRevi
                 status=(decisions[change.id].decision if change.id in decisions else "pending"),
                 note=decisions[change.id].note if change.id in decisions else "",
                 decided_on=(decisions[change.id].decided_on if change.id in decisions else None),
+                evidence_status=evidence_status(
+                    change, known_evidence_urls, registry_evidence_urls or set()
+                ),
             )
             for change in entry.annotated_changes
         ]

@@ -2004,6 +2004,61 @@ coverage for every exit criterion (`tests/unit/test_v151_review_fixes.py`).
 
 ---
 
+# 12.10. V1.5.2: Precision and Honesty Patch
+
+## Purpose
+
+First tranche of the next roadmap, driven by a real v1.5.1 guided run of a
+production Bedrock application: stop the noise and dishonesty that made the
+run's report untrustworthy, and put a deterministic net under prompt
+discovery, without schema-version bumps.
+
+## Scope
+
+- Prompt consumers only on model invocations or provider-client calls.
+- Out-of-scope classification for prompts referenced only by another model's
+  profile, and for unreferenced candidates beside selected siblings.
+- Scan-answered unknowns not emitted; XML formatting finding dropped on
+  same-provider moves.
+- Known evidence widened to registry-recorded URLs; per-citation
+  verification state in change review.
+- Evidence-backed validation dispositions and finalize-time re-check.
+- Whole-application source-reference sweep with an explicit acknowledgement
+  path for intentional mentions.
+- Guidance applicability pre-disposition under resolved coverage.
+- "Action required" report section, unknowns Action column, honest run
+  status, two-pass validation legibility, relative MCP run paths, per-host
+  registration docs.
+
+## Exit criteria
+
+- On a fixture whose helpers take `input=`, only invocation-gated sites are
+  prompt consumers.
+- Foreign-profile and sibling-candidate prompt files are out of scope; a
+  candidate with no selected sibling stays an unknown.
+- An app with no tools emits no `parallel_tool_use` unknown; a same-provider
+  run carries no XML formatting finding.
+- A registry-recorded citation is not unknown, and review shows each
+  citation's state.
+- `generated_tests` is refused without `run_passed`; `byok_evaluation` is
+  refused without, or with a mismatched, evaluation run; a legacy record
+  renders NOT VALIDATED.
+- An untraced application file naming the source model is a
+  `source_reference_uncovered` finding that strict mode blocks on and that
+  closes only through an explicit acknowledgement with a rationale; worklist
+  tasks cannot be acknowledged away.
+- Inapplicable registry guidance is pre-disposed only under resolved
+  coverage.
+- Status warns on incomplete prompt coverage and states the two-pass flow.
+
+## Current status
+
+Implemented on 2026-09-23 and released as `v1.5.2` the same day, with unit
+coverage for every exit criterion (`tests/unit/test_v152_precision_honesty.py`).
+No schema version changed; every contract change is an additive field.
+
+---
+
 # 13. Cross-Phase Testing Strategy
 
 ## Unit tests
@@ -2109,6 +2164,7 @@ When working from this roadmap, Codex should:
 | V1.4.1 | Deployment-run immediate relief: durable run state, UTC boundaries, tool-surface diet |
 | V1.5 | Invocation identity, semantic config couplings, worklist snapshot, consistency gate, strict production mode |
 | V1.5.1 | Review-fix patch: alias-aware reference detection, reviewed new files, read-only run status |
+| V1.5.2 | Precision and honesty patch: consumer precision, prompt scoping, evidence-backed validation, whole-app source-reference sweep |
 
 The critical sequencing rule is:
 

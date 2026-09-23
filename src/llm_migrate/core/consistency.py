@@ -32,6 +32,7 @@ from llm_migrate.core.workspace import (
     target_reference_spellings,
     target_spellings,
 )
+from llm_migrate.scanners.python import scannable_files
 
 ConsistencyCode = Literal[
     "source_reference_remains",
@@ -39,6 +40,7 @@ ConsistencyCode = Literal[
     "mixed_target_selectors",
     "target_reference_missing",
     "dropped_coupling_undisposed",
+    "source_reference_uncovered",
 ]
 
 
@@ -113,13 +115,73 @@ def _disposed(entry: AdaptationEntry, marker: str) -> bool:
     )
 
 
+def _uncovered_source_references(
+    config: MigrationRunConfig,
+    log: AdaptationLog,
+    source_forms: list[str],
+    accounted_paths: set[str],
+) -> list[ConsistencyFinding]:
+    """Application files still naming the source model that nothing accounts for.
+
+    The deterministic net under every discovery heuristic: whatever the
+    scanner failed to trace, a file in the scanned set that references the
+    source model and has no deliverable, no reviewed no-change entry, no open
+    worklist task (already a coverage gap), and no out-of-scope
+    classification cannot finalize silently.
+    """
+    application = Path(config.application_root)
+    if not source_forms or not application.is_dir():
+        return []
+    covered = {entry.source_path for entry in log.entries} | accounted_paths
+    python_files, candidate_files = scannable_files(application)
+    findings: list[ConsistencyFinding] = []
+    for item in sorted({*python_files, *candidate_files}):
+        relative = item.relative_to(application).as_posix()
+        if relative in covered:
+            continue
+        try:
+            text = item.read_text(encoding="utf-8")
+        except (OSError, UnicodeError):
+            continue
+        present = [spelling for spelling in source_forms if spelling in text]
+        specific = [
+            spelling
+            for spelling in present
+            if not any(spelling != other and spelling in other for other in present)
+        ]
+        if specific:
+            findings.append(
+                ConsistencyFinding(
+                    code="source_reference_uncovered",
+                    path=relative,
+                    message=(
+                        "this application file references the source model ("
+                        + ", ".join(repr(item) for item in sorted(specific))
+                        + ") but has no deliverable, no reviewed no-change entry, and "
+                        "no worklist task; adapt it (submit_adapted_file), or — when the "
+                        "reference is intentional (documentation, history) — record it "
+                        "with confirm_unaffected(acknowledge_source_references=true) and "
+                        "the user's own rationale"
+                    ),
+                )
+            )
+    return findings
+
+
 def check_cross_surface_consistency(
     run_dir: Path,
     config: MigrationRunConfig,
     analysis: ApplicationAnalysis,
     log: AdaptationLog,
+    *,
+    accounted_paths: set[str] | None = None,
 ) -> list[ConsistencyFinding]:
-    """Deterministic checks over ALL deliverables and unchanged claims together."""
+    """Deterministic checks over ALL deliverables and unchanged claims together.
+
+    `accounted_paths` are application files the run already accounts for
+    without a log entry (open worklist tasks, out-of-scope files); the
+    whole-application sweep skips them.
+    """
     findings: list[ConsistencyFinding] = []
     target_forms = target_reference_spellings(config)
     source_forms = source_detection_spellings(config)
@@ -135,7 +197,11 @@ def check_cross_surface_consistency(
         effective = _effective_content(run_dir, entry)
         if effective is None:
             continue
-        remaining = [item for item in source_forms if item in effective]
+        remaining = (
+            []
+            if entry.source_reference_acknowledged
+            else [item for item in source_forms if item in effective]
+        )
         for spelling in remaining:
             if any(spelling != other and spelling in other for other in remaining):
                 continue  # report the most specific spelling only
@@ -231,6 +297,9 @@ def check_cross_surface_consistency(
                 ),
             )
         )
+    findings.extend(
+        _uncovered_source_references(config, log, source_forms, accounted_paths or set())
+    )
     return findings
 
 
@@ -252,9 +321,11 @@ def render_consistency_section(findings: list[ConsistencyFinding]) -> str:
         "",
         "Deterministic checks over the whole deliverable set (effective content, "
         "after review decisions): one selector-qualified target everywhere, no "
-        "active source-model configuration remaining, and no scanner-recognized "
-        "coupling dropped without an explicit disposition. The gate covers the "
-        "coupling kinds the scanner recognizes, no more.",
+        "active source-model configuration remaining, no scanner-recognized "
+        "coupling dropped without an explicit disposition, and no scanned "
+        "application file still naming the source model without being accounted "
+        "for. Coupling checks cover the kinds the scanner recognizes; the "
+        "source-reference sweep covers every scanned file.",
         "",
     ]
     if findings:

@@ -515,7 +515,7 @@ class _Visitor(ast.NodeVisitor):
         provider, platform = _provider_platform_from_call(lowered)
         if root in self.clients:
             provider, platform = self.clients[root]
-        if any(
+        is_invocation = any(
             marker in lowered
             for marker in (
                 "messages.create",
@@ -526,7 +526,8 @@ class _Visitor(ast.NodeVisitor):
                 "invoke_model",
                 ".converse",
             )
-        ):
+        )
+        if is_invocation:
             dynamic_request = any(item.arg is None for item in node.keywords)
             self._add(
                 node,
@@ -652,8 +653,11 @@ class _Visitor(ast.NodeVisitor):
                 platform=platform,
                 value=True,
             )
+        # Prompt keywords count only on a model invocation (or a call on a
+        # detected provider client): `input=`/`prompt=` on a preprocessing
+        # or parsing helper never reaches the model.
         for name in ("system", "messages", "input", "prompt"):
-            if name in keyword_map:
+            if name in keyword_map and (is_invocation or root in self.clients):
                 resolution, source_paths = self._classify_prompt_value(keyword_map[name])
                 self._add(
                     keyword_map[name],

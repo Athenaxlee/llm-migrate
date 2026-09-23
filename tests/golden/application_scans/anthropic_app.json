@@ -195,6 +195,7 @@
       "format": "text",
       "origin": "discovered",
       "path": "prompts/system.txt",
+      "profile_model_ids": [],
       "provenance": [
         "app.py loads prompts/system.txt"
       ]

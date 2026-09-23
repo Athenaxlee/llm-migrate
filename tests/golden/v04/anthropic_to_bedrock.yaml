@@ -618,6 +618,7 @@ migration:
     be assumed.
   - One or both values for 'parallel_tool_use' are unknown; compatibility must not
     be assumed.
+  out_of_scope: []
   prompt_changes:
   - schema_version: '4'
     source_model: claude-sonnet-5
@@ -703,47 +704,56 @@ migration:
       basis: deterministic_fact
       evidence_urls:
       - https://platform.claude.com/docs/en/about-claude/models/whats-new-sonnet-5
+      applies_when: null
     - text: 'Reconsider source-specific guidance: Use structured outputs, system instructions,
         or output_config.format instead of assistant prefilling.'
       basis: deterministic_fact
       evidence_urls:
       - https://platform.claude.com/docs/en/about-claude/models/whats-new-sonnet-5
+      applies_when: null
     instructions_potentially_removable: []
     instructions_needing_strengthening:
     - text: Set effort explicitly for workload latency and quality requirements.
       basis: deterministic_fact
       evidence_urls:
       - https://platform.claude.com/docs/en/about-claude/models/migration-guide
+      applies_when: reasoning
     - text: Use structured outputs or output_config.format instead of assistant prefilling.
       basis: deterministic_fact
       evidence_urls:
       - https://platform.claude.com/docs/en/about-claude/models/migration-guide
+      applies_when: structured_output
     target_features_replacing_prompt_text: []
     reasoning_configuration:
     - text: Set effort explicitly for workload latency and quality requirements.
       basis: deterministic_fact
       evidence_urls:
       - https://platform.claude.com/docs/en/about-claude/models/migration-guide
+      applies_when: reasoning
     structured_output:
     - text: Use structured outputs or output_config.format instead of assistant prefilling.
       basis: deterministic_fact
       evidence_urls:
       - https://platform.claude.com/docs/en/about-claude/models/migration-guide
+      applies_when: structured_output
     token_efficiency_opportunities: []
     hallucination_control:
     - text: Retain grounding, citation, and uncertainty requirements and test them
         explicitly.
       basis: heuristic_recommendation
       evidence_urls: []
+      applies_when: null
     migration_risks: []
     validation_recommendations:
     - text: Compare representative task outcomes, formats, tool calls, latency, and
         token use.
       basis: heuristic_recommendation
       evidence_urls: []
+      applies_when: null
     - text: Include edge cases near context and output limits.
       basis: heuristic_recommendation
       evidence_urls: []
+      applies_when: null
   invocation_changes:
   - schema_version: '3'
     source_model: claude-sonnet-5

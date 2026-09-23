@@ -122,6 +122,14 @@ serialization-only edits) and enforce:
 - **Rejection regenerates deterministically**: the deliverable is rebuilt by
   applying only accepted hunks to the original. Rejecting every change reverts
   the deliverable to a reviewed-unchanged entry.
+- Each review item reports the verification state of every evidence entry
+  (v1.5.2): `registry-recorded`, `plan-carried`, `UNKNOWN — not among this
+  run's plan or registry evidence`, `mechanical`, or `reference only`, so
+  the accept/reject decision sees what the submission gate saw.
+- Guidance whose trigger the application never exhibits is pre-disposed
+  `not_applicable` by the toolkit with its reason (v1.5.2, resolved coverage
+  only); the log records it and the report marks it PRE-DISPOSED. An
+  explicit disposition from the agent still wins.
 - `finalize_migration` reports undecided changes as their own bucket alongside
   coverage gaps but does not block on them by default; review may follow
   finalization. A strict run (V1.5) refuses to finalize cleanly while

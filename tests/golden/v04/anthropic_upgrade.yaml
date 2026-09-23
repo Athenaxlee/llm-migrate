@@ -31,7 +31,7 @@ migration:
   target_selection_rationale:
   - The caller selected claude-sonnet-5 on anthropic-api.
   - Static analysis found no proven blocker for the detected application requirements.
-  - Review 6 unresolved compatibility item(s) before deployment.
+  - Review 5 unresolved compatibility item(s) before deployment.
   model_differences:
     source_model: claude-sonnet-4-5-20250929
     target_model: claude-sonnet-5
@@ -607,11 +607,10 @@ migration:
   - One or both values for 'adaptive_thinking' are unknown; compatibility must not
     be assumed.
   - One or both values for 'effort' are unknown; compatibility must not be assumed.
-  - One or both values for 'parallel_tool_use' are unknown; compatibility must not
-    be assumed.
   - One or both values for 'temperature' are unknown; compatibility must not be assumed.
   - One or both values for 'top_k' are unknown; compatibility must not be assumed.
   - One or both values for 'top_p' are unknown; compatibility must not be assumed.
+  out_of_scope: []
   prompt_changes: []
   invocation_changes:
   - schema_version: '3'

@@ -1391,6 +1391,24 @@ def run_record_validation(
     rationale: Annotated[
         str, typer.Option("--rationale", help="The user's own validation rationale.")
     ] = "",
+    outcome: Annotated[
+        str | None,
+        typer.Option(
+            "--outcome",
+            help="generated_tests only: run_passed | run_failed | not_run (the user's run).",
+        ),
+    ] = None,
+    outcome_summary: Annotated[
+        str,
+        typer.Option("--outcome-summary", help="generated_tests only: the test summary line."),
+    ] = "",
+    evaluation_run: Annotated[
+        str | None,
+        typer.Option(
+            "--evaluation-run",
+            help="byok_evaluation only: the MigrationEvalRun YAML for the finalized manifest.",
+        ),
+    ] = None,
     registry: Annotated[Path | None, typer.Option(help="Registry root.")] = None,
 ) -> None:
     """Record how this run's migration was validated (durable per run)."""
@@ -1400,6 +1418,9 @@ def run_record_validation(
                 run_dir,
                 method,  # type: ignore[arg-type]
                 rationale,
+                outcome=outcome,  # type: ignore[arg-type]
+                outcome_summary=outcome_summary,
+                evaluation_run_path=evaluation_run,
             )
         )
     except (RegistryError, ValueError) as exc:
@@ -1427,11 +1448,23 @@ def run_confirm_unaffected(
     rationale: Annotated[
         str, typer.Option("--rationale", help="Why these files were reviewed as unaffected.")
     ],
+    acknowledge_source_references: Annotated[
+        bool,
+        typer.Option(
+            "--acknowledge-source-references",
+            help="Also close sweep-flagged files whose source-model mention is intentional.",
+        ),
+    ] = False,
     registry: Annotated[Path | None, typer.Option(help="Registry root.")] = None,
 ) -> None:
     """Record reviewed no-change entries for the worklist's unaffected files."""
     try:
-        confirmation = _service(registry).confirm_unaffected(run_dir, paths, rationale)
+        confirmation = _service(registry).confirm_unaffected(
+            run_dir,
+            paths,
+            rationale,
+            acknowledge_source_references=acknowledge_source_references,
+        )
     except (RegistryError, ValueError) as exc:
         typer.echo(str(exc), err=True)
         raise typer.Exit(2) from exc

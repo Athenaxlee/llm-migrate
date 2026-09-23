@@ -47,6 +47,11 @@ class EvaluationExecutor(Protocol):
 CustomEvaluator = Callable[[EvaluationCase, str], EvaluatorResult]
 
 
+def manifest_sha256(plan: MigrationPlan) -> str:
+    """The hash an evaluation suite binds to (`migration_manifest_sha256`)."""
+    return _manifest_hash(plan)
+
+
 def _manifest_hash(plan: MigrationPlan) -> str:
     payload = plan.model_dump_json(exclude_none=False)
     return hashlib.sha256(payload.encode()).hexdigest()

@@ -66,18 +66,19 @@ exposes only its tools):
    prefer ONE submit_adaptations batch (per-item accept/reject) over many
    single submissions. Deliverables live under <run>/output/, never in the
    application tree.
-5. finalize_migration(run_dir) — writes the manifest and report and lists
-   remaining coverage gaps and undecided changes.
-6. get_change_review(run_dir) lists every annotated change with its decision
-   state; present each pending change VERBATIM, one at a time, and record the
-   user's accept or reject with record_change_decision(s) (a rejection
-   deterministically regenerates the deliverable; a resubmission makes
-   decisions stale — reported, never silently applied).
-7. Validate before rollout: offer the user the BYOK evaluation stage
-   (generate_eval_suite / run_migration_eval) or the generated contract test
-   under output/validation/, then record the outcome with
-   record_validation_disposition (an accept without validation requires the
-   user's own rationale).
+5. get_change_review(run_dir) lists every annotated change with its decision
+   state and each citation's evidence status; present each pending change
+   VERBATIM, one at a time, and record the user's accept or reject with
+   record_change_decision(s) (a rejection deterministically regenerates the
+   deliverable; a resubmission makes decisions stale — reported, never
+   silently applied).
+6. finalize_migration(run_dir) — writes the manifest, report ("Action
+   required" first), and the generated contract test under output/validation/.
+7. Validation is a two-pass flow: the user runs the contract test or a BYOK
+   evaluation (generate_eval_suite / run_migration_eval); record the outcome
+   with record_validation_disposition (generated_tests needs the user's
+   passing result, byok_evaluation the eval-run artifact, an accept the
+   user's own rationale); then finalize_migration again.
 
 Never edit the user's application directly; everything is a reviewable
 deliverable in the run's output/ directory.
@@ -641,6 +642,18 @@ def start_migration(
     # The nested profiles are large; fetch one explicitly via get_model_profile.
     for side in ("source_match", "target_match"):
         result[side].pop("resolution", None)
+    paths = result.get("paths")
+    if isinstance(paths, dict) and isinstance(paths.get("run_dir"), str):
+        # The run root once, every other path relative to it (token diet).
+        root = paths["run_dir"].rstrip("/\\")
+        result["paths"] = {
+            key: (
+                value[len(root) + 1 :]
+                if key != "run_dir" and isinstance(value, str) and value.startswith(root + os.sep)
+                else value
+            )
+            for key, value in paths.items()
+        }
     return result
 
 
@@ -867,6 +880,7 @@ def confirm_unaffected(
     run_dir: str,
     paths: list[str],
     rationale: str,
+    acknowledge_source_references: bool = False,
     now: str | None = None,
 ) -> dict[str, Any]:
     """Close every listed `unaffected_files` entry with one reviewed no-change call.
@@ -875,8 +889,19 @@ def confirm_unaffected(
     `results`): only files on the worklist's `unaffected_files` list qualify —
     a file with required changes needs a real submission. Each accepted path
     records a reviewed no-change entry that appears in the final report.
+    `acknowledge_source_references=true` also closes files finalize flagged
+    `source_reference_uncovered` whose source-model mention the USER says is
+    intentional (docs, history); pass the user's own rationale.
     """
-    return _json(_service().confirm_unaffected(run_dir, paths, rationale, now=utc_moment(now)))
+    return _json(
+        _service().confirm_unaffected(
+            run_dir,
+            paths,
+            rationale,
+            acknowledge_source_references=acknowledge_source_references,
+            now=utc_moment(now),
+        )
+    )
 
 
 @_tool
@@ -901,20 +926,28 @@ def record_validation_disposition(
     run_dir: str,
     method: Literal["byok_evaluation", "generated_tests", "accepted_without_validation"],
     rationale: str = "",
+    outcome: Literal["run_passed", "run_failed", "not_run"] | None = None,
+    outcome_summary: str = "",
+    evaluation_run_path: str | None = None,
     decided_on: str | None = None,
 ) -> dict[str, Any]:
     """Record how this run's migration was validated; durable per run.
 
-    Methods: a BYOK evaluation run (generate_eval_suite / run_migration_eval),
-    the user-executed generated contract test under output/validation/, or an
-    explicit accept — which REQUIRES the user's own free-text rationale and is
-    never a default. Strict runs cannot finalize cleanly without one.
+    Record AFTER the first finalize produced the validation deliverables:
+    byok_evaluation needs evaluation_run_path (the eval run for the current
+    output/migration-manifest.yaml); generated_tests needs outcome
+    "run_passed" plus the test summary line from the USER's run; an explicit
+    accept REQUIRES the user's own rationale and is never a default. Then
+    finalize again.
     """
     return _json(
         _service().record_validation_disposition(
             run_dir,
             method,
             rationale,
+            outcome=outcome,
+            outcome_summary=outcome_summary,
+            evaluation_run_path=evaluation_run_path,
             decided_on=date.fromisoformat(decided_on) if decided_on else None,
         )
     )

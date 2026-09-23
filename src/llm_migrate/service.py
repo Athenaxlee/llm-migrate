@@ -41,7 +41,11 @@ from llm_migrate.core.agent_research import (
     build_research_consensus,
     topic_for_field_path,
 )
-from llm_migrate.core.annotations import AnnotatedChange, plan_evidence_urls
+from llm_migrate.core.annotations import (
+    AnnotatedChange,
+    plan_evidence_urls,
+    registry_evidence_urls,
+)
 from llm_migrate.core.artifacts import write_proposal_artifacts
 from llm_migrate.core.blockers import (
     DECISIONS_FILENAME,
@@ -79,6 +83,7 @@ from llm_migrate.core.evaluation import (
     compare_outputs,
     evaluation_artifact_as_yaml,
     generate_eval_suite,
+    manifest_sha256,
     optimize_migration,
     run_migration_eval,
 )
@@ -133,6 +138,7 @@ from llm_migrate.core.models import (
     ModelProfile,
     PricingMatchStatus,
     PromptAnalysis,
+    PromptDiscoveryCoverage,
     PromptMigrationSpec,
     PromptValidationResult,
     RecommendationConstraints,
@@ -154,6 +160,7 @@ from llm_migrate.core.planning import (
     generate_application_migration_plan,
     generate_migration_report,
     migration_manifest_as_yaml,
+    out_of_scope_paths,
 )
 from llm_migrate.core.prompt_documents import (
     PromptDocumentError,
@@ -226,6 +233,7 @@ from llm_migrate.core.workspace import (
     run_paths,
     sanitize_run_id,
     save_validation_disposition,
+    source_detection_spellings,
     structured_submission_format,
     write_run_config,
 )
@@ -236,6 +244,7 @@ from llm_migrate.core.workspace import (
     submit_adapted_prompt as workspace_submit_adapted_prompt,
 )
 from llm_migrate.scanners import scan_application
+from llm_migrate.scanners.python import scannable_files
 
 _ModelT = TypeVar("_ModelT", bound=BaseModel)
 _SubmissionResultT = TypeVar("_SubmissionResultT", PromptSubmissionResult, FileSubmissionResult)
@@ -259,8 +268,112 @@ def _coerced_models(
     return coerced
 
 
+def _action_required_lines(
+    plan: MigrationPlan,
+    *,
+    gaps: list[str],
+    unaffected: list[str],
+    undecided: list[str],
+    consistency: list[str],
+    validation_disposition: ValidationDisposition | None,
+    validation_problem: str | None,
+) -> list[str]:
+    """What a human must still decide or do, in the order the workflow needs it."""
+    lines: list[str] = []
+    if plan.blockers:
+        lines.append(
+            f"**{len(plan.blockers)} unresolved blocker(s)** — each needs your decision "
+            "(get_blocker_resolutions → record_blocker_decision)."
+        )
+    stale = [item for item in plan.decisions if item.status == "stale"]
+    if stale:
+        lines.append(f"**{len(stale)} STALE blocker decision(s)** — no longer applied; review.")
+    if plan.prompt_discovery.coverage is not PromptDiscoveryCoverage.RESOLVED:
+        candidates = [item for item in plan.unknowns if "prompt_sources" in item]
+        lines.append(
+            f"**Prompt coverage is {plan.prompt_discovery.coverage.value}** — "
+            + (
+                f"{len(candidates)} candidate prompt file(s) were not prepared; include "
+                "the real ones with prompt_sources (see Unresolved unknowns)."
+                if candidates
+                else "some prompt consumers have no static source; review them manually."
+            )
+        )
+    if gaps:
+        lines.append(f"**{len(gaps)} affected file(s) lack a deliverable:** " + ", ".join(gaps))
+    if unaffected:
+        lines.append(f"**{len(unaffected)} unaffected file(s) await one confirm_unaffected call.**")
+    if undecided:
+        lines.append(
+            f"**{len(undecided)} deliverable(s) have changes awaiting your review "
+            "decision** (get_change_review)."
+        )
+    if consistency:
+        lines.append(
+            f"**{len(consistency)} cross-surface consistency finding(s)** — see "
+            "Cross-surface consistency below."
+        )
+    if validation_disposition is None:
+        lines.append(
+            "**Validation not recorded** — run the generated contract test or a BYOK "
+            "evaluation, record the outcome with record_validation_disposition, then "
+            "finalize again (validation is a two-pass flow by design)."
+        )
+    elif validation_problem is not None:
+        lines.append(f"**NOT VALIDATED** — {validation_problem}.")
+    return lines
+
+
+def _with_action_required(report: str, lines: list[str]) -> str:
+    """Insert the "Action required" section directly under the report title."""
+    section = "\n".join(
+        [
+            "## Action required",
+            "",
+            *([f"- {line}" for line in lines] or ["- Nothing requires a human decision."]),
+            "",
+        ]
+    )
+    marker = "\n## Summary"
+    index = report.find(marker)
+    if index == -1:
+        return section + "\n" + report
+    return report[: index + 1] + section + "\n" + report[index + 1 :]
+
+
+def _validation_problem(
+    disposition: ValidationDisposition | None, current_manifest_sha256: str
+) -> str | None:
+    """Why a recorded disposition does not evidence validation, if it does not."""
+    if disposition is None:
+        return None
+    if disposition.method == "generated_tests":
+        if disposition.outcome is None:
+            return (
+                "outcome not recorded (recorded before v1.5.2); re-record it with the "
+                "test run's outcome and summary line"
+            )
+        if disposition.outcome != "run_passed":
+            return f"the generated contract test outcome is {disposition.outcome}, not a pass"
+    if disposition.method == "byok_evaluation":
+        if disposition.bound_manifest_sha256 is None:
+            return (
+                "outcome not recorded (recorded before v1.5.2 without an evaluation run "
+                "artifact); re-record it with evaluation_run_path"
+            )
+        if disposition.bound_manifest_sha256 != current_manifest_sha256:
+            return (
+                "the recorded evaluation is bound to a superseded plan (a later decision "
+                "or submission changed it); regenerate the suite, re-run the evaluation, "
+                "and re-record the disposition"
+            )
+    return None
+
+
 def _render_validation_section(
-    disposition: ValidationDisposition | None, contract_test_path: str | None
+    disposition: ValidationDisposition | None,
+    contract_test_path: str | None,
+    problem: str | None = None,
 ) -> str:
     """The report section recording how the migration was (or was not) validated."""
     lines = ["## Validation", ""]
@@ -280,9 +393,15 @@ def _render_validation_section(
         line = (
             f"- Validated via {labels[disposition.method]} ({disposition.decided_on.isoformat()})."
         )
+        if disposition.outcome_summary:
+            line += f" Outcome ({disposition.outcome}): {disposition.outcome_summary}"
+        if disposition.evaluation_run_path:
+            line += f" Evaluation run: `{disposition.evaluation_run_path}`."
         if disposition.rationale:
             line += f" Rationale: {disposition.rationale}"
         lines.append(line)
+        if problem is not None:
+            lines.append(f"- **NOT VALIDATED:** {problem}.")
     if contract_test_path is not None:
         lines.append(
             f"- Generated contract test: `{contract_test_path}` — a mocked "
@@ -1739,11 +1858,13 @@ class MigrationService:
                 set(snapshot.evidence_urls),
                 True,
             )
-        plan = self._plan_for_run(config, workspace, now=now)
+        run_service = self._run_service(workspace, now=now)
+        plan = self._plan_for_run(config, workspace, now=now, run_service=run_service)
         base_tasks = derive_adaptation_tasks(
             config, plan, workspace, AdaptationLog(run_id=config.run_id)
         )
-        evidence = plan_evidence_urls(plan)
+        registry_evidence = self._run_registry_evidence(config, run_service[0])
+        evidence = plan_evidence_urls(plan) | registry_evidence
         save_snapshot(
             workspace,
             WorklistSnapshot(
@@ -1751,9 +1872,30 @@ class MigrationService:
                 key=key,
                 tasks=base_tasks,
                 evidence_urls=sorted(evidence),
+                registry_evidence_urls=sorted(registry_evidence),
             ),
         )
         return refresh_task_statuses(base_tasks, log), evidence, False
+
+    @staticmethod
+    def _run_registry_evidence(config: MigrationRunConfig, service: MigrationService) -> set[str]:
+        """Reviewed source URLs of the run's two models and their pair knowledge.
+
+        Resolved through the run's (session-aware) service, so a selected
+        session overlay's accepted-claim sources are included too.
+        """
+        records: list[Any] = []
+        for identity in (config.source, config.target):
+            try:
+                records.append(
+                    service.resolve_model(
+                        identity.model, identity.platform, identity.endpoint
+                    ).profile
+                )
+            except RegistryError:
+                continue
+        records.extend(service.registry.migrations_for(config.source.model, config.target.model))
+        return registry_evidence_urls(*records)
 
     def list_adaptation_tasks(
         self,
@@ -2485,9 +2627,33 @@ class MigrationService:
             )
         else:
             state = "ready_to_finalize"
+            validation = load_validation_disposition(workspace, config.run_id)
             next_action = (
-                "Call finalize_migration(run_dir); then surface the evaluation stage "
-                "(generate_eval_suite / run_migration_eval) to the user before rollout."
+                "Validation is a two-pass flow: call finalize_migration(run_dir) to write "
+                "the deliverables and the generated contract test; the user runs that "
+                "test (or a BYOK evaluation via generate_eval_suite / run_migration_eval); "
+                "record the outcome with record_validation_disposition; then call "
+                "finalize_migration again."
+                if validation is None
+                else "Validation is recorded; call finalize_migration(run_dir) to "
+                "write the final deliverables."
+            )
+        if state in {"tasks_pending", "review_pending", "ready_to_finalize"} and (
+            tasks.prompt_coverage != "resolved"
+        ):
+            next_action = (
+                f"WARNING: prompt coverage is {tasks.prompt_coverage} — prompt adaptation "
+                "is incomplete. "
+                + (
+                    "Unreferenced candidate prompt file(s): "
+                    + ", ".join(tasks.prompt_candidates)
+                    + "; ask the user which are live prompts and include them with "
+                    "prompt_sources (a new start_migration run). "
+                    if tasks.prompt_candidates
+                    else "Some prompt consumers have no static source; tell the user "
+                    "which need manual review. "
+                )
+                + next_action
             )
         return RunStatus(
             run_id=config.run_id,
@@ -2543,7 +2709,16 @@ class MigrationService:
         application file drifted since submission are marked stale.
         """
         workspace = Path(run_dir)
-        return build_change_review(workspace, load_run_config(workspace))
+        config = load_run_config(workspace)
+        _, evidence, _ = self._tasks_for_run(config, workspace)
+        snapshot = load_snapshot(workspace, config.run_id)
+        registry_evidence = set(snapshot.registry_evidence_urls) if snapshot else set()
+        return build_change_review(
+            workspace,
+            config,
+            known_evidence_urls=evidence,
+            registry_evidence_urls=registry_evidence,
+        )
 
     def record_change_decision(
         self,
@@ -2579,6 +2754,7 @@ class MigrationService:
         paths: Sequence[str],
         rationale: str,
         *,
+        acknowledge_source_references: bool = False,
         submitted_on: date | None = None,
         now: datetime | None = None,
     ) -> UnaffectedConfirmation:
@@ -2590,6 +2766,12 @@ class MigrationService:
         outside the worklist is refused. Every accepted path passes the
         existing unchanged guards and lands in `changes.yaml` exactly like an
         individual unchanged submission.
+
+        `acknowledge_source_references=True` additionally accepts application
+        files the finalize sweep flagged (`source_reference_uncovered`: they
+        name the source model but are not worklist tasks) whose reference is
+        intentional — documentation or history. The rationale must be the
+        user's own; entries are marked acknowledged and reported as such.
         """
         workspace = Path(run_dir)
         config = load_run_config(workspace)
@@ -2603,9 +2785,33 @@ class MigrationService:
         task_paths = {task.source_path for task in tasks.file_tasks} | {
             task.source_path for task in tasks.prompt_tasks
         }
+        logged = {
+            entry.source_path for entry in load_adaptation_log(workspace, config.run_id).entries
+        }
         results: list[FileSubmissionResult] = []
         for path in dict.fromkeys(paths):
-            if path in allowed:
+            if (
+                acknowledge_source_references
+                and path not in allowed
+                and path not in task_paths
+                and path not in logged
+                and self._names_source_model(config, path)
+            ):
+                results.append(
+                    workspace_submit_adapted_file(
+                        workspace,
+                        config,
+                        path,
+                        "",
+                        rationale,
+                        ["Intentional source-model reference acknowledged by the user."],
+                        submitted_on or date.today(),
+                        unchanged=True,
+                        tasks=tasks,
+                        acknowledge_source_reference=True,
+                    )
+                )
+            elif path in allowed:
                 results.append(
                     workspace_submit_adapted_file(
                         workspace,
@@ -2656,18 +2862,44 @@ class MigrationService:
             ),
         )
 
+    @staticmethod
+    def _names_source_model(config: MigrationRunConfig, path: str) -> bool:
+        """Whether an application file inside the run's scan set names the source."""
+        root = Path(config.application_root)
+        if not root.is_dir():
+            return False
+        python_files, candidate_files = scannable_files(root)
+        scanned = {
+            item.relative_to(root).as_posix(): item for item in (*python_files, *candidate_files)
+        }
+        target = scanned.get(path)
+        if target is None:
+            return False
+        try:
+            text = target.read_text(encoding="utf-8")
+        except (OSError, UnicodeError):
+            return False
+        return any(spelling in text for spelling in source_detection_spellings(config))
+
     def record_validation_disposition(
         self,
         run_dir: Path | str,
         method: Literal["byok_evaluation", "generated_tests", "accepted_without_validation"],
         rationale: str = "",
         *,
+        outcome: Literal["run_passed", "run_failed", "not_run"] | None = None,
+        outcome_summary: str = "",
+        evaluation_run_path: str | None = None,
         decided_on: date | None = None,
     ) -> ValidationDisposition:
         """Record how this run's migration was validated; durable per run.
 
         `accepted_without_validation` requires the user's own free-text
         rationale — it is never a default and never chosen by an agent.
+        `generated_tests` requires the attested outcome `run_passed` plus the
+        test runner's summary line; `byok_evaluation` requires the evaluation
+        run artifact, whose suite must be bound to this run's finalized
+        manifest. The toolkit never runs either itself.
         """
         workspace = Path(run_dir)
         config = load_run_config(workspace)
@@ -2677,14 +2909,68 @@ class MigrationService:
                 "accepting a migration without validation requires the user's own "
                 "free-text rationale; record their words, not a placeholder"
             )
+        bound_hash: str | None = None
+        if method == "generated_tests":
+            if outcome != "run_passed" or not outcome_summary.strip():
+                raise ValueError(
+                    "generated_tests requires outcome='run_passed' and the test runner's "
+                    "summary line (for example '1 passed in 0.12s') from a run the user "
+                    "executed after wiring build_request(); a failing or unrun test is "
+                    "not validation — fix and re-run it, validate with a BYOK "
+                    "evaluation, or record accepted_without_validation with the user's "
+                    "own rationale"
+                )
+        elif method == "byok_evaluation":
+            bound_hash = self._evaluation_binding(workspace, evaluation_run_path)
         disposition = ValidationDisposition(
             run_id=config.run_id,
             method=method,
             rationale=rationale.strip(),
             decided_on=decided_on or date.today(),
+            outcome=outcome if method == "generated_tests" else None,
+            outcome_summary=outcome_summary.strip() if method == "generated_tests" else "",
+            evaluation_run_path=evaluation_run_path if method == "byok_evaluation" else None,
+            bound_manifest_sha256=bound_hash,
         )
         save_validation_disposition(workspace, disposition)
         return disposition
+
+    @staticmethod
+    def _finalized_manifest_hash(workspace: Path) -> str | None:
+        path = Path(run_paths(workspace).manifest_path)
+        if not path.is_file():
+            return None
+        raw = yaml.safe_load(path.read_text(encoding="utf-8"))
+        if isinstance(raw, dict) and "migration" in raw:
+            raw = raw["migration"]
+        return manifest_sha256(MigrationPlan.model_validate(raw))
+
+    def _evaluation_binding(self, workspace: Path, evaluation_run_path: str | None) -> str:
+        """The manifest hash a BYOK evaluation run is bound to, verified."""
+        if not evaluation_run_path:
+            raise ValueError(
+                "byok_evaluation requires evaluation_run_path: the MigrationEvalRun YAML "
+                "written by run_migration_eval for this run's finalized manifest"
+            )
+        candidate = Path(evaluation_run_path)
+        path = candidate if candidate.is_absolute() else workspace / candidate
+        if not path.is_file():
+            raise ValueError(f"evaluation run artifact not found: {path}")
+        run = MigrationEvalRun.model_validate(yaml.safe_load(path.read_text(encoding="utf-8")))
+        current = self._finalized_manifest_hash(workspace)
+        if current is None:
+            raise ValueError(
+                "no finalized manifest exists yet: call finalize_migration first; the "
+                "evaluation suite binds to output/migration-manifest.yaml"
+            )
+        if run.suite.migration_manifest_sha256 != current:
+            raise ValueError(
+                "the evaluation run is bound to a different manifest than this run's "
+                "current output/migration-manifest.yaml (a later decision or submission "
+                "changed the plan); regenerate the suite from the current manifest and "
+                "re-run the evaluation"
+            )
+        return current
 
     def finalize_migration_run(
         self,
@@ -2711,8 +2997,20 @@ class MigrationService:
         tasks = derive_adaptation_tasks(config, plan, workspace, log)
         gaps = coverage_gaps(tasks)
         change_decisions = load_change_decision_log(workspace, config.run_id)
-        consistency = check_cross_surface_consistency(workspace, config, analysis, log)
+        consistency = check_cross_surface_consistency(
+            workspace,
+            config,
+            analysis,
+            log,
+            accounted_paths={
+                *(task.source_path for task in tasks.prompt_tasks),
+                *(task.source_path for task in tasks.file_tasks),
+                *tasks.unaffected_files,
+                *out_of_scope_paths(plan),
+            },
+        )
         validation_disposition = load_validation_disposition(workspace, config.run_id)
+        validation_problem = _validation_problem(validation_disposition, manifest_sha256(plan))
         contract_test_path: str | None = None
         if plan.invocation_changes:
             contract_test = render_contract_test(config, plan.invocation_changes[0])
@@ -2720,18 +3018,6 @@ class MigrationService:
                 contract_target = workspace / CONTRACT_TEST_RELATIVE_PATH
                 atomic_write_text(contract_target, contract_test)
                 contract_test_path = str(contract_target)
-        report = self.migration_report(plan)
-        report = (
-            report.rstrip("\n")
-            + "\n\n"
-            + render_adaptation_section(log, gaps, change_decisions)
-            + "\n"
-            + render_consistency_section(consistency)
-            + "\n"
-            + _render_validation_section(validation_disposition, contract_test_path)
-            + "\n"
-        )
-        atomic_write_text(paths.report_path, report)
         undecided_changes: list[str] = []
         for entry in log.entries:
             if entry_is_unchanged(entry) or not entry.annotated_changes:
@@ -2746,6 +3032,31 @@ class MigrationService:
                 undecided_changes.append(
                     f"{entry.source_path}: {len(pending)} change(s) pending review"
                 )
+        report = _with_action_required(
+            self.migration_report(plan),
+            _action_required_lines(
+                plan,
+                gaps=gaps,
+                unaffected=list(tasks.unaffected_files),
+                undecided=undecided_changes,
+                consistency=[finding.rendered for finding in consistency],
+                validation_disposition=validation_disposition,
+                validation_problem=validation_problem,
+            ),
+        )
+        report = (
+            report.rstrip("\n")
+            + "\n\n"
+            + render_adaptation_section(log, gaps, change_decisions)
+            + "\n"
+            + render_consistency_section(consistency)
+            + "\n"
+            + _render_validation_section(
+                validation_disposition, contract_test_path, validation_problem
+            )
+            + "\n"
+        )
+        atomic_write_text(paths.report_path, report)
         adapted_prompts = sum(
             entry.kind == "prompt" and not entry_is_unchanged(entry) for entry in log.entries
         )
@@ -2793,6 +3104,8 @@ class MigrationService:
                     "byok_evaluation, generated_tests, or an explicit "
                     "accepted_without_validation with the user's rationale)"
                 )
+            elif validation_problem is not None:
+                strict_violations.append(f"validation disposition: {validation_problem}")
         return MigrationRunFinalization(
             run_id=config.run_id,
             manifest_path=paths.manifest_path,

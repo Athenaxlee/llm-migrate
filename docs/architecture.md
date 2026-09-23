@@ -1047,6 +1047,19 @@ record_validation_disposition  (run record-validation)
 validate_research_artifact     (research validate-artifact; v1.4.1)
 ```
 
+V1.5.2 adds a whole-application source-reference sweep to the consistency
+gate (`source_reference_uncovered`: any scanned application file naming the
+source model that no deliverable, reviewed no-change entry, worklist task, or
+out-of-scope classification accounts for), so the discovery heuristics have a
+deterministic net under them; intentional mentions close only through an
+explicit, rationale-bearing acknowledgement. The plan's additive
+`out_of_scope` list separates prompt files the migration does not govern
+from genuine unknowns, validation dispositions carry their evidence (a
+passing attested test result, or an evaluation run bound to the finalized
+manifest hash) and are re-checked at finalize, and registry guidance tagged
+`applies_when` is pre-disposed not applicable when the application never
+exhibits its trigger under resolved coverage.
+
 `LLM_MIGRATE_TOOLSET=guided` exposes only the 19 guided-workflow MCP tools
 for hosts with tight inline-tool budgets; the full surface stays the default.
 

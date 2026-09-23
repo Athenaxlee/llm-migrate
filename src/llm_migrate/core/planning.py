@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import posixpath
 from typing import Any
 
 import yaml
@@ -40,6 +41,7 @@ from llm_migrate.core.models import (
     migration_complexity,
     prompt_issue_blocker,
 )
+from llm_migrate.core.resolver import normalize_identifier, strip_identifier_decorations
 
 
 def _endpoint(model: ResolvedModel) -> MigrationEndpoint:
@@ -125,6 +127,20 @@ def _difference_locations(
         return _locations(application, CouplingKind.PROMPT)
     kinds = _CATEGORY_LOCATION_KINDS.get(category)
     return _locations(application, *kinds) if kinds else []
+
+
+# Capability differences that matter only when the application uses the
+# capability: with no detected coupling of the governing kind, an unknown
+# about them is already answered by the scan, and a breaking difference is a
+# report fact rather than a finding.
+_USAGE_GATED_CATEGORIES = frozenset(
+    {"tool_use", "parallel_tool_use", "structured_output", "streaming", "multimodality"}
+)
+
+
+def difference_unused_by_application(difference: ModelDifference) -> bool:
+    """Whether the scan shows the application does not use this capability."""
+    return difference.category in _USAGE_GATED_CATEGORIES and not difference.locations
 
 
 def difference_governs_prompts(difference: ModelDifference) -> bool:
@@ -215,27 +231,85 @@ def _change(
     )
 
 
+def out_of_scope_paths(plan: MigrationPlan) -> set[str]:
+    """Application paths the plan classified out of scope."""
+    return {item.split(": ", 1)[0] for item in plan.out_of_scope}
+
+
+def _model_spellings(model: ResolvedModel) -> set[str]:
+    """Every normalized reviewed spelling of a model across its platforms."""
+    identity = model.profile.identity
+    names = {identity.canonical_name, *identity.aliases}
+    for platform in model.profile.platforms:
+        names.add(platform.model_id)
+        if platform.invocation is not None:
+            names.update(selector.model_id for selector in platform.invocation.selectors)
+    return {normalize_identifier(strip_identifier_decorations(item)) for item in names if item}
+
+
 def _prompt_inputs(
     application: ApplicationAnalysis,
-) -> tuple[list[tuple[PromptSource, PromptComponent]], list[str]]:
-    """Prompt components to prepare, plus unknowns for what stays unresolved."""
+    source: ResolvedModel,
+    target: ResolvedModel,
+) -> tuple[list[tuple[PromptSource, PromptComponent]], list[str], list[str]]:
+    """Prompt components to prepare, unknowns, and out-of-scope prompt files.
+
+    Two deterministic scoping rules keep files this migration does not govern
+    out of the unknowns: a config-referenced prompt whose referencing
+    profiles all declare some OTHER model is out of scope, and an
+    unreferenced candidate is out of scope when a sibling prompt file in the
+    same directory was selected by code, configuration, or override (the
+    application demonstrably selects among them). An unreferenced candidate
+    with no selected sibling stays an unknown — nothing shows whether it is
+    used.
+    """
     inputs: list[tuple[PromptSource, PromptComponent]] = []
     unknowns: list[str] = []
-    for source in application.prompt_sources:
-        if source.confidence is PromptSourceConfidence.LOW:
-            unknowns.append(
-                f"{source.path} contains prompt-like keys but nothing references it; it was "
-                "not prepared automatically. Name it in prompt_sources to include it."
+    out_of_scope: list[str] = []
+    governed = _model_spellings(source) | _model_spellings(target)
+    prepared: list[PromptSource] = []
+    for item in application.prompt_sources:
+        if item.confidence is PromptSourceConfidence.LOW:
+            continue
+        foreign = [
+            model_id
+            for model_id in item.profile_model_ids
+            if normalize_identifier(strip_identifier_decorations(model_id)) not in governed
+        ]
+        if item.profile_model_ids and len(foreign) == len(item.profile_model_ids):
+            out_of_scope.append(
+                f"{item.path}: referenced only by configuration profile(s) for "
+                f"{', '.join(foreign)}, which this migration does not cover; not prepared."
             )
             continue
-        inputs.extend((source, component) for component in source.components)
+        prepared.append(item)
+        inputs.extend((item, component) for component in item.components)
+    selected_directories = {posixpath.dirname(item.path) for item in prepared}
+    for item in application.prompt_sources:
+        if item.confidence is not PromptSourceConfidence.LOW:
+            continue
+        directory = posixpath.dirname(item.path)
+        if directory in selected_directories:
+            siblings = sorted(
+                other.path for other in prepared if posixpath.dirname(other.path) == directory
+            )
+            out_of_scope.append(
+                f"{item.path}: not referenced by the application's code or configuration, "
+                f"while sibling prompt file(s) {', '.join(siblings)} are; treated as out of "
+                "scope. Name it in prompt_sources to include it."
+            )
+            continue
+        unknowns.append(
+            f"{item.path} contains prompt-like keys but nothing references it; it was "
+            "not prepared automatically. Name it in prompt_sources to include it."
+        )
     discovery = application.prompt_discovery
     if discovery.dynamic_consumers:
         unknowns.append(
             f"{discovery.dynamic_consumers} prompt consumer(s) supply dynamically built "
             "content with no statically resolvable prompt source; review them manually."
         )
-    return inputs, unknowns
+    return inputs, unknowns, out_of_scope
 
 
 def _schema_validation(application: ApplicationAnalysis) -> list[ValidationIssue]:
@@ -345,7 +419,7 @@ def generate_application_migration_plan(
             ]
         }
     )
-    prompt_inputs, unknowns = _prompt_inputs(application)
+    prompt_inputs, unknowns, out_of_scope = _prompt_inputs(application, source, target)
     prompt_changes: list[PromptMigrationSpec] = []
     validation_results = _schema_validation(application)
     blockers: list[MigrationBlocker] = [*invocation.blockers]
@@ -445,7 +519,7 @@ def generate_application_migration_plan(
         if assessment and assessment.state is CompatibilityState.UNKNOWN:
             unknowns.append(assessment.rationale)
     for difference in comparison.differences:
-        if difference.state.value == "unknown":
+        if difference.state.value == "unknown" and not difference_unused_by_application(difference):
             unknowns.append(difference.migration_impact)
 
     required_changes = [
@@ -565,6 +639,7 @@ def generate_application_migration_plan(
         blockers=blockers,
         warnings=sorted(set(warnings)),
         unknowns=sorted(set(unknowns)),
+        out_of_scope=sorted(set(out_of_scope)),
         prompt_changes=prompt_changes,
         invocation_changes=[invocation],
         tool_changes=tool_changes,
@@ -658,6 +733,8 @@ def _difference_files(difference: ModelDifference, limit: int = 3) -> str:
     links = [f"[{path}:{line}]({path}#L{line})" for path, line in unique[:limit]]
     if len(unique) > limit:
         links.append(f"+{len(unique) - limit} more")
+    if not links and difference_unused_by_application(difference):
+        return "— (not used by this application)"
     return "<br>".join(links) if links else "—"
 
 
@@ -697,6 +774,50 @@ def _decision_lines(plan: MigrationPlan) -> list[str]:
                 f"`{decision.blocker_code}` ({decision.blocker_message}) — "
                 f"{decision.summary}{rationale} Result: {applied.detail}"
             )
+    return lines
+
+
+_CANDIDATE_MARKER = " contains prompt-like keys but nothing references it"
+
+
+def unreferenced_prompt_candidates(plan: MigrationPlan) -> list[str]:
+    """Candidate prompt files the plan reports as unreferenced unknowns."""
+    return sorted(
+        item.split(_CANDIDATE_MARKER, 1)[0] for item in plan.unknowns if _CANDIDATE_MARKER in item
+    )
+
+
+def unknown_action(unknown: str) -> str:
+    """The concrete next action for one unresolved unknown."""
+    if _CANDIDATE_MARKER in unknown:
+        path = unknown.split(_CANDIDATE_MARKER, 1)[0]
+        return (
+            f"If `{path}` is a live prompt, include it: start a new run with "
+            f'prompt_sources=["{path}"]; otherwise nothing to do.'
+        )
+    if "prompt consumer(s) supply dynamically built content" in unknown:
+        return (
+            "Review each dynamic consumer; name any static prompt file it loads with "
+            "prompt_sources, or leave it if the content is genuinely runtime-built."
+        )
+    if unknown.startswith("One or both values for "):
+        field = unknown.split("'")[1] if "'" in unknown else "this capability"
+        return (
+            f"Verify `{field}` on the target before deployment (a BYOK evaluation, or "
+            "bounded research for the missing registry fact)."
+        )
+    return "Review manually before deployment."
+
+
+def _unknowns_table(unknowns: list[str]) -> list[str]:
+    lines = ["", "## Unresolved unknowns", ""]
+    if not unknowns:
+        return [*lines, "- None."]
+    lines.extend(("| Unknown | Action |", "|---|---|"))
+    lines.extend(
+        f"| {_table_text(item, limit=240)} | {_table_text(unknown_action(item), limit=240)} |"
+        for item in unknowns
+    )
     return lines
 
 
@@ -787,6 +908,7 @@ def generate_migration_report(plan: MigrationPlan) -> str:
         f"low-confidence candidates: {discovery.low_confidence_sources}",
         f"Coverage: **{discovery.coverage.value}**",
     ]
+    discovery_lines.extend(f"Out of scope: {item}" for item in plan.out_of_scope)
     if discovery.coverage is not PromptDiscoveryCoverage.RESOLVED:
         discovery_lines.append(
             "Warning: prompt adaptation coverage is incomplete; review every unresolved "
@@ -813,7 +935,6 @@ def generate_migration_report(plan: MigrationPlan) -> str:
         ("Blockers", [item.rendered for item in plan.blockers]),
         ("Decisions", _decision_lines(plan)),
         ("Warnings", plan.warnings),
-        ("Unresolved unknowns", plan.unknowns),
         ("Required changes", [item.description for item in plan.required_changes]),
         ("Optional changes", [item.description for item in plan.optional_changes]),
         ("Prompt changes", prompt_change_lines),
@@ -871,6 +992,8 @@ def generate_migration_report(plan: MigrationPlan) -> str:
     for title, items in sections:
         lines.extend(("", f"## {title}", ""))
         lines.extend([f"- {item}" for item in items] or ["- None."])
+        if title == "Warnings":
+            lines.extend(_unknowns_table(plan.unknowns))
     lines.extend(
         (
             "",
