@@ -84,6 +84,14 @@ state, and a live run fixes discovery in place through `add_prompt_sources`
 and `confirm_prompt_consumer`. See the V1.6.0-a section below and
 `docs/project_phases.md` §12.11.
 
+V1.6.0-b: Unknowns That Give Directions — implemented on 2026-09-23 (ships
+with the v1.6.0 release): unknowns are typed records (plan schema 5) that
+say why they matter for the application, give the exact next call, and state
+what closes them; contested registry facts come with a BYOK probe script,
+and `record_observation` records the result for the run without touching the
+registry. See the V1.6.0-b section below and `docs/project_phases.md`
+§12.12.
+
 V1.5.0-b/-c/-d — implemented on 2026-09-22, completing the v1.5.0 release:
 semantic config couplings with anchoring guardrails, one difference-propagation
 mechanism, the worklist diet with `confirm_unaffected`, and the cross-surface
@@ -896,6 +904,37 @@ source-target `MigrationKnowledge`, not only individual model profiles.
   six prompt migrations, three consumers, four llama files out of scope) and
   `probe_forms_app` (chained loaders and a backslash config value), both with
   golden scans.
+
+## V1.6.0-b completed capabilities
+
+- Typed actionable unknowns (2026-09-23): `MigrationPlan` schema 5 types
+  `unknowns` as `MigrationUnknown` records — stable id, subject, why it
+  matters (grounded in the detected usage), action, closing condition, and
+  status (`open` / `closed_by_scan` / `closed_by_action`) with its reason;
+  `message` keeps the pre-v5 line. Emitters live in `core/unknowns.py`:
+  unreferenced candidate files (action `add_prompt_sources`), each dynamic
+  prompt consumer (action `confirm_prompt_consumer`, source pre-filled only
+  on a unique key match), unknown invocation compatibility and model
+  differences (action `record_observation`; differences the application does
+  not use are kept `closed_by_scan`), and registry evidence conflicts scoped
+  to the target platform.
+- Exact run actions (2026-09-23): actions are Python-call renderings of MCP
+  tool calls (or a CLI command for a probe); guided runs substitute the run
+  directory for `<run_dir>`, and the report never truncates an action.
+- Contested-evidence probes (2026-09-23): a testable contested fact (the
+  Bedrock adaptive-thinking disable conflict first) yields a BYOK probe script
+  under `output/probes/` (`core/probes.py`), written whenever the worklist is
+  derived and at finalize; a missing probe makes the snapshot stale.
+- Run-scoped observations (2026-09-23): `record_observation` (CLI
+  `run record-observation`) stores the user's result in `observations.yaml`
+  (part of the snapshot key); it closes the named unknown, renders under
+  "Observations (run-scoped)", and never touches `registry/`. The guided
+  toolset is 22 tools.
+- Closing loop (2026-09-23): the worklist carries open `unknowns` with their
+  actions, `get_run_status` counts `open_unknowns`, and finalize returns
+  and reports open, closed-by-action, and closed-by-scan unknowns. Recorded
+  dismissals and consumer confirmations close their unknowns by action with
+  the user's rationale.
 
 ## Next work
 

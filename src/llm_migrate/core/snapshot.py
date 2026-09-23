@@ -6,7 +6,8 @@ snapshot persists the derived worklist and its plan evidence in the run
 workspace, keyed by a content hash over EVERYTHING the plan derives from —
 the scanned application content, `migration.yaml` (retarget/correction
 decisions mutate it), the blocker decision log (redesign decisions inject
-tasks), the session-registry manifest, and the canonical registry content.
+tasks), the session-registry manifest, the run's observations (they close
+unknowns), and the canonical registry content.
 Submissions validate against the snapshot and re-derive only when the key
 changes. Task *statuses* are never baked in: they are recomputed at read time
 from the adaptation log. When in doubt the snapshot is discarded and
@@ -30,6 +31,7 @@ from pydantic import Field, ValidationError
 
 from llm_migrate.core.blockers import DECISIONS_FILENAME
 from llm_migrate.core.models import StrictModel
+from llm_migrate.core.observations import OBSERVATIONS_FILENAME
 from llm_migrate.core.runstate import atomic_write_text
 from llm_migrate.core.workspace import (
     RUN_CONFIG_FILENAME,
@@ -68,6 +70,9 @@ class WorklistSnapshot(StrictModel):
     evidence_urls: list[str] = Field(default_factory=list)
     # The subset of evidence_urls recorded in the reviewed registry (v1.5.2).
     registry_evidence_urls: list[str] = Field(default_factory=list)
+    # Probe deliverables (run-relative) the derivation wrote (v1.6.0-b); a
+    # missing one makes the snapshot stale so the next derivation rewrites it.
+    probe_paths: list[str] = Field(default_factory=list)
 
 
 def _toolkit_version() -> str:
@@ -99,7 +104,12 @@ def snapshot_key(run_dir: Path, config: MigrationRunConfig, registry_digest: str
             )
     else:
         digest.update(b"app:missing\n")
-    for name in (RUN_CONFIG_FILENAME, DECISIONS_FILENAME, "session-manifest.yaml"):
+    for name in (
+        RUN_CONFIG_FILENAME,
+        DECISIONS_FILENAME,
+        "session-manifest.yaml",
+        OBSERVATIONS_FILENAME,
+    ):
         digest.update(f"run:{name}:{_file_digest(Path(run_dir) / name)}\n".encode())
     return digest.hexdigest()
 

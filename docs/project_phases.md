@@ -2138,6 +2138,67 @@ fields and `discovery_incomplete` state, and PROMPT coupling
 
 ---
 
+# 12.12. V1.6.0-b: Unknowns That Give Directions
+
+## Purpose
+
+The field run's unknowns were dead ends: one-line strings with no subject,
+no reason grounded in the application, no action, and no closing condition;
+and an empirically testable conflict (can adaptive thinking be disabled on
+Bedrock, where the provider docs and the AWS model card disagree) handed the
+user nothing to run and nowhere to record the answer.
+
+## Scope
+
+- `MigrationUnknown` (plan schema 4 → 5): stable id, subject,
+  why it matters, action, closing condition, status (`open` /
+  `closed_by_scan` / `closed_by_action`) with its reason, evidence URLs;
+  `message` keeps the pre-v5 text as the rendered view.
+- Emitters for unreferenced candidate prompt files, per-consumer dynamic
+  prompt consumers, unknown invocation compatibility, unknown model
+  differences (scan-answered ones kept `closed_by_scan`), and registry
+  evidence conflicts scoped to the target platform.
+- Actions as exact MCP tool calls (or a CLI command for probes), with the
+  run directory substituted in guided runs.
+- BYOK probe scripts under `output/probes/` for testable contested facts;
+  `record_observation` (MCP, CLI `run record-observation`) storing
+  run-scoped `observations.yaml`. The guided toolset grows to 22 tools.
+- Closing loop: worklist `unknowns`, `RunStatus.open_unknowns`, finalize
+  lists open / closed-by-action / closed-by-scan, and the report's
+  "Unresolved unknowns" table (Why it matters / Action / Closes when),
+  "Closed unknowns", and "Observations (run-scoped)" sections.
+
+## Boundary
+
+Observations never mutate the registry; promotion is an explicit
+`propose_registry_update`. Probes are emitted, never executed, and only for
+a contested setting and target call `core/probes.py` knows how to exercise.
+
+## Exit criteria
+
+- Every emitted unknown has all four fields populated, asserted over every
+  emitter on the fixture set.
+- Every action in a run is a syntactically valid call to a real MCP tool
+  with valid parameters and the run's directory, or a CLI command naming an
+  existing run file; executing a candidate's action closes it.
+- A probe is emitted only for contested-evidence unknowns (none for a
+  platform the conflict does not govern).
+- A recorded observation closes its unknown, renders in the report, and
+  leaves `registry/` byte-identical.
+
+## Current status
+
+Implemented on 2026-09-23 (ships with the v1.6.0 release), with unit
+coverage for every exit criterion
+(`tests/unit/test_v160b_actionable_unknowns.py`). `MigrationPlan` moved to
+schema 5 (v04/v05 goldens regenerated); everything else is additive
+(`AdaptationTaskList.unknowns`, `RunStatus.open_unknowns`, the
+`MigrationRunFinalization` unknown lists and `probe_paths`,
+`WorklistSnapshot.probe_paths`) plus the new run-scoped observation
+artifact (versioned "1").
+
+---
+
 # 13. Cross-Phase Testing Strategy
 
 ## Unit tests
@@ -2245,6 +2306,7 @@ When working from this roadmap, Codex should:
 | V1.5.1 | Review-fix patch: alias-aware reference detection, reviewed new files, read-only run status |
 | V1.5.2 | Precision and honesty patch: consumer precision, prompt scoping, evidence-backed validation, whole-app source-reference sweep |
 | V1.6.0-a | Prompt discovery on real repo layouts: bounded multi-base resolution, chained loaders, start-time confirmation, live-run discovery tools, `discovery_incomplete` |
+| V1.6.0-b | Unknowns that give directions: typed actionable unknowns (plan v5), contested-evidence probes, run-scoped observations |
 
 The critical sequencing rule is:
 

@@ -1008,6 +1008,64 @@ def migration_blocker(
     )
 
 
+RUN_DIR_PLACEHOLDER = "<run_dir>"
+
+
+class UnknownKind(StrEnum):
+    PROMPT_CANDIDATE = "prompt_candidate"
+    DYNAMIC_PROMPT_CONSUMER = "dynamic_prompt_consumer"
+    COMPATIBILITY = "compatibility"
+    MODEL_DIFFERENCE = "model_difference"
+    CONTESTED_EVIDENCE = "contested_evidence"
+
+
+class MigrationUnknown(StrictModel):
+    """One unresolved (or closed) migration unknown that gives a direction.
+
+    Every unknown says what it is about (`subject`), why it matters for THIS
+    application, the concrete next `action` (a ready-to-run tool call or CLI
+    command with its arguments filled; in a guided run the run directory is
+    substituted for `RUN_DIR_PLACEHOLDER`), and the condition that closes it.
+    The `id` is deterministic over (kind, discriminator), so a recorded
+    observation keeps matching across plan regenerations. `message` keeps the
+    pre-v5 one-line text as the stable rendered view. Unknowns the scan
+    already answers are kept `closed_by_scan`, and ones a recorded user
+    action answered are `closed_by_action`, each with its reason, so the
+    report can say how every unknown was closed.
+    """
+
+    id: str
+    kind: UnknownKind
+    subject: str = Field(min_length=1)
+    why_it_matters: str = Field(min_length=1)
+    action: str = Field(min_length=1)
+    closing_condition: str = Field(min_length=1)
+    message: str = Field(min_length=1)
+    status: Literal["open", "closed_by_scan", "closed_by_action"] = "open"
+    closed_reason: str | None = None
+    evidence_urls: list[str] = Field(default_factory=list)
+    data: dict[str, Any] | None = None
+
+    @property
+    def is_open(self) -> bool:
+        return self.status == "open"
+
+    @property
+    def rendered(self) -> str:
+        """Stable one-line view used by worklists and status."""
+        return f"{self.message} [{self.kind.value}; id: {self.id}] Action: {self.action}"
+
+
+def unknown_id(kind: UnknownKind, discriminator: str) -> str:
+    """Deterministic unknown id over its kind and identifying discriminator."""
+    digest = hashlib.sha256(f"{kind.value}|{discriminator}".encode()).hexdigest()[:10]
+    return f"{kind.value}:{digest}"
+
+
+def open_unknowns(unknowns: list[MigrationUnknown]) -> list[MigrationUnknown]:
+    return [item for item in unknowns if item.is_open]
+
+
 def dedupe_blockers(blockers: list[MigrationBlocker]) -> list[MigrationBlocker]:
     """Stable-id deduplication with a deterministic report order.
 
@@ -1161,9 +1219,14 @@ class InvocationMigrationSpec(StrictModel):
 
 
 class MigrationPlan(StrictModel):
-    """Canonical application-level V0.4 migration manifest."""
+    """Canonical application-level V0.4 migration manifest.
 
-    schema_version: Literal["4"] = "4"
+    Schema version 5 (v1.6.0-b) types `unknowns` as `MigrationUnknown`
+    records (subject, why it matters, action, closing condition, status);
+    each record's `message` keeps the pre-v5 rendered text.
+    """
+
+    schema_version: Literal["5"] = "5"
     source: MigrationEndpoint
     target: MigrationEndpoint
     application: MigrationApplicationSummary
@@ -1177,7 +1240,7 @@ class MigrationPlan(StrictModel):
     blockers: list[MigrationBlocker]
     decisions: list[AppliedBlockerDecision] = Field(default_factory=list)
     warnings: list[str]
-    unknowns: list[str]
+    unknowns: list[MigrationUnknown]
     # Prompt files the scan shows this migration does not govern (additive,
     # v1.5.2): never prepared, never tasks, never unknowns.
     out_of_scope: list[str] = Field(default_factory=list)

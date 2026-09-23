@@ -82,6 +82,12 @@ exposes only its tools):
    silently applied).
 6. finalize_migration(run_dir) — writes the manifest, report ("Action
    required" first), and the generated contract test under output/validation/.
+6b. Every unknown carries why it matters, its exact next action, and what
+   closes it (worklist `unknowns`, report "Unresolved unknowns"). Ask the user
+   before acting; for a contested registry fact, the user runs the emitted
+   output/probes/ script and you record the printed result with
+   record_observation(run_dir, subject=<unknown id>, outcome, evidence) —
+   run-scoped, never a registry change.
 7. Validation is a two-pass flow: the user runs the contract test or a BYOK
    evaluation (generate_eval_suite / run_migration_eval); record the outcome
    with record_validation_disposition (generated_tests needs the user's
@@ -113,6 +119,7 @@ _GUIDED_TOOL_NAMES = frozenset(
         "confirm_unaffected",
         "add_prompt_sources",
         "confirm_prompt_consumer",
+        "record_observation",
         "get_run_status",
         "finalize_migration",
         "get_change_review",
@@ -960,6 +967,24 @@ def confirm_prompt_consumer(
     """
     return _json(
         _service().confirm_prompt_consumer(run_dir, location, source_path, now=utc_moment(now))
+    )
+
+
+@_tool
+def record_observation(
+    run_dir: str, subject: str, outcome: str, evidence: str, now: str | None = None
+) -> dict[str, Any]:
+    """Record the target's observed behavior for one plan unknown (run-scoped).
+
+    `subject` is the unknown's id (e.g. from a probe script's docstring or the
+    worklist `unknowns`); `outcome` is what the target actually did and
+    `evidence` the printed result, request id, or URL — both from the USER's
+    own run. It closes that unknown in this run's plan and renders in the
+    report; it never changes the registry (promotion is a separate
+    propose_registry_update).
+    """
+    return _json(
+        _service().record_observation(run_dir, subject, outcome, evidence, now=utc_moment(now))
     )
 
 

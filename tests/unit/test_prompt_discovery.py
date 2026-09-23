@@ -143,7 +143,9 @@ def test_unresolved_dynamic_prompt_is_reported_not_hidden(
     )
     assert plan.prompt_changes == []
     assert any("Prompt adaptation coverage is incomplete" in item for item in plan.warnings)
-    assert any("dynamically built" in item for item in plan.unknowns)
+    assert any(
+        "dynamically built" in item for item in (u.message for u in plan.unknowns if u.is_open)
+    )
     report = service.migration_report(plan)
     assert "## Prompt discovery" in report
     assert "Coverage: **unresolved**" in report
@@ -184,7 +186,9 @@ def test_prompt_like_yaml_without_llm_provenance_is_not_a_task(
         target_platform="openai-api",
     )
     assert plan.prompt_changes == []
-    assert any("standalone_prompt.yaml" in item for item in plan.unknowns)
+    assert any(
+        "standalone_prompt.yaml" in item for item in (u.message for u in plan.unknowns if u.is_open)
+    )
 
 
 def test_explicit_prompt_source_override(tmp_path: Path, service: MigrationService) -> None:

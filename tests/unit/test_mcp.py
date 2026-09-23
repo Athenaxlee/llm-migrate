@@ -55,6 +55,7 @@ def test_all_service_operations_are_exposed_as_mcp_tools() -> None:
         "confirm_unaffected",
         "add_prompt_sources",
         "confirm_prompt_consumer",
+        "record_observation",
         "submit_adaptations",
         "record_change_decisions",
         "get_run_status",
@@ -225,7 +226,7 @@ def test_mcp_integrated_plan_and_report_use_the_shared_workflow() -> None:
         "anthropic-api",
         "openai-api",
     )
-    assert plan["schema_version"] == "4"
+    assert plan["schema_version"] == "5"
     assert plan["affected_files"] == ["app.py", "prompts/system.txt"]
     assert (
         plan["invocation_changes"][0]["tool_schema_migrations"][0]["target_definition"]["type"]

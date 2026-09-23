@@ -134,7 +134,9 @@ def test_unreferenced_sibling_candidate_is_out_of_scope(
     )
     plan = _plan(service, plain_app, prompt_sources=["prompt_lib/claude_prompt.yaml"])
     assert any(item.startswith("prompt_lib/llama_prompt.yaml:") for item in plan.out_of_scope)
-    assert not any("llama_prompt.yaml" in item for item in plan.unknowns)
+    assert not any(
+        "llama_prompt.yaml" in item for item in (u.message for u in plan.unknowns if u.is_open)
+    )
     assert {spec.source_path for spec in plan.prompt_changes} >= {"prompt_lib/claude_prompt.yaml"}
     assert "llama_prompt.yaml" not in {spec.source_path for spec in plan.prompt_changes}
 
@@ -145,7 +147,8 @@ def test_candidate_without_selected_sibling_stays_unknown(
     _write(plain_app, {"prompt_lib/claude_prompt.yaml": "sys_prompt: You classify rooms.\n"})
     plan = _plan(service, plain_app)
     assert any(
-        "prompt_lib/claude_prompt.yaml contains prompt-like keys" in u for u in plan.unknowns
+        "prompt_lib/claude_prompt.yaml contains prompt-like keys" in u
+        for u in (u.message for u in plan.unknowns if u.is_open)
     )
     assert plan.out_of_scope == []
 
@@ -181,7 +184,9 @@ def test_prompt_referenced_only_by_a_foreign_profile_is_out_of_scope(
 
 def test_scan_answered_unknowns_are_not_emitted(service: MigrationService, plain_app: Path) -> None:
     plan = _plan(service, plain_app)
-    assert not any("parallel_tool_use" in item for item in plan.unknowns)
+    assert not any(
+        "parallel_tool_use" in item for item in (u.message for u in plan.unknowns if u.is_open)
+    )
     report = service.migration_report(plan)
     assert "| Unknown | Action |" in report or "## Unresolved unknowns" in report
 

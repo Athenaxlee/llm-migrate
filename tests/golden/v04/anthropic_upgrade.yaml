@@ -1,5 +1,5 @@
 migration:
-  schema_version: '4'
+  schema_version: '5'
   source:
     model: claude-sonnet-4-5-20250929
     provider: anthropic
@@ -605,12 +605,132 @@ migration:
   decisions: []
   warnings: []
   unknowns:
-  - One or both values for 'adaptive_thinking' are unknown; compatibility must not
-    be assumed.
-  - One or both values for 'effort' are unknown; compatibility must not be assumed.
-  - One or both values for 'temperature' are unknown; compatibility must not be assumed.
-  - One or both values for 'top_k' are unknown; compatibility must not be assumed.
-  - One or both values for 'top_p' are unknown; compatibility must not be assumed.
+  - id: model_difference:626670e236
+    kind: model_difference
+    subject: Target adaptive_thinking (parameters)
+    why_it_matters: The reviewed registry records adaptive_thinking as no recorded
+      value on the source and 'supported' on the target, so compatibility must not
+      be assumed. The target's value applies to every call the application makes.
+    action: record_observation(run_dir="<run_dir>", subject="model_difference:626670e236",
+      outcome="<what the target actually did>", evidence="<test output, request id,
+      or source URL>")
+    closing_condition: Closed when the target's actual behavior is recorded with record_observation
+      (after the generated contract test, a BYOK evaluation, or a probe), or when
+      reviewed research resolves the registry fact.
+    message: One or both values for 'adaptive_thinking' are unknown; compatibility
+      must not be assumed.
+    status: open
+    closed_reason: null
+    evidence_urls:
+    - https://platform.claude.com/docs/en/about-claude/models/whats-new-sonnet-5
+    data:
+      category: parameters
+      field: adaptive_thinking
+  - id: model_difference:07bc70b39f
+    kind: model_difference
+    subject: Target effort (parameters)
+    why_it_matters: The reviewed registry records effort as no recorded value on the
+      source and 'supported' on the target, so compatibility must not be assumed.
+      The target's value applies to every call the application makes.
+    action: record_observation(run_dir="<run_dir>", subject="model_difference:07bc70b39f",
+      outcome="<what the target actually did>", evidence="<test output, request id,
+      or source URL>")
+    closing_condition: Closed when the target's actual behavior is recorded with record_observation
+      (after the generated contract test, a BYOK evaluation, or a probe), or when
+      reviewed research resolves the registry fact.
+    message: One or both values for 'effort' are unknown; compatibility must not be
+      assumed.
+    status: open
+    closed_reason: null
+    evidence_urls:
+    - https://platform.claude.com/docs/en/about-claude/models/whats-new-sonnet-5
+    data:
+      category: parameters
+      field: effort
+  - id: model_difference:83c183fc60
+    kind: model_difference
+    subject: Target parallel_tool_use (parallel_tool_use)
+    why_it_matters: The reviewed registry records parallel_tool_use as no recorded
+      value on the source and no recorded value on the target, so compatibility must
+      not be assumed. The target's value applies to every call the application makes.
+    action: record_observation(run_dir="<run_dir>", subject="model_difference:83c183fc60",
+      outcome="<what the target actually did>", evidence="<test output, request id,
+      or source URL>")
+    closing_condition: Closed when the target's actual behavior is recorded with record_observation
+      (after the generated contract test, a BYOK evaluation, or a probe), or when
+      reviewed research resolves the registry fact.
+    message: One or both values for 'parallel_tool_use' are unknown; compatibility
+      must not be assumed.
+    status: closed_by_scan
+    closed_reason: the scan shows the application does not use parallel_tool_use
+    evidence_urls:
+    - https://platform.claude.com/docs/en/about-claude/models/overview
+    data:
+      category: parallel_tool_use
+      field: parallel_tool_use
+  - id: model_difference:2fac098e05
+    kind: model_difference
+    subject: Target temperature (parameters)
+    why_it_matters: The reviewed registry records temperature as no recorded value
+      on the source and 'unsupported' on the target, so compatibility must not be
+      assumed. The target's value applies to every call the application makes.
+    action: record_observation(run_dir="<run_dir>", subject="model_difference:2fac098e05",
+      outcome="<what the target actually did>", evidence="<test output, request id,
+      or source URL>")
+    closing_condition: Closed when the target's actual behavior is recorded with record_observation
+      (after the generated contract test, a BYOK evaluation, or a probe), or when
+      reviewed research resolves the registry fact.
+    message: One or both values for 'temperature' are unknown; compatibility must
+      not be assumed.
+    status: open
+    closed_reason: null
+    evidence_urls:
+    - https://platform.claude.com/docs/en/about-claude/models/whats-new-sonnet-5
+    data:
+      category: parameters
+      field: temperature
+  - id: model_difference:9978572c46
+    kind: model_difference
+    subject: Target top_k (parameters)
+    why_it_matters: The reviewed registry records top_k as no recorded value on the
+      source and 'unsupported' on the target, so compatibility must not be assumed.
+      The target's value applies to every call the application makes.
+    action: record_observation(run_dir="<run_dir>", subject="model_difference:9978572c46",
+      outcome="<what the target actually did>", evidence="<test output, request id,
+      or source URL>")
+    closing_condition: Closed when the target's actual behavior is recorded with record_observation
+      (after the generated contract test, a BYOK evaluation, or a probe), or when
+      reviewed research resolves the registry fact.
+    message: One or both values for 'top_k' are unknown; compatibility must not be
+      assumed.
+    status: open
+    closed_reason: null
+    evidence_urls:
+    - https://platform.claude.com/docs/en/about-claude/models/whats-new-sonnet-5
+    data:
+      category: parameters
+      field: top_k
+  - id: model_difference:8cfafca0d8
+    kind: model_difference
+    subject: Target top_p (parameters)
+    why_it_matters: The reviewed registry records top_p as no recorded value on the
+      source and 'unsupported' on the target, so compatibility must not be assumed.
+      The target's value applies to every call the application makes.
+    action: record_observation(run_dir="<run_dir>", subject="model_difference:8cfafca0d8",
+      outcome="<what the target actually did>", evidence="<test output, request id,
+      or source URL>")
+    closing_condition: Closed when the target's actual behavior is recorded with record_observation
+      (after the generated contract test, a BYOK evaluation, or a probe), or when
+      reviewed research resolves the registry fact.
+    message: One or both values for 'top_p' are unknown; compatibility must not be
+      assumed.
+    status: open
+    closed_reason: null
+    evidence_urls:
+    - https://platform.claude.com/docs/en/about-claude/models/whats-new-sonnet-5
+    data:
+      category: parameters
+      field: top_p
   out_of_scope: []
   prompt_changes: []
   invocation_changes:

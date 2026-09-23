@@ -36,7 +36,6 @@ from llm_migrate.core.models import (
     ApplicationAnalysis,
     ComparisonSeverity,
     CompatibilityState,
-    CouplingKind,
     MigrationAdvice,
     MigrationPlan,
     ModelMatchResult,
@@ -57,6 +56,7 @@ from llm_migrate.core.prompt_documents import (
     source_format,
 )
 from llm_migrate.core.runstate import atomic_write_text, run_state_lock
+from llm_migrate.core.unknowns import consumer_refs
 
 RUN_CONFIG_FILENAME = "migration.yaml"
 CHANGES_FILENAME = "changes.yaml"
@@ -143,36 +143,16 @@ def dynamic_prompt_consumers(
     contain every literal key the consumer reads — the candidates a
     confirm_prompt_consumer call would most plausibly name.
     """
-    component_keys = {
-        source.path: {
-            (component.key or "").split("[", 1)[0]
-            for component in source.components
-            if component.key
-        }
-        for source in analysis.prompt_sources
-        if source.path not in excluded_paths
-    }
-    consumers: list[DynamicPromptConsumer] = []
-    for finding in analysis.findings:
-        metadata = finding.metadata or {}
-        if (
-            finding.kind is not CouplingKind.PROMPT
-            or not finding.detail.startswith("supplies prompt content")
-            or metadata.get("resolution") != "dynamic"
-        ):
-            continue
-        access = [str(key) for key in metadata.get("access_keys") or []]
-        consumers.append(
-            DynamicPromptConsumer(
-                location=f"{finding.location.path}:{finding.location.line}",
-                keyword=str(finding.value),
-                access_keys=access,
-                matching_sources=sorted(
-                    path for path, keys in component_keys.items() if access and set(access) <= keys
-                ),
-            )
+    return [
+        DynamicPromptConsumer(
+            location=ref.location,
+            keyword=ref.keyword,
+            access_keys=ref.access_keys,
+            matching_sources=ref.matching_sources,
         )
-    return consumers
+        for ref in consumer_refs(analysis, excluded_paths)
+        if ref.resolution == "dynamic"
+    ]
 
 
 def consumer_confirmation_map(config: MigrationRunConfig) -> dict[str, str]:
@@ -582,6 +562,8 @@ class AdaptationTaskList(StrictModel):
     # Dynamic prompt consumers still counting against coverage (additive,
     # v1.6.0-a), each closable by confirm_prompt_consumer or a dismissal.
     dynamic_prompt_consumers: list[DynamicPromptConsumer] = Field(default_factory=list)
+    # Open plan unknowns, rendered with their actions (additive, v1.6.0-b).
+    unknowns: list[str] = Field(default_factory=list)
 
 
 class PromptSubmissionResult(StrictModel):
@@ -665,6 +647,8 @@ class RunStatus(StrictModel):
     prompt_coverage: Literal["resolved", "partial", "unresolved"] = "resolved"
     prompt_candidates: list[str] = Field(default_factory=list)
     dynamic_prompt_consumers: int = 0
+    # Open plan unknowns, each carrying its action (additive, v1.6.0-b).
+    open_unknowns: int = 0
     snapshot_reused: bool = False
 
 
@@ -715,6 +699,11 @@ class MigrationRunFinalization(StrictModel):
     validation_disposition: str | None = None
     strict_violations: list[str] = Field(default_factory=list)
     contract_test_path: str | None = None
+    # How every plan unknown stands at finalize (additive, v1.6.0-b).
+    unknowns_open: list[str] = Field(default_factory=list)
+    unknowns_closed_by_action: list[str] = Field(default_factory=list)
+    unknowns_closed_by_scan: list[str] = Field(default_factory=list)
+    probe_paths: list[str] = Field(default_factory=list)
     message: str
 
 
@@ -1229,6 +1218,7 @@ def derive_adaptation_tasks(
         shared_prompt_guidance=shared_prompt_guidance,
         prompt_coverage=plan.prompt_discovery.coverage.value,
         prompt_candidates=unreferenced_prompt_candidates(plan),
+        unknowns=[item.rendered for item in plan.unknowns if item.is_open],
     )
 
 

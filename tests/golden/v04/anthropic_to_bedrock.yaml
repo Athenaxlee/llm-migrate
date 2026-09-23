@@ -1,5 +1,5 @@
 migration:
-  schema_version: '4'
+  schema_version: '5'
   source:
     model: claude-sonnet-5
     provider: anthropic
@@ -615,10 +615,49 @@ migration:
   decisions: []
   warnings: []
   unknowns:
-  - One or both values for 'adaptive_thinking' are unknown; compatibility must not
-    be assumed.
-  - One or both values for 'parallel_tool_use' are unknown; compatibility must not
-    be assumed.
+  - id: model_difference:626670e236
+    kind: model_difference
+    subject: Target adaptive_thinking (parameters)
+    why_it_matters: The reviewed registry records adaptive_thinking as 'supported'
+      on the source and no recorded value on the target, so compatibility must not
+      be assumed. The target's value applies to every call the application makes.
+    action: record_observation(run_dir="<run_dir>", subject="model_difference:626670e236",
+      outcome="<what the target actually did>", evidence="<test output, request id,
+      or source URL>")
+    closing_condition: Closed when the target's actual behavior is recorded with record_observation
+      (after the generated contract test, a BYOK evaluation, or a probe), or when
+      reviewed research resolves the registry fact.
+    message: One or both values for 'adaptive_thinking' are unknown; compatibility
+      must not be assumed.
+    status: open
+    closed_reason: null
+    evidence_urls:
+    - https://platform.claude.com/docs/en/about-claude/models/whats-new-sonnet-5
+    - https://platform.claude.com/docs/en/about-claude/models/migration-guide
+    data:
+      category: parameters
+      field: adaptive_thinking
+  - id: model_difference:83c183fc60
+    kind: model_difference
+    subject: Target parallel_tool_use (parallel_tool_use)
+    why_it_matters: The reviewed registry records parallel_tool_use as no recorded
+      value on the source and no recorded value on the target, so compatibility must
+      not be assumed. The application relies on it at app.py.
+    action: record_observation(run_dir="<run_dir>", subject="model_difference:83c183fc60",
+      outcome="<what the target actually did>", evidence="<test output, request id,
+      or source URL>")
+    closing_condition: Closed when the target's actual behavior is recorded with record_observation
+      (after the generated contract test, a BYOK evaluation, or a probe), or when
+      reviewed research resolves the registry fact.
+    message: One or both values for 'parallel_tool_use' are unknown; compatibility
+      must not be assumed.
+    status: open
+    closed_reason: null
+    evidence_urls:
+    - https://platform.claude.com/docs/en/about-claude/models/overview
+    data:
+      category: parallel_tool_use
+      field: parallel_tool_use
   out_of_scope: []
   prompt_changes:
   - schema_version: '4'

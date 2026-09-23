@@ -1044,7 +1044,9 @@ def test_dynamic_request_surfaces_as_unknown_and_native_use_blocks(
         target_platform="amazon-bedrock",
         target_endpoint="bedrock-runtime",
     )
-    assert any("dynamically" in unknown for unknown in plan.unknowns)
+    assert any(
+        "dynamically" in unknown for unknown in (u.message for u in plan.unknowns if u.is_open)
+    )
 
     native_app = tmp_path / "native_app"
     native_app.mkdir()

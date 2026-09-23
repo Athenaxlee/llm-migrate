@@ -83,7 +83,7 @@ def test_v1_offline_workflow_reaches_bounded_optimization(
     report = service.analyze_regressions(run)
     optimization = service.optimize_migration(report)
 
-    assert plan.schema_version == "4"
+    assert plan.schema_version == "5"
     assert plan.invocation_changes[0].schema_version == "3"
     assert plan.invocation_changes[0].tool_schema_migrations[0].target_definition is not None
     assert plan.invocation_changes[0].configuration_migration is not None

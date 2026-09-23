@@ -109,7 +109,7 @@ def test_field_pattern_resolves_with_zero_configuration(
     assert prepared == CLAUDE_FILES
     assert len(plan.prompt_changes) == 6  # sys_prompt + user_prompt per Claude file
     assert sorted(item.split(": ", 1)[0] for item in plan.out_of_scope) == LLAMA_FILES
-    assert not any("llama" in item for item in plan.unknowns)
+    assert not any("llama" in item for item in (u.message for u in plan.unknowns if u.is_open))
 
 
 def test_stripping_is_bounded_to_the_application_root(tmp_path: Path) -> None:

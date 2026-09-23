@@ -186,7 +186,7 @@ def test_integrated_plan_and_report_commands(project_root: Path, tmp_path: Path)
     assert planned.exit_code == 0, planned.output
     assert reported.exit_code == 0, reported.output
     manifest = yaml.safe_load(manifest_path.read_text())
-    assert manifest["migration"]["schema_version"] == "4"
+    assert manifest["migration"]["schema_version"] == "5"
     assert manifest["migration"]["affected_files"] == ["app.py", "prompts/system.txt"]
     tool_migration = manifest["migration"]["invocation_changes"][0]["tool_schema_migrations"][0]
     assert tool_migration["target_definition"]["type"] == "function"

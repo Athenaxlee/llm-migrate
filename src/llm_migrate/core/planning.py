@@ -24,6 +24,7 @@ from llm_migrate.core.models import (
     MigrationBlocker,
     MigrationEndpoint,
     MigrationPlan,
+    MigrationUnknown,
     ModelComparison,
     ModelDifference,
     PlannedMigrationChange,
@@ -35,14 +36,26 @@ from llm_migrate.core.models import (
     ResolutionKind,
     ResolvedModel,
     SourceLocation,
+    UnknownKind,
     ValidationIssue,
     ValidationLevel,
     dedupe_blockers,
     migration_blocker,
     migration_complexity,
+    open_unknowns,
     prompt_issue_blocker,
 )
 from llm_migrate.core.resolver import normalize_identifier, strip_identifier_decorations
+from llm_migrate.core.unknowns import (
+    candidate_unknown,
+    close_by_action,
+    compatibility_unknown,
+    consumer_refs,
+    consumer_unknown,
+    contested_unknowns,
+    difference_unknown,
+    sort_unknowns,
+)
 
 
 def _endpoint(model: ResolvedModel) -> MigrationEndpoint:
@@ -252,7 +265,7 @@ def _prompt_inputs(
     application: ApplicationAnalysis,
     source: ResolvedModel,
     target: ResolvedModel,
-) -> tuple[list[tuple[PromptSource, PromptComponent]], list[str], list[str]]:
+) -> tuple[list[tuple[PromptSource, PromptComponent]], list[MigrationUnknown], list[str]]:
     """Prompt components to prepare, unknowns, and out-of-scope prompt files.
 
     Two deterministic scoping rules keep files this migration does not govern
@@ -265,7 +278,7 @@ def _prompt_inputs(
     used.
     """
     inputs: list[tuple[PromptSource, PromptComponent]] = []
-    unknowns: list[str] = []
+    unknowns: list[MigrationUnknown] = []
     out_of_scope: list[str] = []
     governed = _model_spellings(source) | _model_spellings(target)
     prepared: list[PromptSource] = []
@@ -301,17 +314,9 @@ def _prompt_inputs(
                 "it is live."
             )
             continue
-        unknowns.append(
-            f"{item.path} contains prompt-like keys but nothing references it; it was "
-            "not prepared automatically. Include it with add_prompt_sources (or "
-            "prompt_sources at start) if it is live."
-        )
-    discovery = application.prompt_discovery
-    if discovery.dynamic_consumers:
-        unknowns.append(
-            f"{discovery.dynamic_consumers} prompt consumer(s) supply dynamically built "
-            "content with no statically resolvable prompt source; review them manually."
-        )
+        unknowns.append(candidate_unknown(item))
+    excluded = {entry.split(": ", 1)[0] for entry in out_of_scope}
+    unknowns.extend(consumer_unknown(ref) for ref in consumer_refs(application, excluded))
     return inputs, unknowns, out_of_scope
 
 
@@ -520,10 +525,16 @@ def generate_application_migration_plan(
         invocation.source_analysis.structured_output_compatibility,
     ):
         if assessment and assessment.state is CompatibilityState.UNKNOWN:
-            unknowns.append(assessment.rationale)
+            unknowns.append(compatibility_unknown(assessment))
     for difference in comparison.differences:
-        if difference.state.value == "unknown" and not difference_unused_by_application(difference):
-            unknowns.append(difference.migration_impact)
+        if difference.state.value == "unknown":
+            unknowns.append(
+                difference_unknown(
+                    difference, used=not difference_unused_by_application(difference)
+                )
+            )
+    unknowns.extend(contested_unknowns(target, target_endpoint.platform, application, invocation))
+    unknowns = sort_unknowns(unknowns)
 
     required_changes = [
         *(
@@ -632,7 +643,8 @@ def generate_application_migration_plan(
                 else "Static analysis found no proven blocker for the detected application "
                 "requirements."
             ),
-            f"Review {len(unknowns)} unresolved compatibility item(s) before deployment.",
+            f"Review {len(open_unknowns(unknowns))} unresolved compatibility item(s) before "
+            "deployment.",
         ],
         model_differences=comparison,
         affected_files=affected_files,
@@ -641,7 +653,7 @@ def generate_application_migration_plan(
         optional_changes=optional_changes,
         blockers=blockers,
         warnings=sorted(set(warnings)),
-        unknowns=sorted(set(unknowns)),
+        unknowns=unknowns,
         out_of_scope=sorted(set(out_of_scope)),
         prompt_changes=prompt_changes,
         invocation_changes=[invocation],
@@ -681,6 +693,14 @@ def _table_text(text: str, limit: int = 100) -> str:
     if len(flattened) > limit:
         flattened = flattened[: limit - 1] + "…"
     return flattened.replace("|", "\\|").replace("[", "\\[").replace("]", "\\]")
+
+
+def _code_cell(text: str) -> str:
+    """A table-safe code span that is never truncated (actions must stay exact).
+
+    Inside a code span only the pipe needs escaping; GFM tables unescape it.
+    """
+    return " ".join(text.split()).replace("|", "\\|")
 
 
 def _difference_type(difference: ModelDifference) -> str:
@@ -780,13 +800,12 @@ def _decision_lines(plan: MigrationPlan) -> list[str]:
     return lines
 
 
-_CANDIDATE_MARKER = " contains prompt-like keys but nothing references it"
-
-
 def unreferenced_prompt_candidates(plan: MigrationPlan) -> list[str]:
-    """Candidate prompt files the plan reports as unreferenced unknowns."""
+    """Candidate prompt files the plan reports as open unreferenced unknowns."""
     return sorted(
-        item.split(_CANDIDATE_MARKER, 1)[0] for item in plan.unknowns if _CANDIDATE_MARKER in item
+        str((item.data or {}).get("path"))
+        for item in open_unknowns(plan.unknowns)
+        if item.kind is UnknownKind.PROMPT_CANDIDATE
     )
 
 
@@ -795,75 +814,84 @@ def apply_prompt_discovery_dismissals(
     dismissed: Mapping[str, str],
     dismissed_consumers: Sequence[str] = (),
 ) -> MigrationPlan:
-    """Move user-dismissed candidates and consumers out of the unknowns.
+    """Close user-dismissed candidates and consumers, keeping them visible.
 
     A dismissed candidate prompt file (recorded with the user's rationale in
-    `migration.yaml`) leaves the unknowns and is listed out of scope with
-    that rationale — replacing any heuristic out-of-scope line for the same
-    file, since the user's recorded reason is the stronger evidence.
-    Dismissed consumers the scan applied are listed the same way. Nothing is
-    dropped silently: every dismissal stays visible.
+    `migration.yaml`) is closed by action and listed out of scope with that
+    rationale — replacing any heuristic out-of-scope line for the same file,
+    since the user's recorded reason is the stronger evidence. Dismissed
+    consumers the scan applied carry the rationale in their closed reason and
+    are listed the same way. Nothing is dropped silently.
     """
     if not dismissed:
         return plan
-    unknowns: list[str] = []
-    out_of_scope: list[str] = []
 
     def dismissal(path: str) -> str:
         return f"{path}: dismissed by the user as not a live prompt — {dismissed[path]}"
 
+    out_of_scope: list[str] = []
     for item in plan.out_of_scope:
         scoped = item.split(": ", 1)[0]
         out_of_scope.append(dismissal(scoped) if scoped in dismissed else item)
-    for item in plan.unknowns:
-        candidate = item.split(_CANDIDATE_MARKER, 1)[0] if _CANDIDATE_MARKER in item else None
-        if candidate is not None and candidate in dismissed:
-            out_of_scope.append(dismissal(candidate))
+    reasons: dict[str, str] = {}
+    for unknown in plan.unknowns:
+        target = str((unknown.data or {}).get("path") or (unknown.data or {}).get("location"))
+        if target not in dismissed:
             continue
-        unknowns.append(item)
+        if unknown.kind is UnknownKind.PROMPT_CANDIDATE and unknown.is_open:
+            reasons[unknown.id] = f"dismissed by the user as not a live prompt: {dismissed[target]}"
+            out_of_scope.append(dismissal(target))
+        elif unknown.kind is UnknownKind.DYNAMIC_PROMPT_CONSUMER and target in dismissed_consumers:
+            reasons[unknown.id] = (
+                f"dismissed by the user as runtime-built content: {dismissed[target]}"
+            )
     out_of_scope.extend(
         f"{location}: prompt consumer dismissed by the user as runtime-built content — "
         f"{dismissed[location]}"
         for location in dismissed_consumers
         if location in dismissed
     )
-    return plan.model_copy(update={"unknowns": unknowns, "out_of_scope": sorted(set(out_of_scope))})
-
-
-def unknown_action(unknown: str) -> str:
-    """The concrete next action for one unresolved unknown."""
-    if _CANDIDATE_MARKER in unknown:
-        path = unknown.split(_CANDIDATE_MARKER, 1)[0]
-        return (
-            f"If `{path}` is a live prompt, include it on the live run with "
-            f'add_prompt_sources(run_dir, ["{path}"]); otherwise dismiss it with '
-            f'add_prompt_sources(run_dir, [], dismiss=["{path}"], rationale="...").'
-        )
-    if "prompt consumer(s) supply dynamically built content" in unknown:
-        return (
-            "Review each dynamic consumer (get_run_status lists them): "
-            "confirm_prompt_consumer(run_dir, location, source_path) when it reads a "
-            "static prompt file, or dismiss it with a rationale when the content is "
-            "genuinely runtime-built."
-        )
-    if unknown.startswith("One or both values for "):
-        field = unknown.split("'")[1] if "'" in unknown else "this capability"
-        return (
-            f"Verify `{field}` on the target before deployment (a BYOK evaluation, or "
-            "bounded research for the missing registry fact)."
-        )
-    return "Review manually before deployment."
-
-
-def _unknowns_table(unknowns: list[str]) -> list[str]:
-    lines = ["", "## Unresolved unknowns", ""]
-    if not unknowns:
-        return [*lines, "- None."]
-    lines.extend(("| Unknown | Action |", "|---|---|"))
-    lines.extend(
-        f"| {_table_text(item, limit=240)} | {_table_text(unknown_action(item), limit=240)} |"
-        for item in unknowns
+    unknowns = [
+        item.model_copy(update={"closed_reason": reasons[item.id]})
+        if item.id in reasons and item.status == "closed_by_action"
+        else item
+        for item in plan.unknowns
+    ]
+    return plan.model_copy(
+        update={
+            "unknowns": close_by_action(unknowns, reasons),
+            "out_of_scope": sorted(set(out_of_scope)),
+        }
     )
+
+
+def _unknowns_table(unknowns: list[MigrationUnknown]) -> list[str]:
+    lines = ["", "## Unresolved unknowns", ""]
+    still_open = open_unknowns(unknowns)
+    if not still_open:
+        lines.append("- None.")
+    else:
+        lines.extend(
+            (
+                "| Unknown | Why it matters | Action | Closes when |",
+                "|---|---|---|---|",
+            )
+        )
+        lines.extend(
+            f"| {_table_text(item.subject, limit=160)} (`{item.id}`) "
+            f"| {_table_text(item.why_it_matters, limit=2000)} "
+            f"| `{_code_cell(item.action)}` "
+            f"| {_table_text(item.closing_condition, limit=2000)} |"
+            for item in still_open
+        )
+    closed = [item for item in unknowns if not item.is_open]
+    if closed:
+        lines.extend(("", "## Closed unknowns", ""))
+        lines.extend(
+            f"- [{item.status.replace('_', ' ')}] {item.subject} (`{item.id}`): "
+            f"{item.closed_reason}"
+            for item in closed
+        )
     return lines
 
 
@@ -889,7 +917,7 @@ def generate_migration_report(plan: MigrationPlan) -> str:
         f"- Behavioral risk: **{plan.overall_migration_risk.value}**",
         f"- Affected files: {len(plan.affected_files)}",
         f"- Unresolved blockers: {len(plan.blockers)}; warnings: {len(plan.warnings)}; "
-        f"unknowns: {len(plan.unknowns)}",
+        f"unknowns: {len(open_unknowns(plan.unknowns))} open",
         *(
             [
                 f"- Blocker decisions: {applied_decisions} applied "

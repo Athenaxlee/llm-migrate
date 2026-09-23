@@ -1085,7 +1085,28 @@ validate_research_artifact     (research validate-artifact; v1.4.1)
 add_prompt_sources             (run add-prompt-source; live-run sources and
                                 dismissals, v1.6.0-a)
 confirm_prompt_consumer        (run confirm-consumer; v1.6.0-a)
+record_observation             (run record-observation; run-scoped, v1.6.0-b)
 ```
+
+V1.6.0-b types the plan's unknowns (`MigrationPlan` schema 5):
+`MigrationUnknown` (`core/unknowns.py` emitters) carries a stable id, the
+subject, why it matters for this application's detected usage, the exact next
+action (a Python-call rendering of an MCP tool call, or a CLI command), and
+the closing condition, plus `status` (`open` / `closed_by_scan` /
+`closed_by_action`) with its reason; `message` keeps the pre-v5 one-line
+text. Actions address the run through a `<run_dir>` placeholder that the
+guided run substitutes. Scan-answered unknowns are kept `closed_by_scan`;
+recorded dismissals, consumer confirmations, and observations close them by
+action. Registry `evidence_conflicts` scoped to the run's target platform
+become contested-evidence unknowns; when the contested setting and target
+call are known (`core/probes.py`, the only place those request shapes live),
+the run emits a BYOK probe script under `output/probes/` — same contract as
+the contract test: generated deterministically, never executed by the
+toolkit. `record_observation` stores the user's result in the run-scoped
+`observations.yaml` (`core/observations.py`), part of the snapshot staleness
+key; observations close unknowns and render in the report, never mutate
+`registry/`, and reach canonical knowledge only through
+`propose_registry_update`.
 
 V1.5.2 adds a whole-application source-reference sweep to the consistency
 gate (`source_reference_uncovered`: any scanned application file naming the
@@ -1100,7 +1121,7 @@ manifest hash) and are re-checked at finalize, and registry guidance tagged
 `applies_when` is pre-disposed not applicable when the application never
 exhibits its trigger under resolved coverage.
 
-`LLM_MIGRATE_TOOLSET=guided` exposes only the 21 guided-workflow MCP tools
+`LLM_MIGRATE_TOOLSET=guided` exposes only the 22 guided-workflow MCP tools
 for hosts with tight inline-tool budgets; the full surface stays the default.
 
 ---

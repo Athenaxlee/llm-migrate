@@ -146,12 +146,22 @@ from llm_migrate.core.models import (
     RecommendationResult,
     ResolutionKind,
     ResolvedModel,
+    UnknownKind,
     ValidationIssue,
     ValidationLevel,
     migration_blocker,
     migration_complexity,
 )
 from llm_migrate.core.moments import utc_moment
+from llm_migrate.core.observations import (
+    ObservationResult,
+    RunObservation,
+    load_observations,
+    observation_reasons,
+    render_observations_section,
+    save_observations,
+    upsert_observation,
+)
 from llm_migrate.core.orchestration import (
     AgentRunner,
     WorkflowOutcome,
@@ -165,6 +175,7 @@ from llm_migrate.core.planning import (
     out_of_scope_paths,
     unreferenced_prompt_candidates,
 )
+from llm_migrate.core.probes import render_probe
 from llm_migrate.core.prompt_documents import (
     PromptDocumentError,
     extract_prompt_components,
@@ -198,6 +209,7 @@ from llm_migrate.core.snapshot import (
     snapshot_key,
     worklist_requested,
 )
+from llm_migrate.core.unknowns import close_by_action, with_run_dir
 from llm_migrate.core.validation_deliverable import (
     CONTRACT_TEST_RELATIVE_PATH,
     render_contract_test,
@@ -231,6 +243,7 @@ from llm_migrate.core.workspace import (
     derive_adaptation_tasks,
     dismissed_discovery_targets,
     dynamic_prompt_consumers,
+    effective_target_id,
     entry_is_unchanged,
     is_consumer_address,
     load_adaptation_log,
@@ -279,6 +292,26 @@ def _coerced_models(
         except ValidationError as exc:
             raise ValueError(f"invalid {label} {item!r}: {exc}") from exc
     return coerced
+
+
+def _write_probes(workspace: Path, config: MigrationRunConfig, plan: MigrationPlan) -> list[str]:
+    """Write the BYOK probe deliverable of every testable contested unknown."""
+    spec = plan.invocation_changes[0] if plan.invocation_changes else None
+    written: list[str] = []
+    for unknown in plan.unknowns:
+        relative = (unknown.data or {}).get("probe_path")
+        if spec is None or unknown.kind is not UnknownKind.CONTESTED_EVIDENCE or not relative:
+            continue
+        content = render_probe(
+            spec,
+            unknown,
+            model_id=effective_target_id(config),
+            run_dir=str(workspace.resolve()),
+        )
+        if content is not None:
+            atomic_write_text(workspace / str(relative), content)
+            written.append(str(relative))
+    return sorted(written)
 
 
 def _discovery_action(run_dir: str, tasks: AdaptationTaskList, *, strict: bool) -> str:
@@ -354,6 +387,12 @@ def _action_required_lines(
                 else "some prompt consumers have no static source; confirm each with "
                 "confirm_prompt_consumer or dismiss it with the user's rationale."
             )
+        )
+    still_open = [item for item in plan.unknowns if item.is_open]
+    if still_open:
+        lines.append(
+            f"**{len(still_open)} open unknown(s)** — each lists why it matters, its exact "
+            "action, and what closes it under Unresolved unknowns."
         )
     if gaps:
         lines.append(f"**{len(gaps)} affected file(s) lack a deliverable:** " + ", ".join(gaps))
@@ -1835,6 +1874,14 @@ class MigrationService:
                 if (item.metadata or {}).get("dismissed")
             ],
         )
+        observed = observation_reasons(load_observations(run_dir, config.run_id))
+        plan = plan.model_copy(
+            update={
+                "unknowns": with_run_dir(
+                    close_by_action(plan.unknowns, observed), str(Path(run_dir).resolve())
+                )
+            }
+        )
         plan = self._with_invocation_identity(plan, config, service)
         return apply_decisions(plan, load_decision_log(run_dir, config.run_id), config)
 
@@ -1993,7 +2040,11 @@ class MigrationService:
         key = snapshot_key(workspace, config, self._registry_digest())
         snapshot = load_snapshot(workspace, config.run_id)
         log = load_adaptation_log(workspace, config.run_id)
-        if snapshot is not None and snapshot.key == key:
+        if (
+            snapshot is not None
+            and snapshot.key == key
+            and all((workspace / item).is_file() for item in snapshot.probe_paths)
+        ):
             return (
                 refresh_task_statuses(snapshot.tasks, log),
                 set(snapshot.evidence_urls),
@@ -2024,6 +2075,7 @@ class MigrationService:
                 tasks=base_tasks,
                 evidence_urls=sorted(evidence),
                 registry_evidence_urls=sorted(registry_evidence),
+                probe_paths=_write_probes(workspace, config, plan),
             ),
         )
         return refresh_task_statuses(base_tasks, log), evidence, False
@@ -2791,6 +2843,12 @@ class MigrationService:
                 else "Validation is recorded; call finalize_migration(run_dir) to "
                 "write the final deliverables."
             )
+        if state in {"tasks_pending", "review_pending", "ready_to_finalize"} and tasks.unknowns:
+            next_action += (
+                f" {len(tasks.unknowns)} open unknown(s) each carry their exact next action "
+                "(list_adaptation_tasks `unknowns`); ask the user before acting on one, and "
+                "record empirical results with record_observation."
+            )
         if state in {"tasks_pending", "review_pending", "ready_to_finalize"} and (
             tasks.prompt_coverage != "resolved"
         ):
@@ -2821,7 +2879,75 @@ class MigrationService:
             prompt_coverage=tasks.prompt_coverage,
             prompt_candidates=tasks.prompt_candidates,
             dynamic_prompt_consumers=len(tasks.dynamic_prompt_consumers),
+            open_unknowns=len(tasks.unknowns),
             snapshot_reused=reused,
+        )
+
+    def record_observation(
+        self,
+        run_dir: Path | str,
+        subject: str,
+        outcome: str,
+        evidence: str,
+        *,
+        now: datetime | None = None,
+    ) -> ObservationResult:
+        """Record the target's observed behavior for one plan unknown.
+
+        `subject` is the unknown's id (from the report, the worklist
+        `unknowns`, or a probe script's docstring). The observation is
+        RUN-SCOPED: it closes that unknown in this run's plan and renders in
+        the report; it never touches the registry. A later observation for
+        the same unknown replaces the earlier one.
+        """
+        workspace = Path(run_dir)
+        config = load_run_config(workspace)
+        plan = self._plan_for_run(config, workspace, now=now)
+        by_id = {item.id: item for item in plan.unknowns}
+        problems: list[str] = []
+        unknown = by_id.get(subject.strip())
+        if unknown is None:
+            problems.append(
+                f"{subject!r} is not the id of an unknown in this run's plan (ids look "
+                "like 'contested_evidence:0123456789')"
+            )
+        elif unknown.status == "closed_by_scan":
+            problems.append(
+                f"{subject!r} was already answered by the scan: {unknown.closed_reason}"
+            )
+        if not outcome.strip():
+            problems.append("an observation needs the observed outcome")
+        if not evidence.strip():
+            problems.append("an observation needs its evidence (printed result, request id, URL)")
+        if problems or unknown is None:
+            return ObservationResult(
+                run_id=config.run_id,
+                accepted=False,
+                problems=problems,
+                open_unknowns=sum(item.is_open for item in plan.unknowns),
+                message="Rejected: nothing was recorded. " + "; ".join(problems),
+            )
+        observation = RunObservation(
+            unknown_id=unknown.id,
+            subject=unknown.subject,
+            outcome=outcome.strip(),
+            evidence=evidence.strip(),
+            recorded_on=(now or datetime.now(UTC)).date(),
+        )
+        with run_state_lock(workspace):
+            log = upsert_observation(load_observations(workspace, config.run_id), observation)
+            save_observations(workspace, log)
+        remaining = sum(item.is_open and item.id != unknown.id for item in plan.unknowns)
+        return ObservationResult(
+            run_id=config.run_id,
+            accepted=True,
+            observation=observation,
+            open_unknowns=remaining,
+            message=(
+                f"Observation recorded for {unknown.subject} [{unknown.id}] (run-scoped; the "
+                "registry is unchanged — promoting it is a separate propose_registry_update). "
+                f"{remaining} unknown(s) remain open."
+            ),
         )
 
     def add_prompt_sources(
@@ -3364,6 +3490,8 @@ class MigrationService:
                 contract_target = workspace / CONTRACT_TEST_RELATIVE_PATH
                 atomic_write_text(contract_target, contract_test)
                 contract_test_path = str(contract_target)
+        probe_paths = _write_probes(workspace, config, plan)
+        observations = load_observations(workspace, config.run_id)
         undecided_changes: list[str] = []
         for entry in log.entries:
             if entry_is_unchanged(entry) or not entry.annotated_changes:
@@ -3401,6 +3529,7 @@ class MigrationService:
                 validation_disposition, contract_test_path, validation_problem
             )
             + "\n"
+            + render_observations_section(observations)
         )
         atomic_write_text(paths.report_path, report)
         adapted_prompts = sum(
@@ -3472,6 +3601,18 @@ class MigrationService:
             ),
             strict_violations=strict_violations,
             contract_test_path=contract_test_path,
+            unknowns_open=[item.rendered for item in plan.unknowns if item.is_open],
+            unknowns_closed_by_action=[
+                f"{item.subject} [{item.id}]: {item.closed_reason}"
+                for item in plan.unknowns
+                if item.status == "closed_by_action"
+            ],
+            unknowns_closed_by_scan=[
+                f"{item.subject} [{item.id}]: {item.closed_reason}"
+                for item in plan.unknowns
+                if item.status == "closed_by_scan"
+            ],
+            probe_paths=[str(workspace / item) for item in probe_paths],
             message=(
                 (
                     f"STRICT MODE: {len(strict_violations)} unmet requirement(s) — this "
@@ -3510,5 +3651,11 @@ class MigrationService:
                     else ""
                 )
                 + blocker_note
+                + (
+                    f" {sum(item.is_open for item in plan.unknowns)} unknown(s) remain open "
+                    "(each with its action in the report)."
+                    if any(item.is_open for item in plan.unknowns)
+                    else ""
+                )
             ),
         )

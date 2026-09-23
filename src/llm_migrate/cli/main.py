@@ -1533,6 +1533,27 @@ def run_confirm_consumer(
         raise typer.Exit(1)
 
 
+@run_app.command("record-observation")
+def run_record_observation(
+    run_dir: Path,
+    subject: Annotated[str, typer.Argument(metavar="UNKNOWN_ID")],
+    outcome: Annotated[str, typer.Option("--outcome", help="What the target actually did.")],
+    evidence: Annotated[
+        str, typer.Option("--evidence", help="Printed result, request id, or URL.")
+    ],
+    registry: Annotated[Path | None, typer.Option(help="Registry root.")] = None,
+) -> None:
+    """Record a run-scoped observation that closes one plan unknown."""
+    try:
+        result = _service(registry).record_observation(run_dir, subject, outcome, evidence)
+    except (RegistryError, ValueError) as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(2) from exc
+    _emit(result)
+    if not result.accepted:
+        raise typer.Exit(1)
+
+
 @run_app.command("finalize")
 def run_finalize(
     run_dir: Path,
