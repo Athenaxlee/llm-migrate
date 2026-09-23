@@ -1086,7 +1086,31 @@ add_prompt_sources             (run add-prompt-source; live-run sources and
                                 dismissals, v1.6.0-a)
 confirm_prompt_consumer        (run confirm-consumer; v1.6.0-a)
 record_observation             (run record-observation; run-scoped, v1.6.0-b)
+scaffold_evaluation            (run scaffold-eval; DRAFT plan-bound suite, v1.6.0-c)
 ```
+
+V1.6.0-c gives review and validation teeth. The consistency gate gains a
+unit-aware registry-contradiction check (`core/pricing_gate.py`): every
+adapted value a PRICING coupling marks, in a profile that governs this
+migration, is read as `Decimal` in the unit its key names (or each standard
+scale: per token / 1K / 1M) and classified consistent, `stale` (equals the
+source's price), a `contradiction` within 0.5x-2x of the target price
+(reporting the implied factor), or `unit_unrecognized`; a contradiction
+clears only when the change that set the value cites registry-recorded or
+plan-carried evidence, and an expired registry price says so. Change review
+marks a change CONTESTED when it exercises the setting of an open
+contested-evidence unknown or names its field (citing a conflict's source
+document alone does not), until an observation closes the unknown; the
+worklist snapshot carries the contested facts, and finalize lists contested
+changes under "Action required". After the first finalize, run status is
+`validation_pending` until a validation disposition is recorded, and
+`scaffold_evaluation` (`core/eval_scaffold.py`) drafts DRAFT cases from the
+application's own sample-input folders and a suite bound to the current plan
+hash. Pair knowledge gains the `prompt_guidance` topic
+(`MigrationKnowledgeItem`, field paths `prompt_guidance.*`, advice required,
+optional `applies_when` carried onto `ModelDifference` and into guidance
+applicability, which gains a `sampling` trigger); its content lands through
+pair proposal bundles under `.registry-proposals/migrations/`.
 
 V1.6.0-b types the plan's unknowns (`MigrationPlan` schema 5):
 `MigrationUnknown` (`core/unknowns.py` emitters) carries a stable id, the
@@ -1121,7 +1145,7 @@ manifest hash) and are re-checked at finalize, and registry guidance tagged
 `applies_when` is pre-disposed not applicable when the application never
 exhibits its trigger under resolved coverage.
 
-`LLM_MIGRATE_TOOLSET=guided` exposes only the 22 guided-workflow MCP tools
+`LLM_MIGRATE_TOOLSET=guided` exposes only the 23 guided-workflow MCP tools
 for hosts with tight inline-tool budgets; the full surface stays the default.
 
 ---

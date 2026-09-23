@@ -141,7 +141,14 @@ def test_config_file_gets_a_task_and_sdk_only_file_is_unaffected(
         "Model difference" in item.text and "temperature" in item.text
         for item in config_task.required_changes
     )
-    assert not any("temperature" in item.text for item in tasks.shared_prompt_guidance)
+    # The parameter FACT travels to the governed file; only reviewed
+    # prompt_guidance knowledge (v1.6.0-c) may mention sampling in prompt tasks.
+    assert not any(
+        "temperature" in item.text
+        and "prompt_guidance" not in item.text
+        and "system prompt" not in item.text
+        for item in tasks.shared_prompt_guidance
+    )
 
 
 def test_confirm_unaffected_records_reviewed_entries_per_file(

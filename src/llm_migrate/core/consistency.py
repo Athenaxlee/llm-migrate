@@ -15,13 +15,20 @@ turns them into blockers.
 from __future__ import annotations
 
 import hashlib
+from datetime import date
 from pathlib import Path
 from typing import Literal
 
 from pydantic import Field
 
 from llm_migrate.core.invocation_identity import references_bare_alone
-from llm_migrate.core.models import ApplicationAnalysis, CouplingKind, StrictModel
+from llm_migrate.core.models import ApplicationAnalysis, CouplingKind, ModelPricing, StrictModel
+from llm_migrate.core.pricing_gate import classify_price
+from llm_migrate.core.prompt_documents import (
+    PromptDocumentError,
+    parse_structured_document,
+    source_format,
+)
 from llm_migrate.core.workspace import (
     AdaptationEntry,
     AdaptationLog,
@@ -29,6 +36,7 @@ from llm_migrate.core.workspace import (
     effective_target_id,
     entry_is_unchanged,
     source_detection_spellings,
+    source_reference_spellings,
     target_reference_spellings,
     target_spellings,
 )
@@ -41,6 +49,9 @@ ConsistencyCode = Literal[
     "target_reference_missing",
     "dropped_coupling_undisposed",
     "source_reference_uncovered",
+    "pricing_contradicts_registry",
+    "pricing_stale_source",
+    "pricing_unit_unrecognized",
 ]
 
 
@@ -303,6 +314,128 @@ def check_cross_surface_consistency(
     return findings
 
 
+_PRICING_CODES = {
+    "contradiction": "pricing_contradicts_registry",
+    "stale": "pricing_stale_source",
+    "unit_unrecognized": "pricing_unit_unrecognized",
+}
+
+
+def _lookup(data: object, key_path: tuple[str, ...]) -> object:
+    node = data
+    for key in key_path:
+        if not isinstance(node, dict) or key not in node:
+            return None
+        node = node[key]
+    return node
+
+
+def _profile_model(data: object, key_path: tuple[str, ...]) -> str | None:
+    """Model id declared by the nearest enclosing mapping of a value, if any."""
+    for depth in range(len(key_path) - 1, -1, -1):
+        node = _lookup(data, key_path[:depth])
+        if not isinstance(node, dict):
+            continue
+        for key, value in node.items():
+            lowered = str(key).casefold()
+            if isinstance(value, str) and (
+                lowered in {"model", "model_id", "modelid", "model_name"}
+                or lowered.endswith(("_model", "_model_id"))
+            ):
+                return value
+    return None
+
+
+def check_adapted_pricing(
+    run_dir: Path,
+    config: MigrationRunConfig,
+    analysis: ApplicationAnalysis,
+    log: AdaptationLog,
+    *,
+    target_pricing: ModelPricing | None,
+    source_pricing: ModelPricing | None,
+    known_evidence: set[str],
+    as_of: date,
+) -> list[ConsistencyFinding]:
+    """Unit-aware registry check of every adapted value a PRICING coupling marks.
+
+    Only configuration files with a deliverable are checked (their effective
+    content; a reviewed-unchanged file keeps its original), and only values
+    whose enclosing profile governs this migration. A contradiction clears
+    when an annotated change touching the value cites registry-recorded or
+    plan-carried evidence for the departure (`known_evidence`).
+    """
+    if target_pricing is None:
+        return []
+    governed = [*source_reference_spellings(config), *target_reference_spellings(config)]
+    couplings: dict[str, list[tuple[str, ...]]] = {}
+    for finding in analysis.findings:
+        metadata = finding.metadata or {}
+        if metadata.get("value_kind") != "pricing" or not isinstance(metadata.get("config"), str):
+            continue
+        key_path = tuple(str(metadata.get("key_path", "")).split("."))
+        couplings.setdefault(str(metadata["config"]), []).append(key_path)
+    entries = {entry.source_path: entry for entry in log.entries if entry.kind == "file"}
+    findings: list[ConsistencyFinding] = []
+    for config_path, key_paths in sorted(couplings.items()):
+        entry = entries.get(config_path)
+        format = source_format(config_path)
+        if entry is None or format is None:
+            continue
+        content = (
+            _original_content(config, entry)
+            if entry_is_unchanged(entry)
+            else _effective_content(run_dir, entry)
+        )
+        original = _original_content(config, entry)
+        if content is None:
+            continue
+        try:
+            data = parse_structured_document(content, format)
+            original_data = (
+                parse_structured_document(original, format) if original is not None else data
+            )
+        except PromptDocumentError:
+            continue
+        for key_path in sorted(set(key_paths)):
+            profile = _profile_model(original_data, key_path)
+            if profile is not None and not any(
+                spelling in profile or profile in spelling for spelling in governed
+            ):
+                continue  # another model's profile: not this migration's pricing
+            check = classify_price(
+                key_path,
+                _lookup(data, key_path),
+                target=target_pricing,
+                source=source_pricing,
+                as_of=as_of,
+            )
+            if check is None or check.verdict == "consistent":
+                continue
+            if check.verdict == "contradiction" and _departure_documented(
+                entry, key_path[-1], known_evidence
+            ):
+                continue
+            findings.append(
+                ConsistencyFinding(
+                    code=_PRICING_CODES[check.verdict],  # type: ignore[arg-type]
+                    path=config_path,
+                    message=check.message,
+                )
+            )
+    return findings
+
+
+def _departure_documented(entry: AdaptationEntry, key: str, known_evidence: set[str]) -> bool:
+    """Whether a change touching `key` cites registry-recorded or plan-carried evidence."""
+    for change in entry.annotated_changes:
+        if key not in (change.adapted_anchor or "") and key not in (change.original_anchor or ""):
+            continue
+        if any(item.url and item.url in known_evidence for item in change.evidence):
+            return True
+    return False
+
+
 class ConsistencyReport(StrictModel):
     """Rendered gate outcome carried on the finalization result."""
 
@@ -325,7 +458,9 @@ def render_consistency_section(findings: list[ConsistencyFinding]) -> str:
         "coupling dropped without an explicit disposition, and no scanned "
         "application file still naming the source model without being accounted "
         "for. Coupling checks cover the kinds the scanner recognizes; the "
-        "source-reference sweep covers every scanned file.",
+        "source-reference sweep covers every scanned file; adapted pricing values "
+        "are compared unit-aware (per token / 1K / 1M) against the registry's "
+        "target and source prices.",
         "",
     ]
     if findings:

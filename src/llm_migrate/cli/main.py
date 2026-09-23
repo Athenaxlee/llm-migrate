@@ -1533,6 +1533,19 @@ def run_confirm_consumer(
         raise typer.Exit(1)
 
 
+@run_app.command("scaffold-eval")
+def run_scaffold_eval(
+    run_dir: Path,
+    registry: Annotated[Path | None, typer.Option(help="Registry root.")] = None,
+) -> None:
+    """Draft a plan-bound evaluation suite from the application's sample inputs."""
+    try:
+        _emit(_service(registry).scaffold_evaluation(run_dir))
+    except (RegistryError, ValueError) as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(2) from exc
+
+
 @run_app.command("record-observation")
 def run_record_observation(
     run_dir: Path,

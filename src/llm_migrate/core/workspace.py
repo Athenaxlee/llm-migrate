@@ -636,6 +636,7 @@ class RunStatus(StrictModel):
         "tasks_pending",
         "review_pending",
         "ready_to_finalize",
+        "validation_pending",
     ]
     next_action: str
     unresolved_blockers: int = 0
@@ -704,6 +705,8 @@ class MigrationRunFinalization(StrictModel):
     unknowns_closed_by_action: list[str] = Field(default_factory=list)
     unknowns_closed_by_scan: list[str] = Field(default_factory=list)
     probe_paths: list[str] = Field(default_factory=list)
+    # Changes depending on an open CONTESTED registry fact (additive, v1.6.0-c).
+    contested_changes: list[str] = Field(default_factory=list)
     message: str
 
 
@@ -863,7 +866,9 @@ _TRIGGER_LABELS = {
     "structured_output": "structured output or JSON formatting",
     "tool_use": "tool use",
     "reasoning": "reasoning or thinking configuration",
+    "sampling": "sampling parameter (temperature, top_p, top_k)",
 }
+_SAMPLING_PARAMETER_NAMES = {"temperature", "top_p", "top_k"}
 
 
 def _application_triggers(plan: MigrationPlan) -> tuple[set[str], bool]:
@@ -886,6 +891,8 @@ def _application_triggers(plan: MigrationPlan) -> tuple[set[str], bool]:
             triggers.add("structured_output")
         if analysis.reasoning_controls or _REASONING_PARAMETER_NAMES & set(analysis.parameters):
             triggers.add("reasoning")
+        if _SAMPLING_PARAMETER_NAMES & set(analysis.parameters):
+            triggers.add("sampling")
         for assessment in (
             analysis.tool_compatibility,
             analysis.structured_output_compatibility,
@@ -950,15 +957,25 @@ def derive_adaptation_tasks(
     # worklist as required changes on the files they govern (attached by the
     # plan); only prompt-governing differences travel as prompt guidance.
     difference_guidance = [
-        invocation_qualified(
-            f"Model difference ({item.severity.value}): {item.migration_impact}"
-            + (f" Action: {item.recommended_action}" if item.recommended_action else "")
-            + (f" (evidence: {item.target_evidence_url})" if item.target_evidence_url else "")
+        (
+            invocation_qualified(
+                f"Model difference ({item.severity.value}): {item.migration_impact}"
+                + (f" Action: {item.recommended_action}" if item.recommended_action else "")
+                + (f" (evidence: {item.target_evidence_url})" if item.target_evidence_url else "")
+            ),
+            item.applies_when,
         )
         for item in plan.model_differences.differences
         if item.severity is not ComparisonSeverity.INFO and difference_governs_prompts(item)
     ]
     application_triggers, triggers_certain = _application_triggers(plan)
+    # Config-level sampling values (a prompt document's `temperature`) also
+    # exercise sampling: the plan attaches their locations to the difference.
+    if any(
+        item.field in _SAMPLING_PARAMETER_NAMES and item.locations
+        for item in plan.model_differences.differences
+    ):
+        application_triggers = {*application_triggers, "sampling"}
 
     def _applicability(
         item: GuidanceItem, trigger: str | None, prompt_triggers: set[str]
@@ -1117,7 +1134,9 @@ def derive_adaptation_tasks(
     ]
     # Hoist guidance shared by every prompt task into one shared list, so the
     # task payload the host agent reads does not repeat it per task.
-    shared_prompt_guidance = [guidance_item(line) for line in difference_guidance]
+    shared_prompt_guidance = [
+        _applicability(guidance_item(line), trigger, set()) for line, trigger in difference_guidance
+    ]
     if len(prompt_tasks) > 1:
         shared = [
             line

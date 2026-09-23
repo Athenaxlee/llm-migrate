@@ -1,0 +1,72 @@
+schema_version: '1'
+subject: claude-sonnet-4-6-to-5
+research_date: 2026-09-23
+claims:
+- id: sonnet-5-sampling-prompt-replacement
+  field_path: prompt_guidance.sampling_instructions
+  statement: Sonnet 5 returns a 400 error for non-default temperature, top_p, or top_k; the official
+    guidance is to remove them and use system-prompt instructions to guide model behavior.
+  kind: fact
+  evidence_type: direct
+  confidence: authoritative
+  sources:
+  - anthropic-sonnet-5-whats-new-2026-09-23
+  - anthropic-sonnet-5-migration-guide-2026-09-23
+- id: sonnet-5-prompt-token-recount
+  field_path: prompt_guidance.token_counts
+  statement: The new Sonnet 5 tokenizer produces approximately 30 percent more tokens for the same
+    text; the official migration checklist says to re-run token counting against Sonnet 5 rather
+    than reusing counts measured against earlier models.
+  kind: fact
+  evidence_type: direct
+  confidence: authoritative
+  sources:
+  - anthropic-sonnet-5-whats-new-2026-09-23
+  - anthropic-sonnet-5-migration-guide-2026-09-23
+- id: sonnet-5-existing-pair-facts-reverified
+  field_path: changes
+  statement: The existing pair facts (manual thinking returns 400, non-default sampling returns 400,
+    adaptive thinking on by default, approximately 30 percent more tokens) are restated by both
+    official pages.
+  kind: fact
+  evidence_type: direct
+  confidence: authoritative
+  sources:
+  - anthropic-sonnet-5-whats-new-2026-09-23
+  - anthropic-sonnet-5-migration-guide-2026-09-23
+sources:
+- id: anthropic-sonnet-5-whats-new-2026-09-23
+  url: https://platform.claude.com/docs/en/about-claude/models/whats-new-sonnet-5
+  title: What's new in Claude Sonnet 5
+  source_type: official_documentation
+  authority_tier: 2
+  publisher: Anthropic
+  retrieved_at: 2026-09-23
+  supports:
+  - parameters.thinking
+  - parameters.sampling
+  - reasoning.default
+  - tokenizer
+  - prompt_guidance.sampling_instructions
+  - prompt_guidance.token_counts
+- id: anthropic-sonnet-5-migration-guide-2026-09-23
+  url: https://platform.claude.com/docs/en/models/sonnet-5/migration-guide
+  title: Migrating to Claude Sonnet 5
+  source_type: official_documentation
+  authority_tier: 2
+  publisher: Anthropic
+  retrieved_at: 2026-09-23
+  supports:
+  - parameters.thinking
+  - parameters.sampling
+  - reasoning.default
+  - tokenizer
+  - prompt_guidance.sampling_instructions
+  - prompt_guidance.token_counts
+observations: []
+conflicts: []
+unresolved_questions: []
+warnings:
+- Candidate prompt advice beyond the documented statements (for example deduplicating repeated
+  rules because of the tokenizer, or removing no-reasoning boilerplate because thinking is on by
+  default) was considered and NOT proposed; neither official page states it.

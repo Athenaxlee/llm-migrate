@@ -56,6 +56,7 @@ def test_all_service_operations_are_exposed_as_mcp_tools() -> None:
         "add_prompt_sources",
         "confirm_prompt_consumer",
         "record_observation",
+        "scaffold_evaluation",
         "submit_adaptations",
         "record_change_decisions",
         "get_run_status",

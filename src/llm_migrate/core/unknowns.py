@@ -26,14 +26,16 @@ from llm_migrate.core.models import (
     CompatibilityAssessment,
     CouplingKind,
     InvocationMigrationSpec,
+    MigrationPlan,
     MigrationUnknown,
     ModelDifference,
     PromptSource,
     ResolvedModel,
+    StrictModel,
     UnknownKind,
     unknown_id,
 )
-from llm_migrate.core.probes import probe_relative_path, probe_supported
+from llm_migrate.core.probes import contested_setting, probe_relative_path, probe_supported
 
 OBSERVATION_CLOSING = (
     "Closed when the target's actual behavior is recorded with record_observation "
@@ -389,3 +391,91 @@ def sort_unknowns(unknowns: Sequence[MigrationUnknown]) -> list[MigrationUnknown
     order = {kind: index for index, kind in enumerate(UnknownKind)}
     unique = {item.id: item for item in unknowns}
     return sorted(unique.values(), key=lambda item: (order[item.kind], item.subject, item.id))
+
+
+# -- contested facts in change review (V1.6.0-c) ------------------------------
+
+
+class ContestedFact(StrictModel):
+    """One contested registry fact a change may depend on, for review marks."""
+
+    unknown_id: str
+    field_path: str
+    statements: list[str]
+    evidence_urls: list[str]
+    parameter: str | None = None
+    setting_tokens: list[str]
+    open: bool
+    action: str
+    closed_reason: str | None = None
+
+
+def _setting_tokens(setting: Any) -> list[str]:
+    tokens: list[str] = []
+    if isinstance(setting, dict):
+        for key, value in setting.items():
+            tokens.append(str(key))
+            tokens.extend(_setting_tokens(value))
+    elif isinstance(setting, str):
+        tokens.append(setting)
+    return tokens
+
+
+def contested_facts(plan: MigrationPlan) -> list[ContestedFact]:
+    """Every contested-evidence unknown of a plan as a review-mark matcher."""
+    facts: list[ContestedFact] = []
+    for unknown in plan.unknowns:
+        if unknown.kind is not UnknownKind.CONTESTED_EVIDENCE:
+            continue
+        path = str((unknown.data or {}).get("field_path", ""))
+        facts.append(
+            ContestedFact(
+                unknown_id=unknown.id,
+                field_path=path,
+                statements=[str(item) for item in (unknown.data or {}).get("statements", [])],
+                evidence_urls=list(unknown.evidence_urls),
+                parameter=_field_parameter(path),
+                setting_tokens=_setting_tokens(contested_setting(path)),
+                open=unknown.is_open,
+                action=unknown.action,
+                closed_reason=unknown.closed_reason,
+            )
+        )
+    return facts
+
+
+def contested_marks(change: Any, facts: Sequence[ContestedFact]) -> list[str]:
+    """CONTESTED marks for one annotated change that depends on an open conflict.
+
+    A change depends on a contested fact when its adapted text exercises the
+    contested setting (every key and value of the probe setting appears, for
+    example `thinking` and `disabled`), or when its why/evidence names the
+    contested field path or parameter. Citing a conflict's source URL alone
+    is not enough: those documents back many uncontested facts. A recorded
+    observation closing the fact clears the mark.
+    """
+    marks: list[str] = []
+    adapted = str(getattr(change, "adapted_anchor", "") or "")
+    original = str(getattr(change, "original_anchor", "") or "")
+    cited = " ".join(
+        [str(getattr(change, "why", ""))]
+        + [str(getattr(item, "reference", "")) for item in getattr(change, "evidence", [])]
+    )
+    for fact in facts:
+        if not fact.open:
+            continue
+        exercises = (
+            bool(fact.setting_tokens)
+            and all(token in adapted for token in fact.setting_tokens)
+            and not all(token in original for token in fact.setting_tokens)
+        )
+        names = fact.field_path in cited or bool(fact.parameter and fact.parameter in cited)
+        if not (exercises or names):
+            continue
+        marks.append(
+            f"CONTESTED: depends on {fact.field_path} [{fact.unknown_id}], where reviewed "
+            f"sources disagree — {' / '.join(fact.statements)} (sources: "
+            f"{', '.join(fact.evidence_urls) or 'none recorded'}). Resolve empirically before "
+            f"accepting: {fact.action}, then record_observation for {fact.unknown_id}."
+        )
+    return marks

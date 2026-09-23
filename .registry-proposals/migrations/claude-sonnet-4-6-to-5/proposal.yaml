@@ -1,0 +1,63 @@
+schema_version: '1'
+migration: claude-sonnet-4-6-to-5
+proposal_date: 2026-09-23
+changes:
+- field_path: changes.prompt_guidance.sampling_instructions
+  change_type: add
+  current_value: null
+  proposed_value: 'prompt_guidance item (medium, applies_when: sampling): express the behavior removed
+    sampling settings controlled as system-prompt instructions'
+  confidence: authoritative
+  risk: low
+  supporting_sources:
+  - anthropic-sonnet-5-whats-new-2026-09-23
+  - anthropic-sonnet-5-migration-guide-2026-09-23
+  reason: Both official pages direct users to replace sampling parameters with system-prompt instructions;
+    carrying it as pair prompt guidance puts that advice on every prompt task of an application that
+    used sampling, and nowhere else.
+- field_path: changes.prompt_guidance.token_counts
+  change_type: add
+  current_value: null
+  proposed_value: 'prompt_guidance item (medium): recount prompt tokens against Sonnet 5 and revisit
+    prompt and max_tokens budgets sized close to their limits'
+  confidence: authoritative
+  risk: low
+  supporting_sources:
+  - anthropic-sonnet-5-whats-new-2026-09-23
+  - anthropic-sonnet-5-migration-guide-2026-09-23
+  reason: The migration checklist states the recount directly; the existing tokenizer fact reached file
+    tasks only, not the prompt tasks it most affects.
+- field_path: checked_at
+  change_type: update
+  current_value: 2026-08-08
+  proposed_value: 2026-09-23
+  confidence: authoritative
+  risk: low
+  supporting_sources:
+  - anthropic-sonnet-5-whats-new-2026-09-23
+  - anthropic-sonnet-5-migration-guide-2026-09-23
+  reason: Both pages were refetched and restate every existing pair fact unchanged.
+conflicts: []
+unknown_fields: []
+warnings:
+- Both refetched pages state Sonnet 5 pricing as $2/$10 per million tokens with no introductory expiry,
+  while the canonical claude-sonnet-5 profile records valid_until 2026-08-31 and an introductory note.
+  That is a model-profile fact outside this pair bundle; it needs its own profile proposal.
+candidate_errors: []
+review:
+  status: approved
+  reviewed_at: 2026-09-23
+  decisions:
+  - field_path: changes.prompt_guidance.sampling_instructions
+    decision: approved
+    disposition: promoted
+    rationale: Directly stated by both official pages; the applies_when trigger keeps it off applications
+      that never set sampling parameters.
+  - field_path: changes.prompt_guidance.token_counts
+    decision: approved
+    disposition: promoted
+    rationale: Directly stated by the official migration checklist.
+  - field_path: checked_at
+    decision: approved
+    disposition: promoted
+    rationale: The existing pair facts were reverified against the refetched pages.

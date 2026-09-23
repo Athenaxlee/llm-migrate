@@ -14,6 +14,7 @@ The toolkit never decides; it derives, records, and replays.
 from __future__ import annotations
 
 import hashlib
+from collections.abc import Sequence
 from datetime import date
 from difflib import unified_diff
 from pathlib import Path
@@ -35,6 +36,7 @@ from llm_migrate.core.prompt_documents import (
     parse_structured_document,
 )
 from llm_migrate.core.runstate import atomic_write_text, run_state_lock
+from llm_migrate.core.unknowns import ContestedFact, contested_marks
 from llm_migrate.core.workspace import (
     AdaptationEntry,
     ChangeDecision,
@@ -76,6 +78,9 @@ class ChangeReviewItem(StrictModel):
     # One verification state per `change.evidence` entry, in order (v1.5.2),
     # so the accept/reject decision sees what the submission gate saw.
     evidence_status: list[str] = Field(default_factory=list)
+    # CONTESTED marks (v1.6.0-c): the change depends on a registry fact whose
+    # reviewed sources disagree; resolve it empirically before accepting.
+    contested: list[str] = Field(default_factory=list)
 
 
 UNKNOWN_EVIDENCE_STATUS = "UNKNOWN — not among this run's plan or registry evidence"
@@ -248,6 +253,7 @@ def build_change_review(
     *,
     known_evidence_urls: set[str] | None = None,
     registry_evidence_urls: set[str] | None = None,
+    contested: Sequence[ContestedFact] = (),
 ) -> ChangeReviewSet:
     """Every deliverable's annotated changes paired with their decision state."""
     log = load_adaptation_log(run_dir, config.run_id)
@@ -288,6 +294,7 @@ def build_change_review(
                 evidence_status=evidence_status(
                     change, known_evidence_urls, registry_evidence_urls or set()
                 ),
+                contested=contested_marks(change, contested),
             )
             for change in entry.annotated_changes
         ]

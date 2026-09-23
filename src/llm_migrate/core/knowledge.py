@@ -108,11 +108,36 @@ class ResearchResult(StrictModel):
 
 
 class MigrationKnowledgeItem(StrictModel):
+    """One reviewed pair-specific migration fact or advice item.
+
+    Items whose `field_path` starts with `prompt_guidance.` are the
+    `prompt_guidance` topic (V1.6.0-c): pair-specific prompt advice that
+    travels to every prompt task as evidence-linked shared guidance. They
+    must carry the advice in `recommended_action`, and `applies_when` names
+    the application usage the advice is conditional on (guidance
+    applicability pre-disposes it not applicable when the scan shows that
+    usage is absent under resolved coverage).
+    """
+
     field_path: str
     statement: str
     severity: ComparisonSeverity
     recommended_action: str | None = None
     supporting_sources: list[str] = Field(min_length=1)
+    applies_when: Literal["sampling", "reasoning", "structured_output", "tool_use"] | None = None
+
+    @property
+    def topic(self) -> str:
+        return self.field_path.split(".", 1)[0]
+
+    @model_validator(mode="after")
+    def prompt_guidance_carries_advice(self) -> MigrationKnowledgeItem:
+        if self.topic == "prompt_guidance" and not (self.recommended_action or "").strip():
+            raise ValueError(
+                f"prompt_guidance item {self.field_path!r} must state its advice in "
+                "recommended_action"
+            )
+        return self
 
 
 class MigrationKnowledge(StrictModel):

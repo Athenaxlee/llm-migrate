@@ -47,7 +47,7 @@ def test_comparison_includes_evidence_backed_migration_knowledge(
 ) -> None:
     comparison = service.compare_models("sonnet 4.6", "sonnet 5")
     knowledge = [item for item in comparison.differences if item.category == "migration_knowledge"]
-    assert len(knowledge) == 4
+    assert len(knowledge) == 6  # four pair facts + two prompt_guidance items (v1.6.0-c)
     assert all(item.supporting_sources for item in knowledge)
     assert {item.knowledge_id for item in knowledge} == {"claude-sonnet-4-6-to-5"}
 

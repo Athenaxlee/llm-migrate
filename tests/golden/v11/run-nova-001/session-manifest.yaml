@@ -2,7 +2,7 @@ schema_version: '1'
 run_id: run-nova-001
 created_at: '2026-08-29T12:00:00Z'
 expires_at: '2026-09-05T12:00:00Z'
-base_registry_sha256: 6aaaca5cedc468701661ea864112d82b432fe1ea420ecca0d4ee8b9061db7d92
+base_registry_sha256: 26b2a515599901a48e90dd94ff85cc1fc6cb3d51a7108dd3cf0751940aae8e13
 request_sha256: f49126d024e22e984bfcb5a88d3221de305cb2208855e7d67ca6296878173bdb
 stage_hashes:
 - subject: claude-sonnet-5
@@ -25,7 +25,7 @@ candidate_profiles:
   sha256: 0fb02975c7bf29a84cc45c30e9ca278edd95401859b008184f0d1cc3a45b4a95
 migration_knowledge:
 - name: session-run-nova-001-migration
-  sha256: 6958833fc9919243bb840bc5bd40b2e06e909b438f95f5237c8f0b5c93eb96d8
+  sha256: 66c96a3669f348de416440927e25e28b17594dfccb10fc5ce94b3de74c472a2d
 shadowed_canonical:
 - claude-sonnet-5
 unresolved_conflicts: []

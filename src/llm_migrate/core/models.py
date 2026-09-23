@@ -490,6 +490,9 @@ class ModelDifference(StrictModel):
     locations: list[SourceLocation] = Field(default_factory=list)
     source_evidence_url: str | None = None
     target_evidence_url: str | None = None
+    # Usage a prompt-guidance knowledge item is conditional on (additive,
+    # v1.6.0-c); see MigrationKnowledgeItem.applies_when.
+    applies_when: Literal["sampling", "reasoning", "structured_output", "tool_use"] | None = None
 
 
 class ModelComparison(StrictModel):

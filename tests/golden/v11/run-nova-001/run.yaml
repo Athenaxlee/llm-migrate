@@ -76,7 +76,7 @@ stages:
   failure: null
 - name: session_registry
   status: completed
-  artifact_sha256: 22b8fe95a9829d8d2ac0d41dc3ed41d5233c01a68ff15bd5869e077f0873af94
+  artifact_sha256: e3313e1a19a8a88b535970988ca075a452b625341422a5cb1dffc74d50708d66
   agent_id: null
   attempts: 0
   input_tokens: 0

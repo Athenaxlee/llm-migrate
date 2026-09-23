@@ -73,9 +73,11 @@ from llm_migrate.core.change_review import (
 )
 from llm_migrate.core.comparison import compare_models
 from llm_migrate.core.consistency import (
+    check_adapted_pricing,
     check_cross_surface_consistency,
     render_consistency_section,
 )
+from llm_migrate.core.eval_scaffold import EvaluationScaffold, draft_cases
 from llm_migrate.core.evaluation import (
     CustomEvaluator,
     EvaluationExecutor,
@@ -135,6 +137,7 @@ from llm_migrate.core.models import (
     ModelMatchCandidate,
     ModelMatchResult,
     ModelMatchStatus,
+    ModelPricing,
     ModelProfile,
     PricingMatchStatus,
     PromptAnalysis,
@@ -209,7 +212,12 @@ from llm_migrate.core.snapshot import (
     snapshot_key,
     worklist_requested,
 )
-from llm_migrate.core.unknowns import close_by_action, with_run_dir
+from llm_migrate.core.unknowns import (
+    close_by_action,
+    contested_facts,
+    contested_marks,
+    with_run_dir,
+)
 from llm_migrate.core.validation_deliverable import (
     CONTRACT_TEST_RELATIVE_PATH,
     render_contract_test,
@@ -294,6 +302,16 @@ def _coerced_models(
     return coerced
 
 
+def _pricing_of(service: MigrationService, identity: ModelEndpointIdentity) -> ModelPricing | None:
+    """The reviewed registry pricing of one run model, or None when unresolvable."""
+    try:
+        return service.resolve_model(
+            identity.model, identity.platform, identity.endpoint
+        ).profile.pricing
+    except RegistryError:
+        return None
+
+
 def _write_probes(workspace: Path, config: MigrationRunConfig, plan: MigrationPlan) -> list[str]:
     """Write the BYOK probe deliverable of every testable contested unknown."""
     spec = plan.invocation_changes[0] if plan.invocation_changes else None
@@ -364,9 +382,16 @@ def _action_required_lines(
     consistency: list[str],
     validation_disposition: ValidationDisposition | None,
     validation_problem: str | None,
+    contested: Sequence[str] = (),
 ) -> list[str]:
     """What a human must still decide or do, in the order the workflow needs it."""
     lines: list[str] = []
+    if contested:
+        lines.append(
+            f"**{len(contested)} change(s) depend on a CONTESTED registry fact** — resolve "
+            "each empirically (run the probe, record_observation) before accepting: "
+            + "; ".join(contested)
+        )
     if plan.blockers:
         lines.append(
             f"**{len(plan.blockers)} unresolved blocker(s)** — each needs your decision "
@@ -615,6 +640,7 @@ class MigrationService:
                 recommended_action=change.recommended_action,
                 supporting_sources=change.supporting_sources,
                 knowledge_id=knowledge.id,
+                applies_when=change.applies_when,
                 target_evidence_url=next(
                     (
                         str(source.url)
@@ -2076,6 +2102,7 @@ class MigrationService:
                 evidence_urls=sorted(evidence),
                 registry_evidence_urls=sorted(registry_evidence),
                 probe_paths=_write_probes(workspace, config, plan),
+                contested_facts=contested_facts(plan),
             ),
         )
         return refresh_task_statuses(base_tasks, log), evidence, False
@@ -2794,6 +2821,7 @@ class MigrationService:
                 "tasks_pending",
                 "review_pending",
                 "ready_to_finalize",
+                "validation_pending",
             ] = "research_pending"
             next_action = (
                 "Research is recommended but optional: ask the user, then either run "
@@ -2831,19 +2859,39 @@ class MigrationService:
                 "user's accept/reject with record_change_decision(s)."
             )
         else:
-            state = "ready_to_finalize"
             validation = load_validation_disposition(workspace, config.run_id)
-            next_action = (
-                "Validation is a two-pass flow: call finalize_migration(run_dir) to write "
-                "the deliverables and the generated contract test; the user runs that "
-                "test (or a BYOK evaluation via generate_eval_suite / run_migration_eval); "
-                "record the outcome with record_validation_disposition; then call "
-                "finalize_migration again."
-                if validation is None
-                else "Validation is recorded; call finalize_migration(run_dir) to "
-                "write the final deliverables."
-            )
-        if state in {"tasks_pending", "review_pending", "ready_to_finalize"} and tasks.unknowns:
+            finalized_once = Path(run_paths(workspace).manifest_path).is_file()
+            if validation is None and finalized_once:
+                # After the first finalize the evaluation stage is the next step
+                # until a validation disposition (with its evidence) is recorded.
+                state = "validation_pending"
+                next_action = (
+                    "The deliverables are written; validate them before the second "
+                    f'finalize. Draft an evaluation with scaffold_evaluation(run_dir="{run_dir}") '
+                    "(cases from the application's own sample inputs, marked DRAFT), have the "
+                    "user review the cases and run run_migration_eval with their own "
+                    "credentials, then record_validation_disposition(method="
+                    '"byok_evaluation", evaluation_run_path=...). Alternatively the user wires '
+                    "and runs output/validation/test_target_invocation.py and you record "
+                    'method="generated_tests" with outcome="run_passed" and the pytest summary '
+                    "line. Then call finalize_migration again."
+                )
+            else:
+                state = "ready_to_finalize"
+                next_action = (
+                    "Validation is a two-pass flow: call finalize_migration(run_dir) to write "
+                    "the deliverables and the generated contract test; the user runs that "
+                    "test (or a BYOK evaluation via scaffold_evaluation / run_migration_eval); "
+                    "record the outcome with record_validation_disposition; then call "
+                    "finalize_migration again."
+                    if validation is None
+                    else "Validation is recorded; call finalize_migration(run_dir) to "
+                    "write the final deliverables."
+                )
+        if (
+            state in {"tasks_pending", "review_pending", "ready_to_finalize", "validation_pending"}
+            and tasks.unknowns
+        ):
             next_action += (
                 f" {len(tasks.unknowns)} open unknown(s) each carry their exact next action "
                 "(list_adaptation_tasks `unknowns`); ask the user before acting on one, and "
@@ -2881,6 +2929,79 @@ class MigrationService:
             dynamic_prompt_consumers=len(tasks.dynamic_prompt_consumers),
             open_unknowns=len(tasks.unknowns),
             snapshot_reused=reused,
+        )
+
+    def scaffold_evaluation(
+        self,
+        run_dir: Path | str,
+        *,
+        now: datetime | None = None,
+    ) -> EvaluationScaffold:
+        """Draft an evaluation suite from the application's own sample inputs.
+
+        Cases come deterministically from files under conventionally named
+        sample/fixture/example/evaluation folders (contents stay local), are
+        marked DRAFT for review, and the suite is bound to the run's CURRENT
+        plan hash — the binding a byok_evaluation disposition is checked
+        against. The toolkit never runs the evaluation.
+        """
+        workspace = Path(run_dir)
+        config = load_run_config(workspace)
+        plan = self._plan_for_run(config, workspace, now=now)
+        application = Path(config.application_root)
+        base = application if application.is_dir() else application.parent
+        exclude = {spec.source_path for spec in plan.prompt_changes if spec.source_path}
+        cases, used = draft_cases(base, exclude)
+        output = workspace / "output" / "evaluation"
+        if not cases:
+            return EvaluationScaffold(
+                run_id=config.run_id,
+                message=(
+                    "No sample inputs were found under sample, fixture, example, or "
+                    "evaluation/test-data folders. Write evaluation cases by hand and bind "
+                    "them with generate_eval_suite(migration_plan=<output/"
+                    "migration-manifest.yaml>, cases=[...])."
+                ),
+            )
+        suite = self.generate_eval_suite(plan, cases, name=f"{config.run_id}-draft")
+        suite = suite.model_copy(
+            update={
+                "warnings": [
+                    "DRAFT: cases were scaffolded from the application's sample inputs; "
+                    "review, edit, or add expectations and validators before running.",
+                    *suite.warnings,
+                ]
+            }
+        )
+        cases_path = output / "draft-cases.yaml"
+        suite_path = output / "evaluation-suite.yaml"
+        atomic_write_text(
+            cases_path,
+            yaml.safe_dump([case.model_dump(mode="json") for case in cases], sort_keys=False),
+        )
+        atomic_write_text(suite_path, evaluation_artifact_as_yaml(suite))
+        return EvaluationScaffold(
+            run_id=config.run_id,
+            case_count=len(cases),
+            sample_files=used,
+            cases_path=str(cases_path),
+            suite_path=str(suite_path),
+            bound_manifest_sha256=suite.migration_manifest_sha256,
+            message=(
+                f"Drafted {len(cases)} DRAFT evaluation case(s) from {len(used)} sample "
+                "file(s); the suite is bound to the current plan. Review the cases with "
+                "the user before running anything."
+            ),
+            next_steps=[
+                "Show the draft cases to the user; edit or remove cases and add "
+                "validators/expectations as they direct (regenerate the suite with "
+                "generate_eval_suite if cases change).",
+                "The user runs run_migration_eval(suite, source_config, target_config) with "
+                "their own credentials; save the returned run artifact under "
+                "output/evaluation/.",
+                'Record it with record_validation_disposition(method="byok_evaluation", '
+                "evaluation_run_path=<the run artifact>), then finalize_migration again.",
+            ],
         )
 
     def record_observation(
@@ -3189,6 +3310,7 @@ class MigrationService:
             config,
             known_evidence_urls=evidence,
             registry_evidence_urls=registry_evidence,
+            contested=snapshot.contested_facts if snapshot else (),
         )
 
     def record_change_decision(
@@ -3481,6 +3603,27 @@ class MigrationService:
                 *out_of_scope_paths(plan),
             },
         )
+        pricing_service = run_service[0]
+        consistency.extend(
+            check_adapted_pricing(
+                workspace,
+                config,
+                analysis,
+                log,
+                target_pricing=_pricing_of(pricing_service, config.target),
+                source_pricing=_pricing_of(pricing_service, config.source),
+                known_evidence=plan_evidence_urls(plan)
+                | self._run_registry_evidence(config, pricing_service),
+                as_of=(now or datetime.now(UTC)).date(),
+            )
+        )
+        facts = contested_facts(plan)
+        contested_changes = [
+            f"{entry.source_path} change {change.id}: {mark}"
+            for entry in log.entries
+            for change in entry.annotated_changes
+            for mark in contested_marks(change, facts)
+        ]
         validation_disposition = load_validation_disposition(workspace, config.run_id)
         validation_problem = _validation_problem(validation_disposition, manifest_sha256(plan))
         contract_test_path: str | None = None
@@ -3516,6 +3659,7 @@ class MigrationService:
                 consistency=[finding.rendered for finding in consistency],
                 validation_disposition=validation_disposition,
                 validation_problem=validation_problem,
+                contested=contested_changes,
             ),
         )
         report = (
@@ -3613,6 +3757,7 @@ class MigrationService:
                 if item.status == "closed_by_scan"
             ],
             probe_paths=[str(workspace / item) for item in probe_paths],
+            contested_changes=contested_changes,
             message=(
                 (
                     f"STRICT MODE: {len(strict_violations)} unmet requirement(s) — this "

@@ -10,6 +10,7 @@ changes:
   recommended_action: Flatten nested tool schemas during migration.
   supporting_sources:
   - official-nova-migration-guide
+  applies_when: null
 sources:
 - id: official-nova-migration-guide
   url: https://developers.example.com/docs/migrating-to-nova

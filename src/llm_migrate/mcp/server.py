@@ -88,8 +88,10 @@ exposes only its tools):
    output/probes/ script and you record the printed result with
    record_observation(run_dir, subject=<unknown id>, outcome, evidence) —
    run-scoped, never a registry change.
-7. Validation is a two-pass flow: the user runs the contract test or a BYOK
-   evaluation (generate_eval_suite / run_migration_eval); record the outcome
+7. Validation is a two-pass flow (status validation_pending after the first
+   finalize): the user runs the contract test or a BYOK evaluation
+   (scaffold_evaluation drafts one from the app's sample inputs; the user
+   reviews it and runs run_migration_eval); record the outcome
    with record_validation_disposition (generated_tests needs the user's
    passing result, byok_evaluation the eval-run artifact, an accept the
    user's own rationale); then finalize_migration again.
@@ -120,6 +122,7 @@ _GUIDED_TOOL_NAMES = frozenset(
         "add_prompt_sources",
         "confirm_prompt_consumer",
         "record_observation",
+        "scaffold_evaluation",
         "get_run_status",
         "finalize_migration",
         "get_change_review",
@@ -968,6 +971,18 @@ def confirm_prompt_consumer(
     return _json(
         _service().confirm_prompt_consumer(run_dir, location, source_path, now=utc_moment(now))
     )
+
+
+@_tool
+def scaffold_evaluation(run_dir: str, now: str | None = None) -> dict[str, Any]:
+    """Draft a BYOK evaluation suite from the application's own sample inputs.
+
+    Cases come from files under sample/fixture/example/evaluation folders,
+    are marked DRAFT, and the suite (output/evaluation/) is bound to the
+    current plan. Show the drafts to the user before anything runs; the
+    toolkit never executes the evaluation.
+    """
+    return _json(_service().scaffold_evaluation(run_dir, now=utc_moment(now)))
 
 
 @_tool

@@ -2199,6 +2199,66 @@ artifact (versioned "1").
 
 ---
 
+# 12.13. V1.6.0-c: Review Integrity and Validation Teeth
+
+## Purpose
+
+The field run accepted a pricing edit that contradicted the run's own
+registry facts while citing unknown evidence, adapted code around a
+contested fact without warning, recorded validation that never ran, and gave
+prompt tasks thin pair-specific guidance.
+
+## Scope
+
+- Unit-aware registry-contradiction gate over adapted PRICING values
+  (consistent / stale / contradiction with factor / unit unrecognized),
+  scoped to governing profiles, cleared only by registry-recorded or
+  plan-carried evidence, with registry price expiry noted; new consistency
+  codes `pricing_contradicts_registry`, `pricing_stale_source`,
+  `pricing_unit_unrecognized` (strict blocks).
+- CONTESTED marks on `ChangeReviewItem.contested` and in the report's
+  "Action required", cleared by a recorded observation.
+- `scaffold_evaluation` (MCP; CLI `run scaffold-eval`) and the
+  `validation_pending` run state after the first finalize. The guided
+  toolset grows to 23 tools.
+- The `prompt_guidance` pair-knowledge topic with `applies_when`, first
+  content for claude-sonnet-4-6 → claude-sonnet-5 through a reviewed pair
+  bundle (`.registry-proposals/migrations/`).
+
+## Boundary
+
+Only values the scanner's PRICING couplings identified are compared; the
+gate never guesses a unit. Prompt-guidance content is limited to what the
+official pages state; the scaffold drafts cases, it never runs them.
+
+## Exit criteria
+
+- The field pricing edit (0.0022/0.011 per 1K against $2/$10 per 1M) is a
+  contradiction reporting 1.1x; the source price under any scale is stale;
+  an unrecognized scale is reported; registry-recorded evidence clears the
+  finding and unknown evidence does not; strict mode blocks.
+- A change exercising a contested setting is marked CONTESTED (citing the
+  conflict's source alone is not), and a recorded observation clears it.
+- The 4.6 → 5 `prompt_guidance` knowledge lands through an approved bundle
+  whose candidate equals the canonical file, reaches prompt tasks with
+  evidence, and is pre-disposed only when its trigger is absent.
+- After the first finalize, status is `validation_pending`; the scaffold
+  drafts cases from sample folders only, bound to the current plan hash.
+
+## Current status
+
+Implemented on 2026-09-23 (ships with the v1.6.0 release), with unit
+coverage for every exit criterion (`tests/unit/test_v160c_review_integrity.py`)
+and the extended bundle test (`tests/unit/test_checked_in_proposals.py`).
+Additive only: `ModelDifference.applies_when`,
+`MigrationKnowledgeItem.applies_when`, `ChangeReviewItem.contested`,
+`MigrationRunFinalization.contested_changes`,
+`WorklistSnapshot.contested_facts`, the `validation_pending` state, the new
+consistency codes, and the `EvaluationScaffold` result; v04/v05/v11 goldens
+regenerated for the new optional field.
+
+---
+
 # 13. Cross-Phase Testing Strategy
 
 ## Unit tests
@@ -2307,6 +2367,7 @@ When working from this roadmap, Codex should:
 | V1.5.2 | Precision and honesty patch: consumer precision, prompt scoping, evidence-backed validation, whole-app source-reference sweep |
 | V1.6.0-a | Prompt discovery on real repo layouts: bounded multi-base resolution, chained loaders, start-time confirmation, live-run discovery tools, `discovery_incomplete` |
 | V1.6.0-b | Unknowns that give directions: typed actionable unknowns (plan v5), contested-evidence probes, run-scoped observations |
+| V1.6.0-c | Review integrity: unit-aware pricing contradiction gate, CONTESTED review marks, evaluation scaffold and `validation_pending`, pair `prompt_guidance` knowledge |
 
 The critical sequencing rule is:
 

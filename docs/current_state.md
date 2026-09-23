@@ -92,6 +92,14 @@ and `record_observation` records the result for the run without touching the
 registry. See the V1.6.0-b section below and `docs/project_phases.md`
 §12.12.
 
+V1.6.0-c: Review Integrity and Validation Teeth — implemented on 2026-09-23
+(ships with the v1.6.0 release): a unit-aware gate flags adapted pricing that
+contradicts the registry, changes resting on contested registry facts are
+marked CONTESTED in review, the run pushes a drafted evaluation after the
+first finalize, and pair-specific prompt guidance for claude-sonnet-4-6 →
+claude-sonnet-5 lands through a reviewed bundle. See the V1.6.0-c section
+below and `docs/project_phases.md` §12.13.
+
 V1.5.0-b/-c/-d — implemented on 2026-09-22, completing the v1.5.0 release:
 semantic config couplings with anchoring guardrails, one difference-propagation
 mechanism, the worklist diet with `confirm_unaffected`, and the cross-surface
@@ -935,6 +943,39 @@ source-target `MigrationKnowledge`, not only individual model profiles.
   and reports open, closed-by-action, and closed-by-scan unknowns. Recorded
   dismissals and consumer confirmations close their unknowns by action with
   the user's rationale.
+
+## V1.6.0-c completed capabilities
+
+- Pricing contradiction gate (2026-09-23): finalize compares every adapted
+  value a PRICING coupling marks (in profiles that govern the migration)
+  with the registry's target and source prices, unit-aware via `Decimal`
+  (the key's named unit, else per token / 1K / 1M). Findings:
+  `pricing_contradicts_registry` (reporting the implied factor, cleared only
+  by registry-recorded or plan-carried evidence on the change),
+  `pricing_stale_source`, `pricing_unit_unrecognized`; strict blocks; an
+  expired registry price is noted in the finding.
+- CONTESTED review marks (2026-09-23): `get_change_review` marks a change
+  that exercises an open contested setting (for example
+  `thinking: disabled` on Bedrock) or names its field, with both sources and
+  the probe action; finalize lists contested changes under "Action
+  required"; a recorded observation clears the mark.
+- Evaluation push (2026-09-23): after the first finalize the run is
+  `validation_pending` until a validation disposition is recorded;
+  `scaffold_evaluation` (CLI `run scaffold-eval`) drafts DRAFT cases from
+  sample-input folders (`samples/`, `test_data/`, `fixtures/`, `examples/`,
+  `eval*/`) and writes a suite bound to the current plan under
+  `output/evaluation/`. The guided toolset is 23 tools.
+- Pair prompt guidance (2026-09-23): `MigrationKnowledgeItem` gains the
+  `prompt_guidance` topic (advice required) and `applies_when`, carried onto
+  `ModelDifference` and into guidance applicability (new `sampling`
+  trigger). The claude-sonnet-4-6 → claude-sonnet-5 file gains two items —
+  sampling behavior moves to system-prompt instructions (applies when
+  sampling parameters are set) and prompt token recount — sourced from the
+  official "What's new" page and migration guide refetched on 2026-09-23,
+  through the approved bundle `.registry-proposals/migrations/claude-sonnet-4-6-to-5/`.
+  The bundle flags a separate profile issue: both pages state $2/$10 with no
+  introductory expiry, while the canonical profile records
+  `valid_until: 2026-08-31`.
 
 ## Next work
 

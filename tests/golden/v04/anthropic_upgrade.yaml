@@ -56,6 +56,7 @@ migration:
         end_line: 1
       source_evidence_url: https://platform.claude.com/docs/en/about-claude/models/overview
       target_evidence_url: https://platform.claude.com/docs/en/about-claude/models/overview
+      applies_when: null
     - category: platform
       field: representation
       source_value:
@@ -80,6 +81,7 @@ migration:
         end_line: 5
       source_evidence_url: https://platform.claude.com/docs/en/about-claude/models/overview
       target_evidence_url: https://platform.claude.com/docs/en/about-claude/models/overview
+      applies_when: null
     - category: lifecycle
       field: status
       source_value: active
@@ -97,6 +99,7 @@ migration:
         end_line: 5
       source_evidence_url: https://platform.claude.com/docs/en/about-claude/model-deprecations
       target_evidence_url: https://platform.claude.com/docs/en/about-claude/model-deprecations
+      applies_when: null
     - category: text_input
       field: text_input
       source_value: true
@@ -114,6 +117,7 @@ migration:
         end_line: 9
       source_evidence_url: https://platform.claude.com/docs/en/about-claude/models/overview
       target_evidence_url: https://platform.claude.com/docs/en/about-claude/models/overview
+      applies_when: null
     - category: multimodality
       field: image_input
       source_value: true
@@ -127,6 +131,7 @@ migration:
       locations: []
       source_evidence_url: https://platform.claude.com/docs/en/about-claude/models/overview
       target_evidence_url: https://platform.claude.com/docs/en/about-claude/models/overview
+      applies_when: null
     - category: multimodality
       field: document_input
       source_value: true
@@ -140,6 +145,7 @@ migration:
       locations: []
       source_evidence_url: https://platform.claude.com/docs/en/about-claude/models/overview
       target_evidence_url: https://platform.claude.com/docs/en/about-claude/models/overview
+      applies_when: null
     - category: structured_output
       field: structured_output
       source_value: true
@@ -153,6 +159,7 @@ migration:
       locations: []
       source_evidence_url: https://platform.claude.com/docs/en/about-claude/models/overview
       target_evidence_url: https://platform.claude.com/docs/en/about-claude/models/overview
+      applies_when: null
     - category: tool_use
       field: tool_use
       source_value: true
@@ -166,6 +173,7 @@ migration:
       locations: []
       source_evidence_url: https://platform.claude.com/docs/en/about-claude/models/overview
       target_evidence_url: https://platform.claude.com/docs/en/about-claude/models/overview
+      applies_when: null
     - category: parallel_tool_use
       field: parallel_tool_use
       source_value: null
@@ -180,6 +188,7 @@ migration:
       locations: []
       source_evidence_url: https://platform.claude.com/docs/en/about-claude/models/overview
       target_evidence_url: https://platform.claude.com/docs/en/about-claude/models/overview
+      applies_when: null
     - category: reasoning
       field: reasoning
       source_value: true
@@ -193,6 +202,7 @@ migration:
       locations: []
       source_evidence_url: https://platform.claude.com/docs/en/about-claude/models/overview
       target_evidence_url: https://platform.claude.com/docs/en/about-claude/models/overview
+      applies_when: null
     - category: prompt_caching
       field: prompt_caching
       source_value: true
@@ -210,6 +220,7 @@ migration:
         end_line: 9
       source_evidence_url: https://platform.claude.com/docs/en/about-claude/models/overview
       target_evidence_url: https://platform.claude.com/docs/en/about-claude/models/overview
+      applies_when: null
     - category: streaming
       field: streaming
       source_value: true
@@ -223,6 +234,7 @@ migration:
       locations: []
       source_evidence_url: https://platform.claude.com/docs/en/about-claude/models/overview
       target_evidence_url: https://platform.claude.com/docs/en/about-claude/models/overview
+      applies_when: null
     - category: batch_inference
       field: batch_inference
       source_value: true
@@ -240,6 +252,7 @@ migration:
         end_line: 9
       source_evidence_url: https://platform.claude.com/docs/en/about-claude/models/overview
       target_evidence_url: https://platform.claude.com/docs/en/about-claude/models/overview
+      applies_when: null
     - category: context_output_limits
       field: context_window_tokens
       source_value: 200000
@@ -261,6 +274,7 @@ migration:
         end_line: 7
       source_evidence_url: https://platform.claude.com/docs/en/about-claude/models/overview
       target_evidence_url: https://platform.claude.com/docs/en/about-claude/models/overview
+      applies_when: null
     - category: context_output_limits
       field: maximum_output_tokens
       source_value: 64000
@@ -278,6 +292,7 @@ migration:
         end_line: 8
       source_evidence_url: https://platform.claude.com/docs/en/about-claude/models/overview
       target_evidence_url: https://platform.claude.com/docs/en/about-claude/models/overview
+      applies_when: null
     - category: parameters
       field: adaptive_thinking
       source_value: null
@@ -293,6 +308,7 @@ migration:
       locations: []
       source_evidence_url: null
       target_evidence_url: https://platform.claude.com/docs/en/about-claude/models/whats-new-sonnet-5
+      applies_when: null
     - category: parameters
       field: effort
       source_value: null
@@ -307,6 +323,7 @@ migration:
       locations: []
       source_evidence_url: null
       target_evidence_url: https://platform.claude.com/docs/en/about-claude/models/whats-new-sonnet-5
+      applies_when: null
     - category: parameters
       field: max_tokens
       source_value: required
@@ -324,6 +341,7 @@ migration:
         end_line: 8
       source_evidence_url: null
       target_evidence_url: https://platform.claude.com/docs/en/about-claude/models/whats-new-sonnet-5
+      applies_when: null
     - category: parameters
       field: temperature
       source_value: null
@@ -339,6 +357,7 @@ migration:
       locations: []
       source_evidence_url: null
       target_evidence_url: https://platform.claude.com/docs/en/about-claude/models/whats-new-sonnet-5
+      applies_when: null
     - category: parameters
       field: thinking
       source_value: supported
@@ -352,6 +371,7 @@ migration:
       locations: []
       source_evidence_url: null
       target_evidence_url: https://platform.claude.com/docs/en/about-claude/models/whats-new-sonnet-5
+      applies_when: null
     - category: parameters
       field: top_k
       source_value: null
@@ -366,6 +386,7 @@ migration:
       locations: []
       source_evidence_url: null
       target_evidence_url: https://platform.claude.com/docs/en/about-claude/models/whats-new-sonnet-5
+      applies_when: null
     - category: parameters
       field: top_p
       source_value: null
@@ -380,6 +401,7 @@ migration:
       locations: []
       source_evidence_url: null
       target_evidence_url: https://platform.claude.com/docs/en/about-claude/models/whats-new-sonnet-5
+      applies_when: null
     - category: pricing
       field: published_pricing
       source_value:
@@ -431,6 +453,7 @@ migration:
       locations: []
       source_evidence_url: https://platform.claude.com/docs/en/about-claude/models/overview
       target_evidence_url: https://platform.claude.com/docs/en/about-claude/models/overview
+      applies_when: null
     - category: behavioral_prompt_guidance
       field: prompt_guidance
       source_value:
@@ -471,6 +494,7 @@ migration:
         end_line: 7
       source_evidence_url: null
       target_evidence_url: https://platform.claude.com/docs/en/about-claude/models/whats-new-sonnet-5
+      applies_when: null
     - category: migration_knowledge
       field: null
       source_value: migration.assistant_prefill
@@ -491,6 +515,7 @@ migration:
         end_line: 9
       source_evidence_url: null
       target_evidence_url: https://platform.claude.com/docs/en/about-claude/models/migration-guide
+      applies_when: null
     - category: migration_knowledge
       field: null
       source_value: parameters.thinking
@@ -507,6 +532,7 @@ migration:
       locations: []
       source_evidence_url: null
       target_evidence_url: https://platform.claude.com/docs/en/about-claude/models/whats-new-sonnet-5
+      applies_when: null
     - category: migration_knowledge
       field: null
       source_value: parameters.sampling
@@ -523,6 +549,7 @@ migration:
       locations: []
       source_evidence_url: null
       target_evidence_url: https://platform.claude.com/docs/en/about-claude/models/whats-new-sonnet-5
+      applies_when: null
     - category: migration_knowledge
       field: null
       source_value: tokenizer
@@ -543,6 +570,7 @@ migration:
         end_line: 9
       source_evidence_url: null
       target_evidence_url: https://platform.claude.com/docs/en/about-claude/models/whats-new-sonnet-5
+      applies_when: null
     highest_severity: breaking
     pricing_overlays: []
   affected_files:

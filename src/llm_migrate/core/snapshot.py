@@ -33,6 +33,7 @@ from llm_migrate.core.blockers import DECISIONS_FILENAME
 from llm_migrate.core.models import StrictModel
 from llm_migrate.core.observations import OBSERVATIONS_FILENAME
 from llm_migrate.core.runstate import atomic_write_text
+from llm_migrate.core.unknowns import ContestedFact
 from llm_migrate.core.workspace import (
     RUN_CONFIG_FILENAME,
     AdaptationTaskList,
@@ -73,6 +74,8 @@ class WorklistSnapshot(StrictModel):
     # Probe deliverables (run-relative) the derivation wrote (v1.6.0-b); a
     # missing one makes the snapshot stale so the next derivation rewrites it.
     probe_paths: list[str] = Field(default_factory=list)
+    # Contested registry facts review marks match against (v1.6.0-c).
+    contested_facts: list[ContestedFact] = Field(default_factory=list)
 
 
 def _toolkit_version() -> str:
