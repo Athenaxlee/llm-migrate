@@ -3,6 +3,78 @@
 All notable changes are documented here. The project follows semantic
 versioning.
 
+## 1.6.0 — 2026-09-23
+
+Discovery that survives real repositories, and directions instead of dead
+ends: the second, third, and fourth tranches of the roadmap driven by a real
+v1.5.1 guided run of a production Bedrock application whose config-driven
+prompt library produced zero prompt tasks. On that layout the run now
+prepares six prompt migrations with zero configuration. `MigrationPlan`
+moves to schema 5; every other contract change is additive.
+
+### Prompt discovery on real repository layouts
+
+- Config paths written relative to the repository root resolve when a
+  subdirectory is scanned: bounded leading-segment stripping (at most three
+  segments that must equal the application root's trailing path, always into
+  the scanned file set), recorded in provenance and never ranked high.
+  Windows-style backslash values resolve, and case folding applies only on a
+  filesystem detected case-insensitive. Config values may climb with `..`
+  relative to their config file; symlinks resolving outside the application
+  are never scanned.
+- Chained single-file loaders (`open(p).read()`, `handle.read()`,
+  `Path(p).read_text()`) are traced; dynamic consumers record the keys they
+  read, and the unique candidate document holding them is promoted one level.
+- `start_migration` returns `prompt_candidates` for confirmation when prompt
+  consumers exist but no prompt source resolved, writing nothing;
+  `defer_prompt_candidates` proceeds and the run reports
+  `discovery_incomplete` until the live-run tools `add_prompt_sources`
+  (sources, or rationale-bearing dismissals) and `confirm_prompt_consumer`
+  close it. Consumer addresses are `path:line:keyword`.
+- Regression fixtures for the field layout and the probe loader forms; a
+  Windows CI leg.
+
+### Unknowns that give directions
+
+- Plan unknowns are typed records (schema 5): subject, why it matters for
+  this application, an exact next action (a ready-to-run tool call with the
+  run directory filled in, or a probe command), the closing condition, and
+  how each was closed (by the scan, or by a recorded action).
+- Contested registry facts (for example whether adaptive thinking can be
+  disabled on Bedrock, where the provider docs and the AWS model card
+  disagree) emit a BYOK probe script under `output/probes/`;
+  `record_observation` stores the user's result as a run-scoped
+  observation that closes the unknown and never touches the registry.
+
+### Review integrity and validation
+
+- Adapted pricing values are compared with the registry unit-aware (per
+  token / 1K / 1M, exact decimals): a departure from the target's recorded
+  price is a `pricing_contradicts_registry` finding with its implied factor
+  unless the change that set the value cites registry-recorded or
+  plan-carried evidence; leftover source pricing is `pricing_stale_source`;
+  an unrecognizable scale is reported, never passed. Strict mode blocks.
+- A change that exercises a contested registry setting is marked CONTESTED
+  in change review until an observation resolves it.
+- After the first finalize the run is `validation_pending`;
+  `scaffold_evaluation` drafts DRAFT evaluation cases from the application's
+  own sample-input folders into a suite bound to the current plan.
+- Pair knowledge gains the `prompt_guidance` topic; the
+  claude-sonnet-4-6 → claude-sonnet-5 pair carries two documented items
+  (sampling behavior moves to system-prompt instructions; recount prompt
+  tokens), landed through a reviewed proposal bundle.
+- Registry advice identical across a structured prompt document's components
+  is owed once per prompt task.
+
+### Registry
+
+- `claude-sonnet-5` pricing is recorded as the base price of $2 / $10 per
+  million tokens (three official pages refetched 2026-09-23 state no
+  introductory period).
+
+The guided toolset is 23 tools (`add_prompt_sources`,
+`confirm_prompt_consumer`, `record_observation`, `scaffold_evaluation`).
+
 ## 1.5.2 — 2026-09-23
 
 Precision and honesty patch, driven by a real v1.5.1 guided run of a

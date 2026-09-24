@@ -254,7 +254,7 @@ The `llm-migrate` MCP server does not contain an embedded model or general web
 search tool.
 
 Hosts with tight inline-tool budgets can set the environment variable
-`LLM_MIGRATE_TOOLSET=guided` on the server process to expose only the
+`LLM_MIGRATE_TOOLSET=guided` on the server process to expose only the 23
 guided-workflow tools; the default (`full`) exposes everything. Production
 migrations can pass `strict=true` to `start_migration` (CLI
 `run start --strict`) so unknown evidence, missing invocation facts,
@@ -337,6 +337,29 @@ Key behaviors during the run:
   result and its summary line, and `byok_evaluation` needs the evaluation
   run artifact bound to the current manifest. An evaluation of an older plan,
   or a record without evidence, is reported NOT VALIDATED.
+- Prompt discovery survives real repository layouts: config paths written
+  relative to the repository root resolve when you scan a subdirectory,
+  Windows-style backslash values and case differences resolve, and simple
+  `open(...).read()` / `Path(...).read_text()` loaders are traced. When
+  prompt consumers exist but no prompt file resolved, `start_migration`
+  lists the candidate files for you to confirm before writing anything; on a
+  live run, `add_prompt_sources` and `confirm_prompt_consumer` fix discovery
+  in place instead of forcing a new run.
+- Unknowns give directions: each one says why it matters for your
+  application, the exact next call (with the run directory filled in), and
+  what closes it. Where the reviewed registry records conflicting evidence
+  (for example whether adaptive thinking can be disabled on Bedrock), the run
+  emits a small probe script under `output/probes/` for you to run with your
+  own credentials; its printed result is recorded with `record_observation`
+  for this run only and never changes the registry.
+- Review has teeth: adapted pricing values are checked against the
+  registry's facts unit-aware (per token / per 1K / per 1M) — a price that
+  departs from the target's recorded price is flagged with its implied factor
+  unless the change cites registry-recorded evidence, and leftover source
+  pricing is flagged stale. A change that depends on a contested registry
+  fact is marked CONTESTED in change review until an observation resolves
+  it, and after the first finalize the run points you at a drafted
+  evaluation instead of letting validation be skipped.
 - Noise stays out of your way: prompt files referenced only by another
   model's configuration profile (or unreferenced next to selected siblings)
   are reported out of scope, unknowns the scan already answers are not
@@ -363,6 +386,9 @@ for manual composition.
 | `get_blocker_resolutions` / `record_blocker_decision` | The plan has blockers | Presents each blocker's question and registry-backed options; records your durable decision |
 | `submit_adapted_prompt` / `submit_adapted_file` / `submit_adaptations` | The agent wrote adaptations | Validates fail-closed (dispositions, annotated changes, decoded-value diffs, selector enforcement) and stores deliverables; `submit_adaptations` batches |
 | `confirm_unaffected` | Incidental-SDK files remain | Records reviewed no-change entries for them in one call |
+| `scaffold_evaluation` | Status reports `validation_pending` after the first finalize | Drafts DRAFT evaluation cases from your application's own sample inputs and a suite bound to the current plan, for you to review and run |
+| `record_observation` | You ran a probe or check for an open unknown | Records what the target actually did as a run-scoped observation that closes the unknown; the registry is never changed |
+| `add_prompt_sources` / `confirm_prompt_consumer` | Status reports `discovery_incomplete` | Adds prompt files to the live run, confirms which file a dynamic consumer reads, or records your dismissal with its rationale; the worklist re-derives in place |
 | `get_change_review` / `record_change_decision` / `record_change_decisions` | Deliverables await review | Presents each annotated change verbatim; your accept/reject regenerates the deliverable deterministically |
 | `record_validation_disposition` | After the first finalize | Records how the migration was validated (a passing test result, or an evaluation run bound to the current manifest) |
 | `finalize_migration` | Everything is decided | Runs the cross-surface consistency gate and writes the manifest, report, change log, and contract test |
