@@ -2124,7 +2124,7 @@ source-reference sweep. Typed actionable unknowns remain v1.6.0-b.
 
 ## Current status
 
-Implemented on 2026-09-23 (ships with the v1.6.0 release), with unit
+Implemented on 2026-09-23 and released as `v1.6.0` the same day, with unit
 coverage for every exit criterion (`tests/unit/test_v160a_prompt_discovery.py`)
 and golden scans for the two new fixtures (`field_pattern_repo`,
 `probe_forms_app`). No schema version changed except the worklist snapshot
@@ -2188,7 +2188,7 @@ a contested setting and target call `core/probes.py` knows how to exercise.
 
 ## Current status
 
-Implemented on 2026-09-23 (ships with the v1.6.0 release), with unit
+Implemented on 2026-09-23 and released as `v1.6.0` the same day, with unit
 coverage for every exit criterion
 (`tests/unit/test_v160b_actionable_unknowns.py`). `MigrationPlan` moved to
 schema 5 (v04/v05 goldens regenerated); everything else is additive
@@ -2247,7 +2247,7 @@ official pages state; the scaffold drafts cases, it never runs them.
 
 ## Current status
 
-Implemented on 2026-09-23 (ships with the v1.6.0 release), with unit
+Implemented on 2026-09-23 and released as `v1.6.0` the same day, with unit
 coverage for every exit criterion (`tests/unit/test_v160c_review_integrity.py`)
 and the extended bundle test (`tests/unit/test_checked_in_proposals.py`).
 Additive only: `ModelDifference.applies_when`,
@@ -2368,6 +2368,7 @@ When working from this roadmap, Codex should:
 | V1.6.0-a | Prompt discovery on real repo layouts: bounded multi-base resolution, chained loaders, start-time confirmation, live-run discovery tools, `discovery_incomplete` |
 | V1.6.0-b | Unknowns that give directions: typed actionable unknowns (plan v5), contested-evidence probes, run-scoped observations |
 | V1.6.0-c | Review integrity: unit-aware pricing contradiction gate, CONTESTED review marks, evaluation scaffold and `validation_pending`, pair `prompt_guidance` knowledge |
+| V1.6.0-d | Deferred (2026-09-23): lite mode, carried economics, maintainer evidence refresh, carry-forward; no PyPI distribution planned |
 
 The critical sequencing rule is:
 

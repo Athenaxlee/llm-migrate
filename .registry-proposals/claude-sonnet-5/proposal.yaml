@@ -2,6 +2,18 @@ schema_version: '1'
 model: claude-sonnet-5
 proposal_date: 2026-08-09
 changes:
+- field_path: pricing
+  change_type: update
+  current_value: $2 / $10 per MTok marked introductory, valid_until 2026-08-31, notes stating $3 / $15 standard
+  proposed_value: $2 / $10 per MTok as the base price (valid_until and introductory notes removed); pricing
+    freshness rechecked 2026-09-23
+  confidence: authoritative
+  risk: medium
+  supporting_sources:
+  - anthropic-models-overview-2026-09-23
+  reason: Three official pages refetched on 2026-09-23 state $2 / $10 as the base price and none mentions an
+    introductory period; keeping an expired introductory expiry made the v1.6.0-c pricing gate report every
+    comparison against a price the registry itself called expired.
 - field_path: freshness
   change_type: update
   current_value:
@@ -74,6 +86,11 @@ review:
   status: approved_with_unresolved_conflict
   reviewed_at: 2026-08-15
   decisions:
+  - field_path: pricing
+    decision: approved
+    disposition: promoted
+    rationale: Direct, authoritative, and consistent across three refetched official pages (2026-09-23); the
+      introductory framing is absent from every current source.
   - field_path: freshness
     decision: approved
     disposition: promoted

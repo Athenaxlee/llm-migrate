@@ -429,16 +429,16 @@ migration:
           currency: USD
           unit: per_1m_tokens
           valid_from: null
-          valid_until: '2026-08-31'
-          notes: Introductory price; official standard price is $3 after this period.
+          valid_until: null
+          notes: null
           sources: []
         output:
           amount: '10'
           currency: USD
           unit: per_1m_tokens
           valid_from: null
-          valid_until: '2026-08-31'
-          notes: Introductory price; official standard price is $15 after this period.
+          valid_until: null
+          notes: null
           sources: []
         cached_input: null
         batch: null

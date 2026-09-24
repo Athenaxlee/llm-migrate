@@ -75,8 +75,8 @@ evidence-backed validation dispositions, a whole-application source-reference
 sweep, guidance applicability, an "Action required" report, and honest run
 status. See the V1.5.2 section below and `docs/project_phases.md` §12.10.
 
-V1.6.0-a: Prompt Discovery That Survives Real Repositories — implemented on
-2026-09-23 (ships with the v1.6.0 release), the second tranche of the same
+V1.6.0-a: Prompt Discovery That Survives Real Repositories — implemented and
+released as `v1.6.0` on 2026-09-23, the second tranche of the same
 roadmap: the field run's repo-root-relative config prompt paths now resolve
 from a subdirectory scan root with zero configuration, remaining discovery
 gaps become a start-time confirmation or the `discovery_incomplete` run
@@ -93,7 +93,7 @@ registry. See the V1.6.0-b section below and `docs/project_phases.md`
 §12.12.
 
 V1.6.0-c: Review Integrity and Validation Teeth — implemented on 2026-09-23
-(ships with the v1.6.0 release): a unit-aware gate flags adapted pricing that
+(released as `v1.6.0` on 2026-09-23): a unit-aware gate flags adapted pricing that
 contradicts the registry, changes resting on contested registry facts are
 marked CONTESTED in review, the run pushes a drafted evaluation after the
 first finalize, and pair-specific prompt guidance for claude-sonnet-4-6 →
@@ -111,7 +111,7 @@ contract-test deliverable (§12.8).
 
 ## Released foundation
 
-- Git tag `v1.5.2` is the current stable release; `v1.5.1`, `v1.5.0`, `v1.4.1`,
+- Git tag `v1.6.0` is the current stable release; `v1.5.2`, `v1.5.1`, `v1.5.0`, `v1.4.1`,
   `v1.4.0`, `v1.3.0`, `v1.2.0`, `v1.1.0`, `v1.0.0`, and `v0.1.0` remain
   prior recorded release tags.
 - The V0.1 reviewed registry, proposal workflow, provenance, freshness, model
@@ -894,7 +894,7 @@ source-target `MigrationKnowledge`, not only individual model profiles.
   with a coverage warning in `next_steps`.
 - Live-run discovery (2026-09-23): `add_prompt_sources` (CLI
   `run add-prompt-source`) adds prompt files or records rationale-bearing
-  dismissals of candidates and consumer `path:line` addresses;
+  dismissals of candidates and consumer `path:line:keyword` addresses;
   `confirm_prompt_consumer` (CLI `run confirm-consumer`) records which file
   a dynamic consumer reads. Both write `migration.yaml` under the run lock,
   all-or-nothing, and the worklist re-derives in place with prior entries
@@ -977,13 +977,50 @@ source-target `MigrationKnowledge`, not only individual model profiles.
   introductory expiry, while the canonical profile records
   `valid_until: 2026-08-31`.
 
+## V1.6.0 release review (2026-09-23)
+
+A pre-release review of the v1.5.2 → v1.6.0 delta (two independent code
+reviews plus an economics benchmark against v1.5.2) found and fixed:
+
+- Discovery: a loader-fed stripped path (`yaml.safe_load(open("app/…"))`)
+  ranked high and lost its rule — it now ranks medium with the rule recorded;
+  config values climbing with `..` relative to their config file resolve
+  again (escaping is judged on the joined path; still a known-files lookup);
+  prompt consumers sharing a line have distinct `path:line:keyword` addresses
+  so a confirmation or dismissal never hits a sibling; symlinks resolving
+  outside the application are never scanned, read, or hashed.
+- Review integrity: evidence on another profile's same-named pricing key no
+  longer clears a contradiction (the clearing change must carry the key and
+  the adapted value); profile governance considers every model-like key of
+  the nearest profile (key order irrelevant) and descends into list-shaped
+  profiles; a carried-over contested setting is still marked CONTESTED.
+- Validation binding: the manifest hash excludes unknown actions and
+  statuses, so recording an observation or moving a run directory no longer
+  marks a BYOK evaluation stale; probe actions are shell-quoted.
+- Economics: registry advice identical across a structured document's
+  components is owed once per prompt task (14 → 10 shared items on the
+  field fixture, worklist payload −8%). Measured against v1.5.2 on the field
+  fixture: every guided call stays under 50 ms with the same scan counts;
+  the guided tool surface is ~4.8k tokens (was ~3.9k) for 23 tools.
+- Registry: the `claude-sonnet-5` profile's pricing is $2/$10 as the base
+  price (three official pages refetched 2026-09-23 state no introductory
+  period), promoted through its proposal bundle.
+
 ## Next work
 
-1. Exercise the V1.2 guided workflow with real coding-agent hosts (Claude Code,
+1. Deferred v1.6 economics tranche (decision of 2026-09-23: not started, no
+   PyPI distribution for now, and the single-item submit tools stay in the
+   guided set): lite-mode suggestions, snapshot reuse in the blocker loop,
+   a single-source workflow playbook, service caching across MCP calls,
+   maintainer `refresh-evidence`, and `carry_forward_from` a prior run.
+   Also pending: a `claude-sonnet-5` profile proposal — the official pages
+   refetched on 2026-09-23 state $2/$10 with no introductory expiry, while
+   the canonical profile records `valid_until: 2026-08-31`.
+2. Exercise the V1.2 guided workflow with real coding-agent hosts (Claude Code,
    Copilot) and fold observed friction back into the tool guidance.
-2. Add broader scanners/model families through the existing normalized scanner,
+3. Add broader scanners/model families through the existing normalized scanner,
    reviewed canonical registry, and V1.1 session-overlay boundaries.
-3. Optional V1.1 follow-ups: a persistent content-addressed research cache,
+4. Optional V1.1 follow-ups: a persistent content-addressed research cache,
    concurrent agent execution within recorded limits, and an orchestrated
    arbiter stage.
 

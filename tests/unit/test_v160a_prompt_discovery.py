@@ -128,9 +128,12 @@ def test_stripping_is_bounded_to_the_application_root(tmp_path: Path) -> None:
     # The dropped prefix must equal the root's trailing components.
     assert resolved("other/prompts/p.yaml") is None
     assert resolved("svc/prompts/p.yaml") is None
-    # Never outside the application: traversal, absolute, and unknown files.
-    assert resolved("../prompts/p.yaml") is None
-    assert resolved("app/../../prompts/p.yaml") is None
+    # Relative to the config file's directory a value may climb, but only to a
+    # scanned file: `config/../prompts/p.yaml` is inside the application.
+    assert resolved("../prompts/p.yaml") == "prompts/p.yaml"
+    assert resolved("app/../../prompts/p.yaml") == "prompts/p.yaml"
+    # Never outside the application: escaping traversal, absolute, unknown files.
+    assert resolved("../../prompts/p.yaml") is None
     assert resolved("/repo/svc/app/prompts/p.yaml") is None
     assert resolved("app/secrets/p.yaml") is None
     # At most three stripped segments.
@@ -367,29 +370,34 @@ def test_strict_runs_close_discovery_by_confirming_or_dismissing_consumers(
     tasks = service.list_adaptation_tasks(run_dir)
     by_location = {item.location: item for item in tasks.dynamic_prompt_consumers}
     assert set(by_location) == {
-        "analysis/invoke_multimodal.py:22",
-        "analysis/invoke_multimodal.py:23",
-        "analysis/invoke_single.py:22",
+        "analysis/invoke_multimodal.py:22:system",
+        "analysis/invoke_multimodal.py:23:messages",
+        "analysis/invoke_single.py:22:messages",
     }
-    assert by_location["analysis/invoke_multimodal.py:22"].access_keys == ["sys_prompt"]
-    assert by_location["analysis/invoke_multimodal.py:22"].matching_sources == CLAUDE_FILES
+    assert by_location["analysis/invoke_multimodal.py:22:system"].access_keys == ["sys_prompt"]
+    assert by_location["analysis/invoke_multimodal.py:22:system"].matching_sources == CLAUDE_FILES
 
     wrong = service.confirm_prompt_consumer(run_dir, "analysis/nowhere.py:1", CLAUDE_FILES[1])
     assert not wrong.accepted
     missing = service.confirm_prompt_consumer(
-        run_dir, "analysis/invoke_multimodal.py:22", "analysis/missing.yaml"
+        run_dir, "analysis/invoke_multimodal.py:22:system", "analysis/missing.yaml"
     )
     assert not missing.accepted
 
     multi = "analysis/prompt_lib/claude_prompt_multi.yaml"
-    for location in ("analysis/invoke_multimodal.py:22", "analysis/invoke_multimodal.py:23"):
+    for location in (
+        "analysis/invoke_multimodal.py:22:system",
+        "analysis/invoke_multimodal.py:23:messages",
+    ):
         update = service.confirm_prompt_consumer(run_dir, location, multi)
         assert update.accepted, update.problems
-    assert update.dynamic_prompt_consumers == ["analysis/invoke_single.py:22"]
+    assert update.dynamic_prompt_consumers == ["analysis/invoke_single.py:22:messages"]
     assert service.get_run_status(run_dir).state == "discovery_incomplete"
 
     single = service.confirm_prompt_consumer(
-        run_dir, "analysis/invoke_single.py:22", "analysis/prompt_lib/claude_prompt_single.yaml"
+        run_dir,
+        "analysis/invoke_single.py:22:messages",
+        "analysis/prompt_lib/claude_prompt_single.yaml",
     )
     assert single.accepted and single.prompt_coverage == "resolved"
     assert single.dynamic_prompt_consumers == []
@@ -416,7 +424,7 @@ def test_strict_consumer_dismissal_resolves_coverage(
     update = service.add_prompt_sources(
         run_dir,
         [],
-        dismiss=["summarize.py:20"],
+        dismiss=["summarize.py:20:messages"],
         rationale="messages carries the end user's document text at runtime.",
     )
     assert update.accepted, update.problems
@@ -432,8 +440,8 @@ def test_stale_consumer_decisions_are_reported_not_applied(
 ) -> None:
     analysis = service.scan_application(
         probe_app,
-        consumer_confirmations={"app.py:999": "prompts/system.txt"},
-        dismissed_consumers=["summarize.py:1"],
+        consumer_confirmations={"app.py:999:system": "prompts/system.txt"},
+        dismissed_consumers=["summarize.py:1:messages"],
     )
     assert sum("matches no current prompt consumer" in item for item in analysis.warnings) == 2
     assert analysis.prompt_discovery.dismissed_consumers == 0
@@ -498,6 +506,102 @@ def test_cli_and_mcp_expose_live_run_discovery(
     )
     assert refused.exit_code == 1
     confirmed = mcp_confirm_prompt_consumer(
-        run_dir, "analysis/invoke_multimodal.py:22", CLAUDE_FILES[0]
+        run_dir, "analysis/invoke_multimodal.py:22:system", CLAUDE_FILES[0]
     )
     assert confirmed["accepted"], confirmed["problems"]
+
+
+# -- review fixes (v1.6.0 release review) --------------------------------------
+
+
+def test_loader_fed_stripped_path_ranks_medium_with_the_rule(
+    service: MigrationService, tmp_path: Path
+) -> None:
+    app = tmp_path / "repo" / "app"
+    (app / "prompts").mkdir(parents=True)
+    (app / "prompts/lib.yaml").write_text("sys_prompt: You summarize.\n", encoding="utf-8")
+    (app / "main.py").write_text(
+        "import anthropic\nimport yaml\n\n"
+        'PROMPTS = yaml.safe_load(open("app/prompts/lib.yaml"))\n'
+        "client = anthropic.Anthropic()\n"
+        'client.messages.create(model="claude-sonnet-4-6", max_tokens=10, '
+        'system=PROMPTS["sys_prompt"], messages=[{"role": "user", "content": "x"}])\n',
+        encoding="utf-8",
+    )
+    source = {item.path: item for item in service.scan_application(app).prompt_sources}[
+        "prompts/lib.yaml"
+    ]
+    assert source.confidence is PromptSourceConfidence.MEDIUM
+    assert any("stripping leading 'app'" in line for line in source.provenance)
+
+
+def test_config_relative_parent_references_resolve(
+    service: MigrationService, tmp_path: Path
+) -> None:
+    app = tmp_path / "sibling"
+    (app / "config").mkdir(parents=True)
+    (app / "prompts").mkdir()
+    (app / "config/settings.yaml").write_text(
+        "prompts:\n  main: ../prompts/lib.yaml\n", encoding="utf-8"
+    )
+    (app / "prompts/lib.yaml").write_text("sys_prompt: You summarize.\n", encoding="utf-8")
+    (app / "main.py").write_text("import anthropic\n", encoding="utf-8")
+    found = resolve_reference(
+        "config/settings.yaml",
+        "../prompts/lib.yaml",
+        PathResolver.for_files({"prompts/lib.yaml"}, app),
+    )
+    assert found is not None and found.path == "prompts/lib.yaml" and found.rule == "config_dir"
+    # Root-relative `..` still never resolves, and stripping ignores `..` values.
+    assert (
+        resolve_reference(
+            "", "../prompts/lib.yaml", PathResolver.for_files({"prompts/lib.yaml"}, app)
+        )
+        is None
+    )
+    analysis = service.scan_application(app)
+    assert {item.path: item.confidence for item in analysis.prompt_sources}["prompts/lib.yaml"] is (
+        PromptSourceConfidence.MEDIUM
+    )
+
+
+def test_consumers_sharing_a_line_have_distinct_addresses(
+    service: MigrationService, tmp_path: Path
+) -> None:
+    app = tmp_path / "one_line"
+    app.mkdir()
+    (app / "main.py").write_text(
+        "import anthropic\n\nclient = anthropic.Anthropic()\n"
+        'client.messages.create(model="claude-sonnet-4-6", max_tokens=10, '
+        'system=cfg["system"], messages=history.render())\n',
+        encoding="utf-8",
+    )
+    (app / "prompts").mkdir()
+    (app / "prompts/lib.yaml").write_text("system: You summarize.\n", encoding="utf-8")
+    analysis = service.scan_application(
+        app, consumer_confirmations={"main.py:4:system": "prompts/lib.yaml"}
+    )
+    by_keyword = {
+        str(item.value): (item.metadata or {}).get("resolution")
+        for item in analysis.findings
+        if item.detail.startswith("supplies prompt content")
+    }
+    assert by_keyword == {"system": "source", "messages": "dynamic"}
+    assert analysis.prompt_discovery.coverage is PromptDiscoveryCoverage.PARTIAL
+    # A bare path:line address matches nothing and is reported, never applied.
+    stale = service.scan_application(app, consumer_confirmations={"main.py:4": "prompts/lib.yaml"})
+    assert any("matches no current prompt consumer" in item for item in stale.warnings)
+
+
+def test_symlinks_outside_the_application_are_not_scanned(
+    service: MigrationService, tmp_path: Path
+) -> None:
+    secret = tmp_path / "secret.yaml"
+    secret.write_text("sys_prompt: outside the application\n", encoding="utf-8")
+    app = tmp_path / "linked"
+    (app / "prompts").mkdir(parents=True)
+    (app / "main.py").write_text("import anthropic\n", encoding="utf-8")
+    (app / "prompts/lib.yaml").symlink_to(secret)
+    analysis = service.scan_application(app)
+    assert not any(item.path == "prompts/lib.yaml" for item in analysis.prompt_sources)
+    assert analysis.files_scanned == 1

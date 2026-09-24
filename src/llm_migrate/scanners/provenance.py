@@ -62,8 +62,13 @@ def is_prompt_consumer(finding: ApplicationFinding) -> bool:
 
 
 def consumer_location(finding: ApplicationFinding) -> str:
-    """Stable `path:line` address of one prompt consumer (confirm/dismiss key)."""
-    return f"{finding.location.path}:{finding.location.line}"
+    """Stable `path:line:keyword` address of one prompt consumer.
+
+    The keyword disambiguates several consumers on one line (`system=` and
+    `messages=` of the same call), so a confirmation or dismissal never
+    applies to a sibling consumer by accident.
+    """
+    return f"{finding.location.path}:{finding.location.line}:{finding.value}"
 
 
 def resolve_override(raw: str, resolver: PathResolver) -> str | None:

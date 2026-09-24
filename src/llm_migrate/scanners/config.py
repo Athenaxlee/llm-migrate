@@ -114,19 +114,26 @@ class PathResolver:
         return left.casefold() == right.casefold() if self.case_insensitive else left == right
 
     def resolve(self, value: str, bases: tuple[tuple[str, str], ...]) -> Resolution | None:
-        """Resolve one raw value against (rule, directory) bases, then stripping."""
-        normalized = normalize_value(value)
-        if normalized is None or source_format(normalized) is None:
+        """Resolve one raw value against (rule, directory) bases, then stripping.
+
+        A value may climb with `..` relative to a base directory (a config in
+        `config/` naming `../prompts/x.yaml`); escaping is judged on the
+        JOINED path, and the result is still a known-files lookup. Stripping
+        applies only to values without `..`.
+        """
+        loose = normalize_value(value, allow_parent=True)
+        if loose is None or source_format(loose) is None:
             return None
         for rule, prefix in bases:
-            joined = (
-                posixpath.normpath(posixpath.join(prefix, normalized)) if prefix else normalized
-            )
+            joined = posixpath.normpath(posixpath.join(prefix, loose)) if prefix else loose
             if joined.startswith(".."):
                 continue
             found = self.canonical(joined)
             if found is not None:
                 return Resolution(path=found, rule=rule)  # type: ignore[arg-type]
+        normalized = normalize_value(value)
+        if normalized is None:
+            return None
         segments = normalized.split("/")
         for count in range(1, min(_MAX_STRIPPED_SEGMENTS, len(segments) - 1) + 1):
             if count > len(self.root_tail):
@@ -141,15 +148,19 @@ class PathResolver:
         return None
 
 
-def normalize_value(value: str) -> str | None:
-    """Normalize a config/code path value; None for absolute or unusable values."""
+def normalize_value(value: str, *, allow_parent: bool = False) -> str | None:
+    """Normalize a config/code path value; None for absolute or unusable values.
+
+    `allow_parent` keeps a leading `..` (for joining with a base directory);
+    the default rejects it, which is what every root-relative lookup needs.
+    """
     if not value or value != value.strip() or "\n" in value:
         return None
     candidate = value.replace("\\", "/")
     if candidate.startswith(("/", "~")) or (len(candidate) > 1 and candidate[1] == ":"):
         return None
     normalized = posixpath.normpath(candidate)
-    if normalized.startswith("..") or normalized == ".":
+    if normalized == "." or (normalized.startswith("..") and not allow_parent):
         return None
     return normalized
 

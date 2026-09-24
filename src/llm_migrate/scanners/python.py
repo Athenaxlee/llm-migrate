@@ -267,7 +267,7 @@ class _Visitor(ast.NodeVisitor):
             return self._static_path(call.func.value)
         return None
 
-    def _loaded_document_path(self, call: ast.Call) -> str | None:
+    def _loaded_document(self, call: ast.Call) -> Resolution | None:
         """File behind `yaml.safe_load(...)`-style structured loads, if static."""
         if self._expand(call.func) not in _DOCUMENT_LOADERS or not call.args:
             return None
@@ -278,8 +278,7 @@ class _Visitor(ast.NodeVisitor):
             opened = self._open_path(argument) or self._text_load_path(argument)
         else:
             opened = None
-        resolution = self._resolve_code_path(opened) if opened is not None else None
-        return resolution.path if resolution is not None else None
+        return self._resolve_code_path(opened) if opened is not None else None
 
     def _text_load_path(self, call: ast.Call) -> str | None:
         """Static path read by a bounded single-file text-load form, if any.
@@ -390,12 +389,16 @@ class _Visitor(ast.NodeVisitor):
         if opened is not None:
             for name in targets:
                 self.file_handles[name] = opened
-        loaded = self._loaded_document_path(call)
-        if loaded is not None and loaded in self.catalog:
+        loaded_resolution = self._loaded_document(call)
+        loaded = loaded_resolution.path if loaded_resolution is not None else None
+        if loaded is not None and loaded_resolution is not None and loaded in self.catalog:
             for name in targets:
                 self.document_vars[name] = (loaded, ())
             if self._register_prompt_source(
-                loaded, [f"{self.path} loads {loaded}"], prompt_hint=False
+                loaded,
+                [f"{self.path} loads {loaded}"],
+                prompt_hint=False,
+                resolution=loaded_resolution,
             ):
                 for name in targets:
                     self.prompt_document_vars[name] = loaded
@@ -1098,11 +1101,15 @@ def scannable_files(path: Path) -> tuple[list[Path], list[Path]]:
     """
     if path.is_file():
         return [path], []
+    root = path.resolve()
     entries = [
         item
         for item in sorted(path.rglob("*"))
         if item.is_file()
         and not any(part in _IGNORED_DIRECTORIES for part in item.relative_to(path).parts)
+        # A symlink that resolves outside the application is not application
+        # content: never scanned, never read, never hashed.
+        and item.resolve().is_relative_to(root)
     ]
     python_files = [item for item in entries if item.suffix == ".py"]
     candidate_files = [item for item in entries if item.suffix.casefold() in PROMPT_SOURCE_SUFFIXES]
@@ -1130,7 +1137,7 @@ def scan_application(
 ) -> ApplicationAnalysis:
     """Scan one application without executing it.
 
-    `consumer_confirmations` maps a prompt consumer's `path:line` to the
+    `consumer_confirmations` maps a prompt consumer's `path:line:keyword` to the
     prompt file the user confirmed it reads; `dismissed_consumers` lists
     consumer addresses the user dismissed as genuinely runtime-built content.
     Both are recorded run decisions (`migration.yaml`), never inferred.

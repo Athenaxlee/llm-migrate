@@ -367,7 +367,7 @@ def _discovery_action(run_dir: str, tasks: AdaptationTaskList, *, strict: bool) 
             "STRICT MODE: every dynamic prompt consumer must be confirmed or dismissed — "
             + "; ".join(calls)
             + ". Dismiss genuinely runtime-built consumers with add_prompt_sources(run_dir, "
-            'paths=[], dismiss=["<path:line>", ...], rationale="<the user\'s reason>"). '
+            'paths=[], dismiss=["<path:line:keyword>", ...], rationale="<the user\'s reason>"). '
             "Ask the user; never decide for them."
         )
     return " ".join(parts)
@@ -3086,7 +3086,7 @@ class MigrationService:
         worklist staleness key: the worklist re-derives, already-submitted
         deliverables keep their entries, and newly covered prompt files appear
         as pending prompt tasks. A dismissal names current unreferenced
-        candidate files or dynamic consumer `path:line` addresses and needs
+        candidate files or dynamic consumer `path:line:keyword` addresses and needs
         the user's rationale; it is recorded, never silent. All-or-nothing:
         any problem writes nothing.
         """
@@ -3116,7 +3116,7 @@ class MigrationService:
             if target not in dismissable:
                 problems.append(
                     f"{target!r} is neither a current unreferenced candidate prompt file nor "
-                    "a dynamic prompt consumer address (path:line) of this run"
+                    "a dynamic prompt consumer address (path:line:keyword) of this run"
                 )
         if problems:
             return self._discovery_update(
@@ -3166,7 +3166,7 @@ class MigrationService:
     ) -> PromptDiscoveryUpdate:
         """Record that one dynamic prompt consumer reads one prompt file.
 
-        The consumer (`path:line`, as listed by get_run_status /
+        The consumer (`path:line:keyword`, as listed by get_run_status /
         list_adaptation_tasks) becomes source-backed and the file becomes a
         prompt source with the confirmation as its provenance. Recorded in
         `migration.yaml` under the run lock; the worklist re-derives.
@@ -3182,7 +3182,7 @@ class MigrationService:
         if location not in known:
             problems.append(
                 f"{location!r} is not a dynamic prompt consumer of this run (use a "
-                "path:line address from dynamic_prompt_consumers)"
+                "path:line:keyword address from dynamic_prompt_consumers)"
             )
         resolved = resolve_override(source_path, resolver)
         if resolved is None:

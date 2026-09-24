@@ -80,7 +80,7 @@ class PromptDiscoveryDismissal(StrictModel):
     """The user dismissed candidates or consumers, with their rationale.
 
     Targets are candidate prompt-file paths (not live prompts) or consumer
-    `path:line` addresses (genuinely runtime-built content).
+    `path:line:keyword` addresses (genuinely runtime-built content).
     """
 
     targets: list[str] = Field(min_length=1)
@@ -126,11 +126,11 @@ class MigrationRunConfig(StrictModel):
     prompt_discovery_dismissals: list[PromptDiscoveryDismissal] = Field(default_factory=list)
 
 
-_CONSUMER_ADDRESS = re.compile(r":\d+$")
+_CONSUMER_ADDRESS = re.compile(r":\d+:[A-Za-z_]+$")
 
 
 def is_consumer_address(target: str) -> bool:
-    """Whether a discovery target is a consumer `path:line` (not a file path)."""
+    """Whether a discovery target is a consumer `path:line:keyword` (not a file path)."""
     return bool(_CONSUMER_ADDRESS.search(target))
 
 
@@ -1010,7 +1010,30 @@ def derive_adaptation_tasks(
                 f"value(s) {', '.join(components)}; preserve every other key and value "
                 "exactly, and submit the complete rebuilt document."
             )
-        for spec in specs:
+        # Advice or risk text that EVERY component of a structured document
+        # produces is a fact about the model pair, not about one component:
+        # it is owed once per task, untagged. Only component-specific text
+        # keeps its `[component]` tag (a duplicate tagged copy per component
+        # doubled the owed items on multi-component prompt documents).
+        advice_by_spec = [
+            {
+                invocation_qualified(text): advice.applies_when
+                for advice in _spec_guidance_advice(spec)
+                for text in _advice_texts([advice])
+            }
+            for spec in specs
+        ]
+        risks_by_spec = [
+            [invocation_qualified(text) for text in _advice_texts(spec.migration_risks)]
+            for spec in specs
+        ]
+        common_advice = (
+            set.intersection(*(set(items) for items in advice_by_spec)) if len(specs) > 1 else set()
+        )
+        common_risks = (
+            set.intersection(*(set(items) for items in risks_by_spec)) if len(specs) > 1 else set()
+        )
+        for spec, spec_advice, spec_risks in zip(specs, advice_by_spec, risks_by_spec, strict=True):
             prefix = f"[{spec.source_component}] " if spec.source_component else ""
             sections = structural_sections(spec.candidate_prompt)
             if sections:
@@ -1031,14 +1054,14 @@ def derive_adaptation_tasks(
                 trigger = _PROMPT_FINDING_TRIGGERS.get(finding.category)
                 if trigger is not None:
                     prompt_triggers.add(trigger)
-            for advice in _spec_guidance_advice(spec):
-                line = invocation_qualified(prefix + _advice_texts([advice])[0])
-                if advice.applies_when is not None:
-                    line_triggers.setdefault(line, advice.applies_when)
+            for text, applies_when in spec_advice.items():
+                line = text if text in common_advice else prefix + text
+                if applies_when is not None:
+                    line_triggers.setdefault(line, applies_when)
                 if line not in guidance:
                     guidance.append(line)
-            for text in _advice_texts(spec.migration_risks):
-                line = invocation_qualified(prefix + text)
+            for text in spec_risks:
+                line = text if text in common_risks else prefix + text
                 if line not in risks:
                     risks.append(line)
         candidate = (

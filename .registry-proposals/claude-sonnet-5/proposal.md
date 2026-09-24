@@ -58,3 +58,11 @@ Approved with an unresolved conflict on August 15, 2026. The conflict record and
 
 - Amazon Bedrock: on-demand invocation requires a cross-region inference-profile id; the bare model id is not invocable on demand. Reviewed selectors recorded per the AWS inference-profile documentation.
 - Anthropic API: the model id is directly invocable (`bare_on_demand_supported: true`).
+
+## Pricing base price (2026-09-23)
+
+The models overview, the Sonnet 5 launch page, and the Sonnet 5 migration guide (all
+refetched 2026-09-23) state $2 / $10 per million tokens as the base price with no
+introductory period. The `valid_until: 2026-08-31` expiry and the "standard $3 / $15
+after this period" notes are removed; pricing freshness is rechecked as of 2026-09-23.
+Approved and promoted.

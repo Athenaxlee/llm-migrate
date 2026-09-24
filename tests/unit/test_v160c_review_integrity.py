@@ -462,3 +462,148 @@ def test_scaffold_without_samples_says_how_to_proceed(
     scaffold = service.scaffold_evaluation(start.paths.run_dir)
     assert scaffold.case_count == 0 and scaffold.suite_path is None
     assert "generate_eval_suite" in scaffold.message
+
+
+# -- review fixes (v1.6.0 release review) --------------------------------------
+
+
+def test_evidence_on_another_profiles_same_key_does_not_clear_a_contradiction(
+    service: MigrationService, priced_app: Path
+) -> None:
+    run_dir = _run(service, priced_app)
+    path = "config/model_profiles.yaml"
+    original = (priced_app / path).read_text(encoding="utf-8")
+    adapted = (
+        original.replace(
+            "model_id: anthropic.claude-sonnet-4-6", "model_id: us.anthropic.claude-sonnet-5"
+        )
+        .replace("input_cost_per_1k: 0.003", "input_cost_per_1k: 0.0022")
+        .replace("input_cost_per_1k: 0.00265", "input_cost_per_1k: 0.0027")
+    )
+    result = service.submit_adapted_file(
+        run_dir,
+        path,
+        adapted,
+        "Retarget and reprice.",
+        ["model id", "pricing"],
+        guidance_dispositions=dispose_all(service, run_dir, path),
+        annotated_changes=[
+            edit_change(
+                "model_id: anthropic.claude-sonnet-4-6",
+                "model_id: us.anthropic.claude-sonnet-5",
+                "Target id.",
+            ),
+            edit_change(
+                "input_cost_per_1k: 0.003",
+                "input_cost_per_1k: 0.0022",
+                "Regional premium.",
+                kind="model_difference",
+                url=UNKNOWN_URL,
+            ),
+            # The llama profile's same-named key cites registry evidence.
+            edit_change(
+                "input_cost_per_1k: 0.00265",
+                "input_cost_per_1k: 0.0027",
+                "Llama repricing.",
+                kind="model_difference",
+                url=REGISTRY_PRICING_URL,
+            ),
+        ],
+        submitted_on=AS_OF,
+    )
+    assert result.accepted, result.problems
+    findings = service.finalize_migration_run(run_dir).consistency_findings
+    assert any(
+        "pricing_contradicts_registry" in item and "input_cost_per_1k" in item for item in findings
+    )
+
+
+def test_profile_governance_ignores_key_order_and_covers_lists(
+    service: MigrationService, tmp_path: Path
+) -> None:
+    app = _write(
+        tmp_path / "listed",
+        {
+            "app.py": APP.replace('PROFILES["models"]["claude"]', 'PROFILES["models"][0]'),
+            "config/model_profiles.yaml": (
+                "models:\n"
+                "  - fallback_model: meta.llama3-70b-instruct-v1:0\n"
+                "    model_id: anthropic.claude-sonnet-4-6\n"
+                "    pricing:\n"
+                "      input_cost_per_1k: 0.003\n"
+                "      output_cost_per_1k: 0.015\n"
+            ),
+        },
+    )
+    run_dir = _run(service, app)
+    path = "config/model_profiles.yaml"
+    original = (app / path).read_text(encoding="utf-8")
+    adapted = original.replace(
+        "model_id: anthropic.claude-sonnet-4-6", "model_id: us.anthropic.claude-sonnet-5"
+    )
+    result = service.submit_adapted_file(
+        run_dir,
+        path,
+        adapted,
+        "Retarget only; pricing left as-is.",
+        ["model id"],
+        guidance_dispositions=dispose_all(service, run_dir, path),
+        annotated_changes=[
+            edit_change(
+                "model_id: anthropic.claude-sonnet-4-6",
+                "model_id: us.anthropic.claude-sonnet-5",
+                "Target id.",
+            )
+        ],
+        submitted_on=AS_OF,
+    )
+    assert result.accepted, result.problems
+    findings = service.finalize_migration_run(run_dir).consistency_findings
+    stale = [item for item in findings if "pricing_stale_source" in item]
+    assert len(stale) == 2, findings  # list-shaped profile, fallback_model listed first
+
+
+def test_observations_and_run_dir_do_not_change_the_validation_binding(
+    service: MigrationService, field_app: Path
+) -> None:
+    run_dir = _bedrock_run_dir(service, field_app)
+    before = manifest_sha256(service._plan_for_run(load_run_config(run_dir), run_dir))
+    plan = service._plan_for_run(load_run_config(run_dir), run_dir)
+    contested = next(item for item in plan.unknowns if item.kind is UnknownKind.CONTESTED_EVIDENCE)
+    assert service.record_observation(run_dir, contested.id, "REJECTED", "probe").accepted
+    assert manifest_sha256(service._plan_for_run(load_run_config(run_dir), run_dir)) == before
+    moved = run_dir.parent / "moved-run"
+    run_dir.rename(moved)
+    assert manifest_sha256(service._plan_for_run(load_run_config(moved), moved)) == before
+
+
+def _bedrock_run_dir(service: MigrationService, app: Path) -> Path:
+    start = service.start_migration_run(app, *BEDROCK_PAIR, as_of=AS_OF, research="skip", **BEDROCK)
+    assert start.paths is not None
+    return Path(start.paths.run_dir)
+
+
+@pytest.fixture
+def field_app(tmp_path: Path, project_root: Path) -> Path:
+    import shutil
+
+    repo = tmp_path / "field_pattern_repo"
+    shutil.copytree(project_root / "tests/fixtures/applications/field_pattern_repo", repo)
+    return repo / "app"
+
+
+def test_carried_over_contested_setting_is_still_marked(
+    service: MigrationService, priced_app: Path
+) -> None:
+    from llm_migrate.core.unknowns import contested_facts, contested_marks
+
+    run_dir = _run(service, priced_app)
+    plan = service._plan_for_run(load_run_config(run_dir), run_dir)
+    facts = contested_facts(plan)
+    setting = 'additionalModelRequestFields={"thinking": {"type": "disabled"}}'
+    carried = edit_change(
+        f'modelId="anthropic.claude-sonnet-4-6", {setting}',
+        f'modelId="us.anthropic.claude-sonnet-5", {setting}',
+        "Retarget; keep thinking disabled.",
+    )
+    assert contested_marks(carried, facts)

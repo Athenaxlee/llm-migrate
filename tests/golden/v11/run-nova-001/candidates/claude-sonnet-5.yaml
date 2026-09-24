@@ -154,16 +154,16 @@ pricing:
     currency: USD
     unit: per_1m_tokens
     valid_from: null
-    valid_until: '2026-08-31'
-    notes: Introductory price; official standard price is $3 after this period.
+    valid_until: null
+    notes: null
     sources: []
   output:
     amount: '10'
     currency: USD
     unit: per_1m_tokens
     valid_from: null
-    valid_until: '2026-08-31'
-    notes: Introductory price; official standard price is $15 after this period.
+    valid_until: null
+    notes: null
     sources: []
   cached_input: null
   batch: null
@@ -256,6 +256,18 @@ evidence_conflicts:
   notes: Keep this platform-scoped behavior unresolved until Bedrock-specific API
     documentation or an empirical provider response resolves the discrepancy.
 sources:
+- id: anthropic-models-overview-2026-09-23
+  url: https://platform.claude.com/docs/en/about-claude/models/overview
+  title: Models overview
+  source_type: official_documentation
+  authority_tier: 2
+  publisher: Anthropic
+  retrieved_at: '2026-09-23'
+  published_at: null
+  supports:
+  - pricing
+  notes: Refetched 2026-09-23; states $2 / $10 per MTok as the base price with no
+    introductory period.
 - id: anthropic-models-overview-2026-08-08
   url: https://platform.claude.com/docs/en/about-claude/models/overview
   title: Models overview

@@ -15,6 +15,7 @@ with its reason — the report can always say how an unknown was closed.
 from __future__ import annotations
 
 import json
+import shlex
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from enum import Enum
@@ -162,7 +163,7 @@ def consumer_refs(
         sources = [str(item) for item in metadata.get("sources") or []]
         refs.append(
             ConsumerRef(
-                location=f"{finding.location.path}:{finding.location.line}",
+                location=f"{finding.location.path}:{finding.location.line}:{finding.value}",
                 keyword=str(finding.value),
                 resolution="confirmed" if confirmed else resolution,
                 access_keys=access,
@@ -344,7 +345,7 @@ def contested_unknowns(
                         *([conflict.notes] if conflict.notes else []),
                     ]
                 ),
-                action=(f'python "{RUN_DIR_PLACEHOLDER}/{probe_path}"' if probe_path else None),
+                action=(f"python {RUN_DIR_PLACEHOLDER}/{probe_path}" if probe_path else None),
                 closing=(
                     "Closed when the probe's printed result (or another empirical check) is "
                     "recorded with record_observation for this unknown's id; promoting it to "
@@ -364,11 +365,20 @@ def contested_unknowns(
 # -- run-level application ----------------------------------------------------
 
 
+def _substitute_run_dir(action: str, run_dir: str) -> str:
+    """Fill the run directory per action shape: shell-quoted for a command,
+    JSON-escaped inside a Python-literal tool call."""
+    if action.startswith("python "):
+        return "python " + shlex.quote(
+            action[len("python ") :].replace(RUN_DIR_PLACEHOLDER, run_dir)
+        )
+    return action.replace(RUN_DIR_PLACEHOLDER, json.dumps(run_dir)[1:-1])
+
+
 def with_run_dir(unknowns: Sequence[MigrationUnknown], run_dir: str) -> list[MigrationUnknown]:
-    """Substitute the run directory into every action (JSON-escaped)."""
-    escaped = json.dumps(run_dir)[1:-1]
+    """Substitute the run directory into every action."""
     return [
-        item.model_copy(update={"action": item.action.replace(RUN_DIR_PLACEHOLDER, escaped)})
+        item.model_copy(update={"action": _substitute_run_dir(item.action, run_dir)})
         if RUN_DIR_PLACEHOLDER in item.action
         else item
         for item in unknowns
@@ -456,7 +466,6 @@ def contested_marks(change: Any, facts: Sequence[ContestedFact]) -> list[str]:
     """
     marks: list[str] = []
     adapted = str(getattr(change, "adapted_anchor", "") or "")
-    original = str(getattr(change, "original_anchor", "") or "")
     cited = " ".join(
         [str(getattr(change, "why", ""))]
         + [str(getattr(item, "reference", "")) for item in getattr(change, "evidence", [])]
@@ -464,10 +473,11 @@ def contested_marks(change: Any, facts: Sequence[ContestedFact]) -> list[str]:
     for fact in facts:
         if not fact.open:
             continue
-        exercises = (
-            bool(fact.setting_tokens)
-            and all(token in adapted for token in fact.setting_tokens)
-            and not all(token in original for token in fact.setting_tokens)
+        # Carrying a contested setting over from the source call still makes
+        # the adapted call depend on the fact, so the original anchor is not
+        # consulted.
+        exercises = bool(fact.setting_tokens) and all(
+            token in adapted for token in fact.setting_tokens
         )
         names = fact.field_path in cited or bool(fact.parameter and fact.parameter in cited)
         if not (exercises or names):

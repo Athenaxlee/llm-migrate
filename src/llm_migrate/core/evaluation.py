@@ -53,7 +53,23 @@ def manifest_sha256(plan: MigrationPlan) -> str:
 
 
 def _manifest_hash(plan: MigrationPlan) -> str:
-    payload = plan.model_dump_json(exclude_none=False)
+    """Hash of the plan's DELIVERABLE-relevant content.
+
+    An unknown's `action` carries the run directory (moving a run must not
+    invalidate its evaluation) and an observation only changes an unknown's
+    `status`/`closed_reason` (recording one must not mark a BYOK evaluation
+    stale): those fields are excluded, so the binding tracks what the
+    migration changes, not how it is being reviewed.
+    """
+    stable = plan.model_copy(
+        update={
+            "unknowns": [
+                item.model_copy(update={"action": "", "status": "open", "closed_reason": None})
+                for item in plan.unknowns
+            ]
+        }
+    )
+    payload = stable.model_dump_json(exclude_none=False)
     return hashlib.sha256(payload.encode()).hexdigest()
 
 

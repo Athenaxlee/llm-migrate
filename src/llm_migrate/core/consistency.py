@@ -15,15 +15,16 @@ turns them into blockers.
 from __future__ import annotations
 
 import hashlib
+import re
 from datetime import date
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import Field
 
 from llm_migrate.core.invocation_identity import references_bare_alone
 from llm_migrate.core.models import ApplicationAnalysis, CouplingKind, ModelPricing, StrictModel
-from llm_migrate.core.pricing_gate import classify_price
+from llm_migrate.core.pricing_gate import classify_price, to_decimal
 from llm_migrate.core.prompt_documents import (
     PromptDocumentError,
     parse_structured_document,
@@ -321,29 +322,47 @@ _PRICING_CODES = {
 }
 
 
-def _lookup(data: object, key_path: tuple[str, ...]) -> object:
-    node = data
-    for key in key_path:
-        if not isinstance(node, dict) or key not in node:
-            return None
-        node = node[key]
-    return node
+_MODEL_KEYS = {"model", "model_id", "modelid", "model_name"}
 
 
-def _profile_model(data: object, key_path: tuple[str, ...]) -> str | None:
-    """Model id declared by the nearest enclosing mapping of a value, if any."""
-    for depth in range(len(key_path) - 1, -1, -1):
-        node = _lookup(data, key_path[:depth])
-        if not isinstance(node, dict):
-            continue
-        for key, value in node.items():
-            lowered = str(key).casefold()
-            if isinstance(value, str) and (
-                lowered in {"model", "model_id", "modelid", "model_name"}
-                or lowered.endswith(("_model", "_model_id"))
-            ):
-                return value
-    return None
+def _value_sites(
+    node: object, key_path: tuple[str, ...], chain: tuple[dict[str, Any], ...] = ()
+) -> list[tuple[object, tuple[dict[str, Any], ...]]]:
+    """Every value at `key_path` with its enclosing mappings, descending into lists.
+
+    The config scanner records list items under their parent's key path, so a
+    profile list (`models: [{model_id: ..., pricing: {...}}, ...]`) yields one
+    site per item instead of a silent miss.
+    """
+    if not key_path:
+        return [(node, chain)]
+    if isinstance(node, list):
+        return [site for item in node for site in _value_sites(item, key_path, chain)]
+    if isinstance(node, dict) and key_path[0] in node:
+        return _value_sites(node[key_path[0]], key_path[1:], (*chain, node))
+    return []
+
+
+def _profile_models(chain: tuple[dict[str, Any], ...]) -> list[str]:
+    """Model ids declared by the nearest enclosing mapping that declares any.
+
+    Every model-like key at that level counts (`model`, `fallback_model`, ...):
+    a profile is governed when ANY of them names a run model, so key order
+    never decides whether pricing is checked.
+    """
+    for node in reversed(chain):
+        found = [
+            str(value)
+            for key, value in node.items()
+            if isinstance(value, str)
+            and (
+                str(key).casefold() in _MODEL_KEYS
+                or str(key).casefold().endswith(("_model", "_model_id"))
+            )
+        ]
+        if found:
+            return found
+    return []
 
 
 def check_adapted_pricing(
@@ -387,49 +406,64 @@ def check_adapted_pricing(
             if entry_is_unchanged(entry)
             else _effective_content(run_dir, entry)
         )
-        original = _original_content(config, entry)
         if content is None:
             continue
         try:
             data = parse_structured_document(content, format)
-            original_data = (
-                parse_structured_document(original, format) if original is not None else data
-            )
         except PromptDocumentError:
             continue
+        seen: set[str] = set()
         for key_path in sorted(set(key_paths)):
-            profile = _profile_model(original_data, key_path)
-            if profile is not None and not any(
-                spelling in profile or profile in spelling for spelling in governed
-            ):
-                continue  # another model's profile: not this migration's pricing
-            check = classify_price(
-                key_path,
-                _lookup(data, key_path),
-                target=target_pricing,
-                source=source_pricing,
-                as_of=as_of,
-            )
-            if check is None or check.verdict == "consistent":
-                continue
-            if check.verdict == "contradiction" and _departure_documented(
-                entry, key_path[-1], known_evidence
-            ):
-                continue
-            findings.append(
-                ConsistencyFinding(
-                    code=_PRICING_CODES[check.verdict],  # type: ignore[arg-type]
-                    path=config_path,
-                    message=check.message,
+            for value, chain in _value_sites(data, key_path):
+                models = _profile_models(chain)
+                if models and not any(
+                    spelling in model or model in spelling
+                    for model in models
+                    for spelling in governed
+                ):
+                    continue  # another model's profile: not this migration's pricing
+                check = classify_price(
+                    key_path,
+                    value,
+                    target=target_pricing,
+                    source=source_pricing,
+                    as_of=as_of,
                 )
-            )
+                if check is None or check.verdict == "consistent" or check.message in seen:
+                    continue
+                if check.verdict == "contradiction" and _departure_documented(
+                    entry, key_path[-1], value, known_evidence
+                ):
+                    continue
+                seen.add(check.message)
+                findings.append(
+                    ConsistencyFinding(
+                        code=_PRICING_CODES[check.verdict],  # type: ignore[arg-type]
+                        path=config_path,
+                        message=check.message,
+                    )
+                )
     return findings
 
 
-def _departure_documented(entry: AdaptationEntry, key: str, known_evidence: set[str]) -> bool:
-    """Whether a change touching `key` cites registry-recorded or plan-carried evidence."""
+def _departure_documented(
+    entry: AdaptationEntry, key: str, value: object, known_evidence: set[str]
+) -> bool:
+    """Whether the change that SET this value cites known evidence.
+
+    The change's adapted anchor must carry the key as a whole word AND the
+    adapted value's text, so evidence on a same-named key in another profile
+    (or on an unrelated edit mentioning the key) never clears a
+    contradiction elsewhere in the file.
+    """
+    key_pattern = re.compile(rf"(?<![A-Za-z0-9_]){re.escape(key)}(?![A-Za-z0-9_])")
+    value_texts = {str(value)}
+    decimal_value = to_decimal(value)
+    if decimal_value is not None:
+        value_texts.add(format(decimal_value.normalize(), "f"))
     for change in entry.annotated_changes:
-        if key not in (change.adapted_anchor or "") and key not in (change.original_anchor or ""):
+        anchor = change.adapted_anchor or ""
+        if not key_pattern.search(anchor) or not any(text in anchor for text in value_texts):
             continue
         if any(item.url and item.url in known_evidence for item in change.evidence):
             return True

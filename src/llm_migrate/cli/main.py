@@ -1494,7 +1494,8 @@ def run_add_prompt_source(
         list[str] | None,
         typer.Option(
             "--dismiss",
-            help="Candidate file or consumer path:line the user says is not a prompt; repeatable.",
+            help="Candidate file or consumer path:line:keyword the user says is not a prompt; "
+            "repeatable.",
         ),
     ] = None,
     rationale: Annotated[
@@ -1518,7 +1519,7 @@ def run_add_prompt_source(
 @run_app.command("confirm-consumer")
 def run_confirm_consumer(
     run_dir: Path,
-    location: Annotated[str, typer.Argument(metavar="PATH:LINE")],
+    location: Annotated[str, typer.Argument(metavar="PATH:LINE:KEYWORD")],
     source_path: Annotated[str, typer.Argument(metavar="PROMPT_FILE")],
     registry: Annotated[Path | None, typer.Option(help="Registry root.")] = None,
 ) -> None:

@@ -253,11 +253,11 @@ def test_dismissals_and_confirmations_close_by_action(
         assert "Llama profiles are retired." in closed[path]
     assert service.confirm_prompt_consumer(
         run_dir,
-        "analysis/invoke_multimodal.py:22",
+        "analysis/invoke_multimodal.py:22:system",
         "analysis/prompt_lib/claude_prompt_multi.yaml",
     ).accepted
     closed = closed_by_action()
-    assert "claude_prompt_multi.yaml" in closed["analysis/invoke_multimodal.py:22"]
+    assert "claude_prompt_multi.yaml" in closed["analysis/invoke_multimodal.py:22:system"]
     # With a selected sibling the llama files are out of scope; the user's
     # recorded dismissal is still what the plan shows for them.
     plan = _run_plan(service, run_dir)
@@ -413,3 +413,22 @@ def test_mcp_and_cli_record_observations(
         ],
     )
     assert refused.exit_code == 1
+
+
+def test_probe_action_is_shell_quoted_for_awkward_run_dirs(
+    service: MigrationService, tmp_path: Path, project_root: Path
+) -> None:
+    repo = tmp_path / "café run" / "field_pattern_repo"
+    shutil.copytree(project_root / "tests/fixtures/applications/field_pattern_repo", repo)
+    run_dir = _bedrock_run(service, repo / "app")
+    service.list_adaptation_tasks(run_dir)
+    plan = _run_plan(service, run_dir)
+    contested = next(item for item in plan.unknowns if item.kind is UnknownKind.CONTESTED_EVIDENCE)
+    argv = shlex.split(contested.action)
+    assert argv[0] == "python" and Path(argv[1]).is_file(), contested.action
+    assert "\\u00e9" not in contested.action
+    # Tool-call actions stay JSON-escaped Python literals.
+    consumer = next(
+        item for item in plan.unknowns if item.kind is UnknownKind.DYNAMIC_PROMPT_CONSUMER
+    )
+    _assert_action_is_exact(consumer.action, run_dir)

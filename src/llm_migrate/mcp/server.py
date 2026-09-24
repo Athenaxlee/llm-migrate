@@ -946,7 +946,7 @@ def add_prompt_sources(
     `paths` are application-relative prompt files the user confirmed are
     live prompts; the worklist re-derives (submitted deliverables keep their
     entries) and `new_prompt_tasks` lists the added pending tasks. `dismiss`
-    names unreferenced candidate files or dynamic consumer `path:line`
+    names unreferenced candidate files or dynamic consumer `path:line:keyword`
     addresses the USER says are not prompts / genuinely runtime-built, with
     the user's `rationale` (required). Nothing is written on any problem.
     """
@@ -963,7 +963,7 @@ def confirm_prompt_consumer(
 ) -> dict[str, Any]:
     """Record that one dynamic prompt consumer reads one prompt file.
 
-    `location` is a `path:line` from the run's dynamic_prompt_consumers
+    `location` is a `path:line:keyword` from the run's dynamic_prompt_consumers
     (get_run_status / list_adaptation_tasks); `source_path` is the file the
     USER confirmed it reads. The consumer becomes source-backed, the file a
     prompt source, and the worklist re-derives.
