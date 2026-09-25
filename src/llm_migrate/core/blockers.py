@@ -201,12 +201,11 @@ def _accept_option(run_dir: str, blocker: MigrationBlocker) -> ResolutionOption:
     return ResolutionOption(
         id="accept",
         kind=ResolutionKind.ACCEPT_WITH_RATIONALE,
-        summary="Accept this blocker explicitly and proceed with the migration plan.",
+        summary="Accept this risk and continue.",
         consequences=[
-            "The blocker stays in the manifest and report as a prominently recorded "
-            "accepted decision; it is no longer counted as unresolved.",
-            "Requires the user's own free-text rationale; this option is never a "
-            "default and must never be chosen on the user's behalf.",
+            "The report records it as an accepted risk; it no longer blocks the run.",
+            "You must give your own reason. This option is never a default and the agent "
+            "may not choose it for you.",
         ],
         next_step=_next_step(run_dir, blocker, "accept", ResolutionKind.ACCEPT_WITH_RATIONALE),
     )
@@ -248,7 +247,7 @@ def _retarget_same_model(
             ):
                 continue
             evidence = _capability_evidence(profile, representation, capability)
-            supported = f"the registry records native {label} as supported there"
+            supported = f"the registry records native {label} as supported"
         else:
             evidence = _platform_evidence(profile, representation)
             supported = "a deterministic invocation adapter exists for it"
@@ -258,14 +257,13 @@ def _retarget_same_model(
             + (f"-{representation.endpoint}" if representation.endpoint else "")
         )
         consequences = [
-            f"The run's migration.yaml target becomes {config.target.model} on "
-            f"{representation.platform}{_endpoint_suffix(representation.endpoint)} "
-            f"(model id {representation.model_id}); the plan regenerates against "
-            "that representation.",
+            f"The target becomes {config.target.model} on {representation.platform}"
+            f"{_endpoint_suffix(representation.endpoint)} (model id "
+            f"{representation.model_id}); the plan is rebuilt for it.",
         ]
         if representation.platform != config.target.platform:
             consequences.append(
-                f"Platform credentials, configuration, and request shape move from "
+                f"Credentials, configuration, and request shape move from "
                 f"{config.target.platform} to {representation.platform}."
             )
         options.append(
@@ -341,13 +339,13 @@ def _alternative_model_options(
                 id=option_id,
                 kind=ResolutionKind.RETARGET,
                 summary=(
-                    f"Retarget to a different model, {recommendation.canonical_name} on "
-                    f"{recommendation.platform}, which the registry records as providing "
-                    f"{satisfies} and which passes every detected application requirement."
+                    f"Switch to a different model: {recommendation.canonical_name} on "
+                    f"{recommendation.platform}. The registry records it as providing "
+                    f"{satisfies}, and it meets every requirement the scan found."
                 ),
                 consequences=[
-                    "The target model changes entirely: prompts, parameters, and behavior "
-                    "must be re-planned and re-evaluated against the new model.",
+                    "A different model: prompts, parameters, and behavior must be "
+                    "re-planned and re-tested.",
                     *(f"Recommendation tradeoff: {item}" for item in recommendation.tradeoffs[:2]),
                 ],
                 evidence_urls=evidence,
@@ -375,8 +373,8 @@ def _redesign_option(
         summary=summary,
         consequences=[
             *consequences,
-            "This becomes a REQUIRED adaptation task with evidence-linked guidance, "
-            "injected into the plan on every regeneration while the decision stands.",
+            "This adds a required task (with evidence-linked guidance) to the plan for as "
+            "long as the decision stands.",
         ],
         evidence_urls=task.evidence_urls,
         next_step=_next_step(run_dir, blocker, "redesign", ResolutionKind.REDESIGN_TASK),
@@ -436,13 +434,12 @@ def _capability_redesign(
                 blocker,
                 task,
                 summary=(
-                    "Redesign the application off native structured output: "
-                    "prompt-enforced JSON plus the existing parser replaces the "
-                    "unsupported native feature."
+                    "Stop using native structured output: enforce JSON through the prompt "
+                    "and keep the existing parser."
                 ),
                 consequences=[
-                    "The output format is no longer enforced by the platform; malformed "
-                    "outputs surface at the application parser instead of the API.",
+                    "The platform no longer guarantees the output format; bad outputs show "
+                    "up at your parser instead of the API.",
                 ],
             )
         ]
@@ -465,9 +462,9 @@ def _capability_redesign(
                 run_dir,
                 blocker,
                 task,
-                summary=("Redesign the application off streaming and consume complete responses."),
+                summary="Stop streaming and read complete responses.",
                 consequences=[
-                    "Latency to first output increases and incremental display behavior is lost.",
+                    "The first output arrives later, and incremental display is lost.",
                 ],
             )
         ]
@@ -541,8 +538,8 @@ def _consistency_options(
                 representation = profile.platforms[0]
             option_id = f"correct-source-model-{name}"
             consequences = [
-                "The run's migration.yaml source identity is corrected and the plan "
-                "regenerates from the model the scan actually detected.",
+                "The run's source model is corrected to the one the scan detected, and the "
+                "plan is rebuilt.",
                 "Equivalent to restarting with start_migration(application_path="
                 f"{config.application_root!r}, source={name!r}, "
                 f"target={config.target.model!r}, "
@@ -550,17 +547,14 @@ def _consistency_options(
             ]
             if len(detected) > 1:
                 consequences.append(
-                    "The application uses multiple source models; this run then covers "
-                    f"only {name} — start a separate run for each remaining model."
+                    f"The application uses several source models; this run then covers only "
+                    f"{name}. Start a separate run for each other model."
                 )
             options.append(
                 ResolutionOption(
                     id=option_id,
                     kind=ResolutionKind.CORRECTION,
-                    summary=(
-                        f"Correct the run's declared source model to {name}, the model "
-                        "detected in the application code."
-                    ),
+                    summary=f"Correct the source model to {name}, the one found in the code.",
                     consequences=consequences,
                     evidence_urls=_profile_evidence(profile),
                     next_step=_next_step(run_dir, blocker, option_id, ResolutionKind.CORRECTION),
@@ -592,13 +586,12 @@ def _consistency_options(
                         id=option_id,
                         kind=ResolutionKind.CORRECTION,
                         summary=(
-                            f"Correct the run's declared source platform to {platform}"
-                            f"{_endpoint_suffix(representation.endpoint)}, the platform "
-                            "detected in the application code."
+                            f"Correct the source platform to {platform}"
+                            f"{_endpoint_suffix(representation.endpoint)}, the one found in "
+                            "the code."
                         ),
                         consequences=[
-                            "The run's migration.yaml source identity is corrected and the "
-                            "plan regenerates from the detected platform.",
+                            "The run's source platform is corrected and the plan is rebuilt.",
                             "Equivalent to restarting with start_migration(application_path="
                             f"{config.application_root!r}, source={config.source.model!r}, "
                             f"source_platform={platform!r}, target={config.target.model!r}, "
@@ -648,13 +641,11 @@ def _platform_ambiguity_options(
                 id=option_id,
                 kind=ResolutionKind.RETARGET,
                 summary=(
-                    f"Pin the target to the concrete registry representation "
-                    f"{representation.model_id} on {representation.platform}"
+                    f"Use exactly {representation.model_id} on {representation.platform}"
                     f"{_endpoint_suffix(representation.endpoint)}."
                 ),
                 consequences=[
-                    "The run's migration.yaml target is pinned to this exact "
-                    "representation and the plan regenerates unambiguously.",
+                    "The target is pinned to this exact platform entry and the plan is rebuilt.",
                 ],
                 evidence_urls=_platform_evidence(profile, representation),
                 next_step=_next_step(run_dir, blocker, option_id, ResolutionKind.RETARGET),
@@ -715,8 +706,7 @@ def _context_window_options(
                             f"(≥ {required} required)."
                         ),
                         consequences=[
-                            "The run's migration.yaml target moves to this "
-                            "representation and the plan regenerates against it.",
+                            "The target moves to this platform entry and the plan is rebuilt.",
                         ],
                         evidence_urls=_capability_evidence(
                             profile, representation, "context_window_tokens"
@@ -765,8 +755,8 @@ def _context_window_options(
             task,
             summary="Reduce the prompt so it fits the target context window.",
             consequences=[
-                "Prompt content is removed or restructured; behavior must be "
-                "re-validated against representative inputs.",
+                "Prompt content is removed or restructured; re-test behavior on "
+                "representative inputs.",
             ],
         )
     )
@@ -795,8 +785,8 @@ def _invalid_schema_options(blocker: MigrationBlocker, run_dir: str) -> list[Res
             task,
             summary=f"Fix the invalid JSON Schema{where} in the application.",
             consequences=[
-                "The schema is part of the application's own contract; it must be "
-                "valid before any target can enforce or convert it.",
+                "The schema is the application's own contract; it must be valid before "
+                "any target can enforce or convert it.",
             ],
         )
     ]
@@ -840,18 +830,17 @@ def _parameter_options(
             task,
             summary=(f"Remove or replace the unsupported {name} parameter in the invocation."),
             consequences=[
-                f"Requests stop sending {name}; behavior that depended on it must "
-                "be re-validated on the target.",
+                f"Requests stop sending {name}; re-test any behavior that depended on it.",
             ],
         )
     ]
 
 
 _KIND_QUESTION_LABELS = {
-    ResolutionKind.RETARGET: "retarget to a registry-verified capable endpoint or model",
-    ResolutionKind.REDESIGN_TASK: "redesign the application off the blocked behavior",
-    ResolutionKind.CORRECTION: "correct the declared run identity",
-    ResolutionKind.ACCEPT_WITH_RATIONALE: "accept the blocker with a recorded rationale",
+    ResolutionKind.RETARGET: "run on a model or platform where this works (retarget)",
+    ResolutionKind.REDESIGN_TASK: "change the application so it no longer needs this (redesign)",
+    ResolutionKind.CORRECTION: "correct what the run declared (correction)",
+    ResolutionKind.ACCEPT_WITH_RATIONALE: "accept the risk and give your reason (accept)",
 }
 
 
@@ -861,9 +850,7 @@ def _question(blocker: MigrationBlocker, options: list[ResolutionOption]) -> str
         label = _KIND_QUESTION_LABELS[option.kind]
         if label not in kinds:
             kinds.append(label)
-    return (
-        f"{blocker.message.rstrip('.')} — how should this be resolved: " + ", or ".join(kinds) + "?"
-    )
+    return f"{blocker.message.rstrip('.')}. What do you want to do: " + "; or ".join(kinds) + "?"
 
 
 def _invocation_options(
@@ -893,15 +880,13 @@ def _invocation_options(
                 id=option_id,
                 kind=ResolutionKind.CORRECTION,
                 summary=(
-                    f"Invoke the target through selector {selector.name!r}: every "
-                    f"deliverable references {selector.model_id}."
+                    f"Call the target as {selector.model_id} (selector {selector.name!r})."
                     + (f" {selector.description}" if selector.description else "")
                 ),
                 consequences=[
-                    f"The run records {selector.model_id!r} as the target invocation "
-                    "id; the worklist, submission checks, and report enforce it.",
-                    f"Adapted files that reference the bare id "
-                    f"{platform.model_id!r} alone are rejected.",
+                    f"Every adapted file must use {selector.model_id!r}; the worklist, "
+                    "submission checks, and report enforce it.",
+                    f"Files that use only the bare id {platform.model_id!r} are rejected.",
                 ],
                 evidence_urls=evidence[:2],
                 next_step=_next_step(run_dir, blocker, option_id, ResolutionKind.CORRECTION),
@@ -944,10 +929,9 @@ def build_blocker_resolutions(
         no_option_reason = None
         if not specific:
             no_option_reason = (
-                "No registry-backed resolution option exists for this blocker: the "
-                "registry records no alternative endpoint, model, or evidence-linked "
-                "redesign that resolves it. Fix the underlying issue in the "
-                "application, or accept the blocker explicitly with a rationale."
+                "The registry offers no way around this blocker: no other endpoint, model, "
+                "or documented redesign resolves it. Fix the issue in the application, or "
+                "accept the risk with your reason."
             )
         resolutions.append(
             BlockerResolution(

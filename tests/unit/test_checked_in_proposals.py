@@ -7,6 +7,7 @@ import yaml
 
 from llm_migrate.core.knowledge import MigrationKnowledge, ResearchResult
 from llm_migrate.core.models import ModelProfile
+from llm_migrate.core.refresh import REFRESH_EVIDENCE_FILENAME, RefreshEvidenceLog
 
 REQUIRED_FILES = {
     "candidate-model.yaml",
@@ -14,6 +15,8 @@ REQUIRED_FILES = {
     "proposal.md",
     "proposal.yaml",
 }
+# Maintainer refresh baselines (v1.6.1) may sit beside a bundle; nothing else.
+OPTIONAL_FILES = {REFRESH_EVIDENCE_FILENAME}
 
 
 def _yaml_mapping(path: Path) -> dict[str, Any]:
@@ -43,9 +46,14 @@ def test_checked_in_proposal_bundles_cover_every_provider_profile(
     covered_models: set[str] = set()
 
     for bundle in bundles:
-        assert {path.name for path in bundle.iterdir()} == REQUIRED_FILES
-
+        names = {path.name for path in bundle.iterdir()}
+        assert REQUIRED_FILES <= names <= REQUIRED_FILES | OPTIONAL_FILES, bundle
         candidate = ModelProfile.model_validate(_yaml_mapping(bundle / "candidate-model.yaml"))
+        if REFRESH_EVIDENCE_FILENAME in names:
+            baselines = RefreshEvidenceLog.model_validate(
+                _yaml_mapping(bundle / REFRESH_EVIDENCE_FILENAME)
+            )
+            assert baselines.model == candidate.identity.canonical_name
         evidence = ResearchResult.model_validate(_yaml_mapping(bundle / "evidence.yaml"))
         proposal = _yaml_mapping(bundle / "proposal.yaml")
         report = (bundle / "proposal.md").read_text(encoding="utf-8")

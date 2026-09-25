@@ -138,7 +138,7 @@ def test_config_file_gets_a_task_and_sdk_only_file_is_unaffected(
         task for task in tasks.file_tasks if task.source_path == "config/model_profiles.yaml"
     )
     assert any(
-        "Model difference" in item.text and "temperature" in item.text
+        item.text.startswith("[") and "temperature" in item.text
         for item in config_task.required_changes
     )
     # The parameter FACT travels to the governed file; only reviewed

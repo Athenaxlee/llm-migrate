@@ -199,14 +199,22 @@ def _difference_change_category(difference: ModelDifference) -> str:
 
 
 def _difference_text(difference: ModelDifference) -> str:
+    return difference_guidance_text(
+        difference.severity.value,
+        difference.migration_impact,
+        difference.recommended_action,
+        difference.target_evidence_url,
+    )
+
+
+def difference_guidance_text(
+    severity: str, impact: str, action: str | None, evidence_url: str | None
+) -> str:
+    """One model difference as a guidance line: `[severity] impact → action (evidence: url)`."""
     return (
-        f"Model difference ({difference.severity.value}): {difference.migration_impact}"
-        + (f" Action: {difference.recommended_action}" if difference.recommended_action else "")
-        + (
-            f" (evidence: {difference.target_evidence_url})"
-            if difference.target_evidence_url
-            else ""
-        )
+        f"[{severity}] {impact}"
+        + (f" → {action}" if action else "")
+        + (f" (evidence: {evidence_url})" if evidence_url else "")
     )
 
 
@@ -635,16 +643,14 @@ def generate_application_migration_plan(
             prompt_count=sum(item.kind is CouplingKind.PROMPT for item in application.findings),
         ),
         target_selection_rationale=[
-            f"The caller selected {target_endpoint.model} on {target_endpoint.platform}.",
+            f"Requested target: {target_endpoint.model} on {target_endpoint.platform}.",
             (
-                f"Static analysis found {len(blockers)} blocker(s); the target remains a "
-                "proposal until they are resolved."
+                f"The scan found {len(blockers)} blocker(s); the target stays a proposal "
+                "until they are resolved."
                 if blockers
-                else "Static analysis found no proven blocker for the detected application "
-                "requirements."
+                else "The scan found no blocker for what this application uses."
             ),
-            f"Review {len(open_unknowns(unknowns))} unresolved compatibility item(s) before "
-            "deployment.",
+            f"{len(open_unknowns(unknowns))} open unknown(s) to settle before deployment.",
         ],
         model_differences=comparison,
         affected_files=affected_files,
@@ -1063,11 +1069,28 @@ def generate_migration_report(plan: MigrationPlan) -> str:
         ("What to test before deployment", plan.required_tests),
         ("Rollout recommendations", plan.rollout_recommendations),
     )
+    # Empty change sections collapse into one line instead of a run of
+    # "None." headings, so the report reads top to bottom without noise.
+    collapsible = {
+        "Tool changes",
+        "Tool schema candidates",
+        "Output-contract changes",
+        "Structured-output candidates",
+        "Configuration changes",
+    }
+    not_affected: list[str] = []
     for title, items in sections:
-        lines.extend(("", f"## {title}", ""))
-        lines.extend([f"- {item}" for item in items] or ["- None."])
-        if title == "Warnings":
-            lines.extend(_unknowns_table(plan.unknowns))
+        if title in collapsible and not items:
+            not_affected.append(title.casefold())
+        else:
+            lines.extend(("", f"## {title}", ""))
+            lines.extend([f"- {item}" for item in items] or ["- None."])
+            if title == "Warnings":
+                lines.extend(_unknowns_table(plan.unknowns))
+        # The last collapsible section is the flush point, so the one-line
+        # summary sits where those sections would have been.
+        if title == "Configuration changes" and not_affected:
+            lines.extend(("", "## Not affected", "", f"- No {', '.join(not_affected)} are needed."))
     lines.extend(
         (
             "",

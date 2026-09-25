@@ -273,10 +273,20 @@ Application: /absolute/path/to/application
 Source: <platform> / <model id as you know it>
 Target: <platform> / <model id as you know it>
 
-Start with start_migration and follow its next_steps. Ask me before running
-research and before finalizing. Present every blocker question, review
-change, and research decision to me verbatim — do not decide on my behalf.
+Start with start_migration and follow its next_steps. When research is
+recommended, run it without asking me, with non-interactive background
+agents — it needs nothing from me. Ask me before finalizing. Present every
+blocker question and review change to me verbatim — do not decide on my
+behalf.
 ```
+
+Research, when the registry's recorded facts are missing or past their
+freshness window, runs one researcher and one independent reviewer agent per
+scope. The generated prompts tell those agents to use web search and
+page-fetch tools and never a visible browser, and the orchestration guidance
+runs scopes in parallel, so the stage needs no attention from you. To skip it
+for a quick pass, add `research="skip"` to `start_migration` (CLI
+`--skip-research`).
 
 For production migrations, add `strict=true`: unknown evidence URLs are
 rejected, missing invocation facts and incomplete prompt coverage block, and
@@ -360,6 +370,12 @@ Key behaviors during the run:
   fact is marked CONTESTED in change review until an observation resolves
   it, and after the first finalize the run points you at a drafted
   evaluation instead of letting validation be skipped.
+- Research runs by default and hands-free: when facts are missing or past
+  their freshness window, `next_steps` and `get_run_status` tell the host to
+  run the research stages now with non-interactive background agents (web
+  search and page-fetch tools, never a visible browser), scopes in parallel,
+  and to ask you first only if you asked to be consulted. A fresh registry
+  (see "Keeping the registry fresh") means no research at all.
 - Noise stays out of your way: prompt files referenced only by another
   model's configuration profile (or unreferenced next to selected siblings)
   are reported out of scope, unknowns the scan already answers are not
@@ -379,7 +395,7 @@ for manual composition.
 | --- | --- | --- |
 | `start_migration` | Begin any migration | Matches both models registry-first, scans, decides whether research is needed, writes the run workspace, returns next steps |
 | `get_run_status` | Any time | Reports the run's state-machine position and the single next action |
-| `get_research_prompts` | The run recommends research | Returns scope-isolated researcher/reviewer prompt pairs with exact bounds, schemas, and artifact paths |
+| `get_research_prompts` | The run recommends research | Returns scope-isolated researcher/reviewer prompt pairs with exact bounds, schemas, and artifact paths; the prompts demand non-interactive tools and the guidance runs scopes in parallel |
 | `validate_research_artifact` | A research/review artifact is written | Validates the YAML in place with the deterministic gates |
 | `build_session_registry` | All required scope artifacts validate | Finalizes the immutable, expiring session overlay |
 | `list_adaptation_tasks` | The plan is ready | Derives the per-file worklist (snapshot-backed) with evidence-linked guidance and `unaffected_files` |
@@ -562,6 +578,28 @@ mypy
 The repository registry is discovered automatically. To use another registry,
 pass `--registry PATH` or set `LLM_MIGRATE_REGISTRY` to a root containing
 `models/`.
+
+### Keeping the registry fresh
+
+Freshness windows are short by design (7 days for pricing and lifecycle, 14
+for availability, 30 for capabilities and prompt guidance). Maintainers keep
+them honest with a refetch-only refresh that never edits `registry/`:
+
+```bash
+llm-migrate registry refresh-evidence --model claude-sonnet-5
+```
+
+It refetches only the source URLs already recorded in the profile, hashes
+each page's visible text against the baseline in
+`.registry-proposals/<model>/refresh-evidence.yaml`, and reports: unchanged
+pages that still name the model propose moving `checked_at` for the
+categories they support; a page that no longer names the model (a lineup page
+that dropped a legacy model) vouches for nothing; changed pages are held
+until you re-verify them (then `--rebaseline`); a URL with no baseline gets
+one recorded and proposes nothing; a category the bundle's review put on
+hold stays held. Promote an approved proposal by hand through the model's
+bundle, like every other registry change. `--no-record` produces a read-only report; `--output DIR` writes it
+as YAML and Markdown.
 
 Design references:
 

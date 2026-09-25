@@ -144,7 +144,7 @@ def test_unresolved_dynamic_prompt_is_reported_not_hidden(
     assert plan.prompt_changes == []
     assert any("Prompt adaptation coverage is incomplete" in item for item in plan.warnings)
     assert any(
-        "dynamically built" in item for item in (u.message for u in plan.unknowns if u.is_open)
+        "built at runtime" in item for item in (u.message for u in plan.unknowns if u.is_open)
     )
     report = service.migration_report(plan)
     assert "## Prompt discovery" in report

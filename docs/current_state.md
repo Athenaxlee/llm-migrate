@@ -100,6 +100,27 @@ first finalize, and pair-specific prompt guidance for claude-sonnet-4-6 →
 claude-sonnet-5 lands through a reviewed bundle. See the V1.6.0-c section
 below and `docs/project_phases.md` §12.13.
 
+V1.6.1: Run Economics, Evidence Refresh, and Plain-Language Output —
+released as `v1.6.1` on 2026-09-24, in response to a v1.6.0 guided run driven by the README's
+starting instruction that was slow and token-hungry: every Anthropic
+profile's freshness had lapsed (last checked 2026-08-09 against 7–30 day
+windows), so every run recommended research on every topic for both models
+(four web-researching agents, driven one at a time through a visible
+browser), and every guided call re-parsed the registry and walked the whole
+application tree including `.venv`. Research stays `recommended` and now
+runs by default: `next_steps`, `get_run_status`, and the generated prompts
+demand non-interactive background agents (web search and page-fetch tools,
+never a visible browser) with scopes in parallel, asking the user first only
+if they asked to be consulted; the MCP process caches the service per
+registry digest, the file walk prunes ignored directories, and file digests
+are stat-cached; and the maintainer command
+`llm-migrate registry refresh-evidence` refetches only recorded source URLs
+and proposes freshness updates through the bundle path. The three Anthropic
+profiles were re-verified by hand on 2026-09-24 and promoted through their
+bundles. The text a user actually reads — blocker questions and options,
+unknowns, the run status, and the report — was rewritten in plain English.
+See the V1.6.1 section below and `docs/project_phases.md` §12.14.
+
 V1.5.0-b/-c/-d — implemented on 2026-09-22, completing the v1.5.0 release:
 semantic config couplings with anchoring guardrails, one difference-propagation
 mechanism, the worklist diet with `confirm_unaffected`, and the cross-surface
@@ -111,7 +132,7 @@ contract-test deliverable (§12.8).
 
 ## Released foundation
 
-- Git tag `v1.6.0` is the current stable release; `v1.5.2`, `v1.5.1`, `v1.5.0`, `v1.4.1`,
+- Git tag `v1.6.1` is the current stable release; `v1.6.0`, `v1.5.2`, `v1.5.1`, `v1.5.0`, `v1.4.1`,
   `v1.4.0`, `v1.3.0`, `v1.2.0`, `v1.1.0`, `v1.0.0`, and `v0.1.0` remain
   prior recorded release tags.
 - The V0.1 reviewed registry, proposal workflow, provenance, freshness, model
@@ -1006,16 +1027,79 @@ reviews plus an economics benchmark against v1.5.2) found and fixed:
   price (three official pages refetched 2026-09-23 state no introductory
   period), promoted through its proposal bundle.
 
+## V1.6.1 completed capabilities
+
+- Research by default, hands-free (2026-09-24): research stays
+  `recommended` whenever knowledge is missing or past its freshness window
+  (the reasons now name the topics and their last-checked date). Instead of
+  asking the user, `start_migration.next_steps` and the `research_pending`
+  status action tell the host to run the stages now with separate
+  NON-INTERACTIVE background agents, scopes in parallel, and to ask first
+  only if the user asked to be consulted (skip only on `research="skip"`).
+  The generated researcher and reviewer prompts carry the same rule (web
+  search and page-fetch tools, never a visible browser, never wait for user
+  input) and the orchestration guidance names the parallelism bound. The
+  README starting instruction no longer says "ask me before research".
+- Per-call economics (2026-09-24): `scannable_files` walks with pruning
+  (ignored directories such as `.venv`, `node_modules`, and `.llm-migrate`
+  are never descended into), the snapshot key's file digests are cached by
+  `(path, size, mtime_ns)`, and the MCP server keeps one `MigrationService`
+  per registry content digest. Measured on the field-pattern fixture with a
+  synthetic 18k-file `.venv` and 31 MB of JSON data: steady-state guided
+  calls went from 660–2300 ms to ~36 ms (registry parse ~180 ms per call
+  removed; the tree walk from 551 ms to 16 ms).
+- Maintainer evidence refresh (2026-09-24): `core/refresh.py` and
+  `llm-migrate registry refresh-evidence [--model …] [--rebaseline]
+  [--no-record] [--output DIR]` refetch ONLY the source URLs recorded in
+  canonical profiles (the bounded https fetcher of the research refetch
+  adapter), hash the page's visible text, and compare against
+  `.registry-proposals/<model>/refresh-evidence.yaml` baselines: unchanged
+  pages that still name the model propose `checked_at` moves for the
+  categories they support, a page silent on the model (`no_mention`) vouches
+  for nothing, changed pages are held for re-verification (rebaselined only
+  on request), a URL without a baseline gets one recorded and proposes
+  nothing. Fetch failures, including truncated HTTP responses, are recorded
+  per URL, never raised. Registry files
+  are never written. The bundle test admits the optional baseline file.
+- Registry refresh promoted (2026-09-24, hand-verified against the
+  refetched official pages): claude-sonnet-5 all five categories;
+  claude-sonnet-4-6 pricing (now sourced from the pricing page; the models
+  overview lists only current models), lifecycle, availability;
+  claude-sonnet-4-5-20250929 pricing, lifecycle, availability, capabilities.
+  Held, recorded in the bundles: claude-sonnet-4-6 `capabilities` (the AWS
+  model card states a 64K maximum output against the recorded 128K, and the
+  migration-guide URL now serves an index page) and `prompting_guidance`;
+  claude-sonnet-4-5 `prompting_guidance` (no recorded source). v11 goldens
+  regenerated. Tests: `tests/unit/test_v161_run_economics.py`.
+- Holds are honored (2026-09-24): a bundle review decision `hold` on
+  `freshness.<category>` stops `refresh-evidence` from proposing that
+  category and names the rationale in the report, so a recorded maintainer
+  judgement (the Sonnet 4.6 64K/128K conflict) is never re-proposed.
+- Plain-language output (2026-09-24, user decision): the sentences a person
+  reads during a run were rewritten to be short and direct — blocker
+  questions ("What do you want to do: … (retarget); … (redesign); … (accept)?"),
+  option summaries and consequences, unknown statements ("The system prompt
+  at X is built at runtime; no prompt file was found for it"), the
+  "Action required" list, status warnings, and difference guidance
+  (`[high] impact → action (evidence: url)` instead of `Model difference
+  (high): … Action: …`). The report shows the run directory once and
+  `<run_dir>` in every action, and empty change sections collapse into one
+  "Not affected" line. v04/v05 goldens regenerated; stable ids and contract
+  shapes are unchanged.
+
 ## Next work
 
-1. Deferred v1.6 economics tranche (decision of 2026-09-23: not started, no
-   PyPI distribution for now, and the single-item submit tools stay in the
-   guided set): lite-mode suggestions, snapshot reuse in the blocker loop,
-   a single-source workflow playbook, service caching across MCP calls,
-   maintainer `refresh-evidence`, and `carry_forward_from` a prior run.
-   Also pending: a `claude-sonnet-5` profile proposal — the official pages
-   refetched on 2026-09-23 state $2/$10 with no introductory expiry, while
-   the canonical profile records `valid_until: 2026-08-31`.
+1. Deferred v1.6 economics tranche (decision of 2026-09-23: no PyPI
+   distribution for now, and the single-item submit tools stay in the
+   guided set). Done on 2026-09-24 as v1.6.1: service caching across MCP
+   calls, maintainer `refresh-evidence`, and hands-free research by
+   default. Still open: lite-mode suggestions, snapshot reuse in the
+   blocker loop, a single-source workflow playbook, and `carry_forward_from`
+   a prior run. Also pending: a `claude-sonnet-4-6` capabilities proposal —
+   the AWS model card refetched 2026-09-24 states a 64K maximum output while
+   the profile records 128000 from a migration-guide URL that now serves an
+   index page (possibly a Bedrock-scoped override); and fresh sources for
+   the two legacy profiles' prompt guidance.
 2. Exercise the V1.2 guided workflow with real coding-agent hosts (Claude Code,
    Copilot) and fold observed friction back into the tool guidance.
 3. Add broader scanners/model families through the existing normalized scanner,

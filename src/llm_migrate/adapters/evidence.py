@@ -13,6 +13,7 @@ import hashlib
 from collections.abc import Callable
 from datetime import UTC, datetime
 from enum import StrEnum
+from http.client import HTTPException
 from typing import Literal
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
@@ -25,7 +26,8 @@ SourceFetcher = Callable[[str, float], bytes]
 _MAX_CONTENT_BYTES = 5_000_000
 
 
-def _fetch(url: str, timeout: float) -> bytes:
+def fetch_https_source(url: str, timeout: float) -> bytes:
+    """The bounded https-only fetcher shared by refetch and evidence refresh."""
     if not url.startswith("https://"):
         raise ValueError("evidence refetching is limited to https URLs")
     request = Request(  # noqa: S310 - scheme is validated above
@@ -70,13 +72,13 @@ def refetch_cited_sources(
     injecting a fake fetcher or skipping this call entirely.
     """
     timestamp = retrieved_at or datetime.now(UTC)
-    fetch = fetcher or _fetch
+    fetch = fetcher or fetch_https_source
     records: list[SourceRefetchRecord] = []
     for source in sorted(research.sources, key=lambda item: item.id):
         url = str(source.url)
         try:
             payload = fetch(url, timeout)
-        except (HTTPError, URLError, TimeoutError, OSError) as exc:
+        except (HTTPError, URLError, HTTPException, TimeoutError, OSError) as exc:
             records.append(
                 SourceRefetchRecord(
                     source_id=source.id,

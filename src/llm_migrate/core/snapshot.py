@@ -85,11 +85,34 @@ def _toolkit_version() -> str:
         return "unknown"
 
 
+# (path, size, mtime_ns, ctime_ns) -> sha256. Content is re-read whenever the
+# stat signature moves, so the key stays a content hash; the cache only spares
+# the long-lived MCP process from re-reading an unchanged application on every
+# call. ctime is part of the signature because tools such as `cp -p` and
+# `rsync -a` preserve size and mtime while replacing content, and no user tool
+# preserves ctime. Bounded so a server that outlives many runs cannot grow
+# without limit.
+_DIGEST_CACHE: dict[tuple[str, int, int, int], str] = {}
+_DIGEST_CACHE_LIMIT = 50_000
+
+
 def _file_digest(path: Path) -> str:
     try:
-        return hashlib.sha256(path.read_bytes()).hexdigest()
+        stat = path.stat()
     except OSError:
         return "unreadable"
+    signature = (str(path), stat.st_size, stat.st_mtime_ns, stat.st_ctime_ns)
+    cached = _DIGEST_CACHE.get(signature)
+    if cached is not None:
+        return cached
+    try:
+        digest = hashlib.sha256(path.read_bytes()).hexdigest()
+    except OSError:
+        return "unreadable"
+    if len(_DIGEST_CACHE) >= _DIGEST_CACHE_LIMIT:
+        _DIGEST_CACHE.clear()
+    _DIGEST_CACHE[signature] = digest
+    return digest
 
 
 def snapshot_key(run_dir: Path, config: MigrationRunConfig, registry_digest: str) -> str:

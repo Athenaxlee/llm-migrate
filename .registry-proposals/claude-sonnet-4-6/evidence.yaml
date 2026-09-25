@@ -135,8 +135,41 @@ sources:
   retrieved_at: '2026-09-22'
   supports:
   - platforms
+- id: anthropic-pricing-2026-09-24
+  url: https://platform.claude.com/docs/en/about-claude/pricing
+  title: Pricing
+  source_type: official_documentation
+  authority_tier: 2
+  publisher: Anthropic
+  retrieved_at: '2026-09-24'
+  supports:
+  - pricing
+  notes: Refetched 2026-09-24; legacy table lists Claude Sonnet 4.6 at $3 / $15 per MTok (the models overview no longer lists legacy models).
+- id: anthropic-model-deprecations-2026-09-24
+  url: https://platform.claude.com/docs/en/about-claude/model-deprecations
+  title: Model deprecations
+  source_type: official_documentation
+  authority_tier: 2
+  publisher: Anthropic
+  retrieved_at: '2026-09-24'
+  supports:
+  - lifecycle
+  notes: Refetched 2026-09-24; Active, retirement not sooner than February 17, 2027.
+- id: aws-sonnet-4-6-card-2026-09-24
+  url: https://docs.aws.amazon.com/bedrock/latest/userguide/model-card-anthropic-claude-sonnet-4-6.html
+  title: Claude Sonnet 4.6 - Amazon Bedrock
+  source_type: official_documentation
+  authority_tier: 2
+  publisher: Amazon Web Services
+  retrieved_at: '2026-09-24'
+  supports:
+  - platforms
+  - lifecycle
+  - capabilities
+  notes: Refetched 2026-09-24; Active, 1M context, profiles us/eu/au/jp/global; states Max output tokens 64K.
 observations: []
 conflicts: []
 unresolved_questions:
+- Is Claude Sonnet 4.6's maximum output 128K (recorded from the Anthropic migration guide, whose URL is now an index page) or 64K as the AWS model card refetched 2026-09-24 states, possibly a Bedrock-scoped limit?
 - Does Sonnet 4.6 enable adaptive thinking by default when the thinking field is omitted?
 warnings: []

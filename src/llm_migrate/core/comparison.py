@@ -85,7 +85,9 @@ def _item(
             if source not in (None, False) and target is None
             else ComparisonSeverity.LOW
         )
-        impact = f"One or both values for {field!r} are unknown; compatibility must not be assumed."
+        impact = (
+            f"{field!r} is unknown on the source or the target; do not assume it is compatible."
+        )
         action = action or "Verify both source reliance and target support before migration."
     elif source == target:
         state = ComparisonState.SAME

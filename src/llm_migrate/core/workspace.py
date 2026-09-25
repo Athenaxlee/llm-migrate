@@ -46,7 +46,11 @@ from llm_migrate.core.models import (
     StrictModel,
     ValidationLevel,
 )
-from llm_migrate.core.planning import difference_governs_prompts, unreferenced_prompt_candidates
+from llm_migrate.core.planning import (
+    difference_governs_prompts,
+    difference_guidance_text,
+    unreferenced_prompt_candidates,
+)
 from llm_migrate.core.prompt_documents import (
     STRUCTURED_SUFFIXES,
     build_candidate_document,
@@ -240,7 +244,13 @@ class MigrationRunPaths(StrictModel):
 
 
 class ResearchNeed(StrictModel):
-    """Whether and why bounded research would improve this run."""
+    """Whether and why bounded research would improve this run.
+
+    `recommended` whenever knowledge is missing (a side not in the registry,
+    no reviewed pair knowledge) or recorded facts are past their freshness
+    window; the run then expects the host to run the research stages by
+    default, with non-interactive background agents.
+    """
 
     level: Literal["none", "recommended"]
     reasons: list[str] = Field(default_factory=list)
@@ -959,9 +969,12 @@ def derive_adaptation_tasks(
     difference_guidance = [
         (
             invocation_qualified(
-                f"Model difference ({item.severity.value}): {item.migration_impact}"
-                + (f" Action: {item.recommended_action}" if item.recommended_action else "")
-                + (f" (evidence: {item.target_evidence_url})" if item.target_evidence_url else "")
+                difference_guidance_text(
+                    item.severity.value,
+                    item.migration_impact,
+                    item.recommended_action,
+                    item.target_evidence_url,
+                )
             ),
             item.applies_when,
         )

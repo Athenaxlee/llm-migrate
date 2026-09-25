@@ -32,7 +32,8 @@ from llm_migrate.core.knowledge import ResearchResult
 from llm_migrate.core.models import MigrationPlan, MigrationWorkload, RecommendationConstraints
 from llm_migrate.core.moments import utc_moment
 from llm_migrate.core.orchestration import NullAgentRunner
-from llm_migrate.core.session import manifest_summary_lines
+from llm_migrate.core.registry import RegistryError
+from llm_migrate.core.session import manifest_summary_lines, registry_content_sha256
 from llm_migrate.service import MigrationService
 
 _WORKFLOW_INSTRUCTIONS = """\
@@ -46,9 +47,13 @@ exposes only its tools):
    When prompt consumers exist but no prompt source resolved, it returns
    `prompt_candidates` with needs_confirmation instead: ask the user which are
    live prompts, then retry with prompt_sources (or defer_prompt_candidates).
-2. If research is recommended and the user agrees: get_research_prompts(run_dir),
-   run each researcher/reviewer prompt with a separate agent, validate each
-   artifact with validate_research_artifact(run_dir, scope), then
+2. If research is recommended, run it by default (the user's starting
+   instruction decides: ask first only if they asked to be consulted, skip
+   only if they asked to skip): get_research_prompts(run_dir), run each
+   researcher/reviewer prompt with a separate NON-INTERACTIVE background
+   agent — web search and page-fetch tools, never a visible browser; nothing
+   needs the user's attention — scopes in parallel, validate each artifact
+   with validate_research_artifact(run_dir, scope), then
    build_session_registry(run_dir).
 3. list_adaptation_tasks(run_dir) — `shared_prompt_guidance` applies to every
    prompt task, and submission results confirm acceptance, so never re-list
@@ -147,9 +152,27 @@ def _tool(fn: Callable[..., Any]) -> Any:
     return mcp.tool()(fn)
 
 
+# One service per registry content digest: the registry YAML is parsed once
+# per server process instead of on every tool call (~180 ms each), and any
+# edit to a registry file is picked up on the next call because the digest
+# (a hash over the registry files' bytes) changes with it.
+_SERVICE_CACHE: dict[tuple[str, str], MigrationService] = {}
+
+
 def _service() -> MigrationService:
     configure_evaluators(os.environ.get("LLM_MIGRATE_EVALUATORS", "").split(","))
-    return MigrationService.from_directory(_default_registry())
+    root = _default_registry()
+    try:
+        digest = registry_content_sha256(root)
+    except RegistryError:
+        return MigrationService.from_directory(root)
+    key = (str(root), digest)
+    service = _SERVICE_CACHE.get(key)
+    if service is None:
+        _SERVICE_CACHE.clear()
+        service = MigrationService.from_directory(root)
+        _SERVICE_CACHE[key] = service
+    return service
 
 
 def _json(model: Any) -> dict[str, Any]:
@@ -894,7 +917,8 @@ def get_run_status(run_dir: str, now: str | None = None) -> dict[str, Any]:
     """The run's state machine position with the single next action.
 
     States: research_pending -> discovery_incomplete -> blockers_pending ->
-    tasks_pending -> review_pending -> ready_to_finalize, with pending counts.
+    tasks_pending -> review_pending -> ready_to_finalize -> validation_pending,
+    with pending counts.
     discovery_incomplete (prompt coverage unresolved with candidate files, or
     any unresolved consumer in strict mode) names the exact
     add_prompt_sources / confirm_prompt_consumer calls. Served from the

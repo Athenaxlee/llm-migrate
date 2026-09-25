@@ -42,3 +42,7 @@ Approved on August 15, 2026. The 128K maximum-output correction and evidence ref
 
 - Amazon Bedrock: on-demand invocation requires a cross-region inference-profile id; the bare model id is not invocable on demand. Reviewed selectors recorded per the AWS inference-profile documentation.
 - Anthropic API: the model id is directly invocable (`bare_on_demand_supported: true`).
+
+## Evidence refresh (2026-09-24)
+
+Pricing, lifecycle and availability rechecked 2026-09-24 (pricing page, deprecations page, AWS model card) and promoted. Capabilities and prompting guidance remain stale: the AWS card states a 64K maximum output against the recorded 128K, and the migration-guide URL now serves an index page; a follow-up proposal with a fresh source is required. Baselines recorded in `refresh-evidence.yaml`.

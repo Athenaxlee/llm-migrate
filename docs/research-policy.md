@@ -171,6 +171,8 @@ repeating the research or parsing prose.
 
 Every non-fixture canonical provider profile should have a checked-in review bundle, or an explicit maintainer-approved record explaining why it is grandfathered. Coverage tests should enforce whichever policy is selected.
 
+Freshness dates move through the same review path. `llm-migrate registry refresh-evidence` refetches ONLY the URLs already recorded in a profile, hashes each page's visible text against the baseline kept in `.registry-proposals/<model>/refresh-evidence.yaml`, and proposes `checked_at` updates for categories whose supporting pages are unchanged; a changed page is held until a maintainer re-verifies it (`--rebaseline` afterwards), and the first refresh of a URL records a baseline and proposes nothing. It never discovers URLs and never writes under `registry/`; the maintainer promotes an approved refresh through the bundle (candidate, evidence sources, proposal change, review decision), exactly like a researched change.
+
 Checked-in proposal bundles are required only for models intentionally included
 in the shared canonical registry. Long-tail models used through a user-scoped
 session overlay do not create repository storage or maintenance obligations

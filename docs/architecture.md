@@ -516,6 +516,8 @@ A candidate canonical registry record that may be accepted after review.
 
 Freshness is evaluated by knowledge topic and operation, not once for an entire model profile. For example, stale pricing may prevent a precise cost ranking without preventing prompt analysis. Defaults belong in validated registry metadata or configuration. Stale facts may be returned when safe, but their status must remain visible and must reduce confidence or block consequential claims when current evidence is required.
 
+For a guided run, missing or stale knowledge makes research `recommended`, and the run expects the host to run it by default (v1.6.1): `next_steps`, `get_run_status`, and the generated prompts all state that the stages run as non-interactive background agents using web search and page-fetch tools — never a visible browser — with independent scopes in parallel, so no user attention is needed. The user's starting instruction decides whether to be consulted first or to skip research (`research="skip"`).
+
 ### 6.3 V1.1 bounded agent research and session knowledge
 
 The V1.1 path begins after a local scan and deterministic registry lookup. Only
@@ -578,7 +580,32 @@ MCP. Codex, Claude Code, or another host supplies and pays for agent execution.
 An optional injected `AgentRunner` may support headless orchestration, but it is
 an adapter rather than a mandatory runtime dependency.
 
-### 6.4 Prohibited automatic behavior
+### 6.4 Maintainer evidence refresh (V1.6.1)
+
+Short freshness windows need a cheap, honest way to move `checked_at` dates.
+`core/refresh.py` (CLI `llm-migrate registry refresh-evidence`) is that
+mechanism and nothing more:
+
+```text
+recorded source URLs (canonical profile, nested sources included)
+ ↓ bounded https refetch (the research refetch adapter's fetcher)
+visible-text sha256 (markup, scripts, styles stripped; content never stored)
+ ↓ compare with .registry-proposals/<model>/refresh-evidence.yaml baselines
+unchanged and still naming the model (canonical name, display name, alias,
+  platform or selector id) → propose checked_at = today for the categories
+  the page supports
+unchanged but silent on the model → no_mention; vouches for nothing
+changed   → held for maintainer re-verification (rebaselined only with --rebaseline)
+no baseline → baseline recorded, nothing proposed (first refresh is by hand)
+bundle review `hold` on freshness.<category> → held, rationale shown
+ ↓
+RefreshReport (YAML/Markdown) → maintainer promotes through the bundle
+(candidate-model.yaml == canonical, evidence sources, proposal change, review decision)
+```
+
+It never discovers URLs, never crawls, and never writes under `registry/`.
+
+### 6.5 Prohibited automatic behavior
 
 Do not implement:
 
@@ -1065,6 +1092,13 @@ The derived worklist persists as a snapshot (`core/snapshot.py`) keyed by a
 complete staleness hash — application content, `migration.yaml`, blocker
 decisions, session manifest, registry — so submissions and status checks stop
 re-deriving the plan; task statuses are always recomputed at read time.
+The per-call fixed costs are bounded too (v1.6.1): `scannable_files` walks
+the application with pruning so ignored directories (`.venv`,
+`node_modules`, the `.llm-migrate` workspace, ...) are never descended into,
+the key's file digests are cached by `(path, size, mtime_ns)` and re-read
+whenever that signature moves, and the MCP process keeps one
+`MigrationService` per registry content digest, so the registry YAML is
+parsed once per process and any registry edit is picked up on the next call.
 Finalization runs a cross-surface consistency gate (`core/consistency.py`)
 over the whole effective deliverable set: lingering source references,
 forbidden bare target ids, mixed selectors, missing target attribution, and
@@ -1234,8 +1268,10 @@ start_migration [--strict]
 run workspace: migration.yaml [+ bounded request.yaml when knowledge is
 missing or stale]
  ↓
-optional research stages using deterministic, scope-isolated generated
-prompts (get_research_prompts) → session overlay
+research_pending → research stages run by default with non-interactive
+background agents using deterministic, scope-isolated generated prompts
+(get_research_prompts; scopes in parallel, no user attention) → session
+overlay; skipped only on the user's instruction
  ↓
 list_adaptation_tasks (snapshot-backed per-file worklist; incidental files
 land under unaffected_files)

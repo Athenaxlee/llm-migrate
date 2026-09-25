@@ -35,7 +35,7 @@ def anthropic_app(tmp_path: Path, project_root: Path) -> Path:
     return app
 
 
-def _start(service: MigrationService, app: Path):  # type: ignore[no-untyped-def]
+def _start(service: MigrationService, app: Path, as_of: date = AS_OF):  # type: ignore[no-untyped-def]
     return service.start_migration_run(
         app,
         "us.anthropic.claude-sonnet-4-6",
@@ -43,7 +43,7 @@ def _start(service: MigrationService, app: Path):  # type: ignore[no-untyped-def
         source_platform="bedrock",
         target_platform="bedrock",
         target_endpoint="bedrock-runtime",
-        as_of=AS_OF,
+        as_of=as_of,
     )
 
 
@@ -112,7 +112,9 @@ def test_start_honors_explicit_output_dir_and_skip_research(
 
 
 def test_research_prompts_are_scope_isolated(service: MigrationService, bedrock_app: Path) -> None:
-    start = _start(service, bedrock_app)
+    # Past every freshness window of both refreshed profiles, so both scopes
+    # carry a research request.
+    start = _start(service, bedrock_app, as_of=date(2026, 11, 15))
     assert start.paths is not None
     pack = service.get_research_prompts(start.paths.run_dir)
     scopes = {item.scope.value for item in pack.scopes}

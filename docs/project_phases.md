@@ -2259,6 +2259,82 @@ regenerated for the new optional field.
 
 ---
 
+# 12.14. V1.6.1: Run Economics and Evidence Refresh (patch)
+
+## Purpose
+
+A v1.6.0 guided run driven by the README's starting instruction was slow and
+token-hungry for reasons unrelated to the migration itself: every Anthropic
+profile's freshness had lapsed (last checked 2026-08-09 against 7–30 day
+windows), so `start_migration` recommended research on every topic for both
+models, the host first stopped to ask and then drove four web-researching
+agents one at a time through a visible browser; and every guided call
+re-parsed the registry and walked the entire application tree, including
+`.venv`.
+
+## Scope
+
+- Research by default, hands-free: the level stays `recommended` for
+  missing or stale knowledge (the user's decision of 2026-09-24), but
+  `next_steps`, the `research_pending` status action, the server playbook,
+  the generated researcher/reviewer prompts, and the orchestration guidance
+  all say to run the stages now with separate non-interactive background
+  agents (web search and page-fetch tools, never a visible browser), scopes
+  in parallel, asking the user first only if they asked to be consulted.
+  The README starting instruction drops "ask me before running research".
+- Per-call economics: pruned directory walk in `scannable_files`,
+  stat-cached file digests in the snapshot key, one `MigrationService` per
+  registry digest in the MCP process.
+- Maintainer `llm-migrate registry refresh-evidence` (`core/refresh.py`):
+  refetch-only over recorded URLs, visible-text hashes against
+  `refresh-evidence.yaml` baselines beside each bundle, proposals for
+  unchanged pages, holds for changed pages, `--rebaseline` after
+  re-verification, `--no-record` for a read-only report.
+- Registry refresh of the three Anthropic profiles, promoted through their
+  bundles after hand verification against the refetched official pages; a
+  bundle review `hold` on a freshness category is honored by the refresh.
+- Plain-language output: blocker questions, option summaries and
+  consequences, unknown statements, the "Action required" list, status
+  warnings, and difference guidance reworded to be short and direct; the
+  report shows `<run_dir>` in actions and collapses empty change sections.
+
+## Boundary
+
+The refresh discovers nothing and writes nothing under `registry/`; the
+first refresh of a URL records a baseline and proposes nothing. Freshness
+windows themselves are unchanged. Lite mode, blocker-loop snapshot reuse,
+the single-source playbook, `carry_forward_from`, and PyPI distribution stay
+deferred.
+
+## Exit criteria
+
+- A run with stale or missing knowledge reports `recommended`; its
+  `next_steps` and `research_pending` status action instruct running the
+  research now with non-interactive background agents and never ask the
+  user unless they asked to be consulted; both generated prompts carry the
+  non-interactive rule and the guidance names the parallelism bound.
+- `scannable_files` never lists files under ignored directories or symlinks
+  resolving outside the root; the digest cache re-reads on a changed stat
+  signature; the MCP service object is reused until a registry file changes.
+- A first refresh records baselines and proposes nothing; a second refresh
+  proposes only categories whose supporting pages are all unchanged AND
+  still name the model, holds categories with a changed or silent page,
+  keeps the old baseline unless `--rebaseline`, and leaves the registry tree
+  hash untouched.
+
+## Current status
+
+Implemented and released as `v1.6.1` on 2026-09-24 with unit coverage for
+every exit criterion (`tests/unit/test_v161_run_economics.py`); the bundle
+test admits the optional `refresh-evidence.yaml`. No contract shape changed:
+research levels stay `none`/`recommended`, ids are stable, and only the
+wording of `next_steps`, the status action, blocker questions and options,
+unknowns, difference guidance, the report, and the generated prompts moved
+(plain English, hands-free research). The v04, v05, and v11 goldens were
+regenerated for the wording and the refreshed canonical freshness dates.
+
+---
+
 # 13. Cross-Phase Testing Strategy
 
 ## Unit tests
@@ -2368,7 +2444,8 @@ When working from this roadmap, Codex should:
 | V1.6.0-a | Prompt discovery on real repo layouts: bounded multi-base resolution, chained loaders, start-time confirmation, live-run discovery tools, `discovery_incomplete` |
 | V1.6.0-b | Unknowns that give directions: typed actionable unknowns (plan v5), contested-evidence probes, run-scoped observations |
 | V1.6.0-c | Review integrity: unit-aware pricing contradiction gate, CONTESTED review marks, evaluation scaffold and `validation_pending`, pair `prompt_guidance` knowledge |
-| V1.6.0-d | Deferred (2026-09-23): lite mode, carried economics, maintainer evidence refresh, carry-forward; no PyPI distribution planned |
+| V1.6.0-d | Deferred (2026-09-23): lite mode, blocker-loop snapshot reuse, single-source playbook, carry-forward; no PyPI distribution planned |
+| V1.6.1 | Run economics, evidence refresh, plain-language output: hands-free default research, per-call caches and pruned walk, maintainer `registry refresh-evidence` (hold-aware), Anthropic profiles re-verified 2026-09-24, plain-English questions/unknowns/report |
 
 The critical sequencing rule is:
 

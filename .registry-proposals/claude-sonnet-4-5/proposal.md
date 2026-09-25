@@ -35,3 +35,7 @@ Approved on August 15, 2026. The evidence refresh was promoted. Sampling paramet
 
 - Amazon Bedrock: on-demand invocation requires a cross-region inference-profile id; the bare model id is not invocable on demand. Reviewed selectors recorded per the AWS inference-profile documentation.
 - Anthropic API: the model id is directly invocable (`bare_on_demand_supported: true`).
+
+## Evidence refresh (2026-09-24)
+
+Pricing, lifecycle, availability and capabilities rechecked 2026-09-24 (pricing page, deprecations page, AWS model card) and promoted; prompting guidance has no recorded source and stays stale. Baselines recorded in `refresh-evidence.yaml`.

@@ -269,7 +269,8 @@ def test_unsupported_target_and_incompatible_tools_remain_blockers(
     assert any("tool use" in item.message for item in plan.blockers)
     assert any("No deterministic invocation adapter" in item.message for item in plan.blockers)
     assert any(
-        "One or both values" in item for item in (u.message for u in plan.unknowns if u.is_open)
+        "is unknown on the source or the target" in item
+        for item in (u.message for u in plan.unknowns if u.is_open)
     )
 
 

@@ -389,8 +389,10 @@ def test_v11_research_stage_commands_drive_the_file_protocol(
             "gpt-6.0-nova",
             "--target-endpoint",
             "responses",
+            # Past the refreshed (2026-09-24) freshness windows, so the registered
+            # source still needs research; artifacts dated 2026-08-29 stay valid.
             "--as-of",
-            "2026-08-29",
+            "2026-11-01",
             "--output",
             str(run_dir / "request.yaml"),
         ],

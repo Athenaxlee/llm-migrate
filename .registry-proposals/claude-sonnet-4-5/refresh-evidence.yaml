@@ -1,0 +1,23 @@
+schema_version: '1'
+model: claude-sonnet-4-5-20250929
+baselines:
+- url: https://docs.aws.amazon.com/bedrock/latest/userguide/inference-profiles-support.html
+  content_sha256: 1594945b0869907c5b891655869ad4f437c9a9028736e5ed534b8c04b2440cfd
+  content_length: 7346
+  retrieved_at: '2026-09-24'
+- url: https://docs.aws.amazon.com/bedrock/latest/userguide/model-card-anthropic-claude-sonnet-4-5.html
+  content_sha256: 9c2fdf6c54af4ed0dd6a556cf329b3779b8b3cc3d616d402028032064ed466d6
+  content_length: 11729
+  retrieved_at: '2026-09-24'
+- url: https://platform.claude.com/docs/en/about-claude/model-deprecations
+  content_sha256: 942614fe7140d2e0e2d65ec5960690a954e304114f600cebba78711b9f81b83e
+  content_length: 11423
+  retrieved_at: '2026-09-24'
+- url: https://platform.claude.com/docs/en/about-claude/models/overview
+  content_sha256: c39c4a2a882d72ef56aea0b729e007f75f0f4e9577978a02bf942611b505786e
+  content_length: 5794
+  retrieved_at: '2026-09-24'
+- url: https://platform.claude.com/docs/en/about-claude/pricing
+  content_sha256: 52258872f3b9bbb5919702649db310e9e5ba769ec4e19fe384118c13a8b4b101
+  content_length: 27758
+  retrieved_at: '2026-09-24'

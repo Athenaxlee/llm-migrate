@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import ast
+import os
 import posixpath
 from collections.abc import Collection, Mapping, Sequence
 from pathlib import Path
@@ -1102,15 +1103,20 @@ def scannable_files(path: Path) -> tuple[list[Path], list[Path]]:
     if path.is_file():
         return [path], []
     root = path.resolve()
-    entries = [
-        item
-        for item in sorted(path.rglob("*"))
-        if item.is_file()
-        and not any(part in _IGNORED_DIRECTORIES for part in item.relative_to(path).parts)
-        # A symlink that resolves outside the application is not application
-        # content: never scanned, never read, never hashed.
-        and item.resolve().is_relative_to(root)
-    ]
+    entries: list[Path] = []
+    # Walk with pruning: an ignored directory (`.venv`, `node_modules`, the
+    # run workspace itself, ...) is never descended into. `rglob` listed every
+    # file beneath them before filtering, which made every guided call pay
+    # for the whole virtual environment on real repositories.
+    for current, dirnames, filenames in os.walk(path, followlinks=False):
+        dirnames[:] = sorted(name for name in dirnames if name not in _IGNORED_DIRECTORIES)
+        for name in filenames:
+            item = Path(current) / name
+            # A symlink that resolves outside the application is not application
+            # content: never scanned, never read, never hashed.
+            if item.is_file() and item.resolve().is_relative_to(root):
+                entries.append(item)
+    entries.sort()
     python_files = [item for item in entries if item.suffix == ".py"]
     candidate_files = [item for item in entries if item.suffix.casefold() in PROMPT_SOURCE_SUFFIXES]
     return python_files, candidate_files

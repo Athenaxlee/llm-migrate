@@ -121,11 +121,11 @@ prompt_guidance:
   structured_output_guidance:
     - Use structured outputs, system instructions, or output_config.format instead of assistant prefilling.
 freshness:
-  pricing: {checked_at: 2026-09-23, max_age_days: 7}
-  lifecycle: {checked_at: 2026-08-09, max_age_days: 7}
-  availability: {checked_at: 2026-08-09, max_age_days: 14}
-  capabilities: {checked_at: 2026-08-09, max_age_days: 30}
-  prompting_guidance: {checked_at: 2026-08-09, max_age_days: 30}
+  pricing: {checked_at: 2026-09-24, max_age_days: 7}
+  lifecycle: {checked_at: 2026-09-24, max_age_days: 7}
+  availability: {checked_at: 2026-09-24, max_age_days: 14}
+  capabilities: {checked_at: 2026-09-24, max_age_days: 30}
+  prompting_guidance: {checked_at: 2026-09-24, max_age_days: 30}
 evidence_conflicts:
   - field_path: platforms.amazon-bedrock.parameters.adaptive_thinking.disable_supported
     statements:
@@ -176,3 +176,39 @@ sources:
     publisher: Amazon Web Services
     retrieved_at: 2026-08-09
     supports: [platforms, lifecycle, capabilities, parameters]
+  - id: anthropic-models-overview-2026-09-24
+    url: https://platform.claude.com/docs/en/about-claude/models/overview
+    title: Models overview
+    source_type: official_documentation
+    authority_tier: 2
+    publisher: Anthropic
+    retrieved_at: 2026-09-24
+    supports: [pricing, capabilities, platforms]
+    notes: Refetched 2026-09-24; lists claude-sonnet-5 at $2 / $10 per MTok, 1M context, 128K max output, Bedrock id anthropic.claude-sonnet-5, retirement not sooner than June 30, 2027.
+  - id: anthropic-sonnet-5-new-2026-09-24
+    url: https://platform.claude.com/docs/en/about-claude/models/whats-new-sonnet-5
+    title: What's new in Claude Sonnet 5
+    source_type: official_documentation
+    authority_tier: 2
+    publisher: Anthropic
+    retrieved_at: 2026-09-24
+    supports: [pricing, parameters, prompt_guidance, capabilities]
+    notes: Refetched 2026-09-24; adaptive thinking on by default, sampling parameters and manual thinking return 400, new tokenizer (~30% more tokens), $2 / $10 per MTok.
+  - id: anthropic-model-deprecations-2026-09-24
+    url: https://platform.claude.com/docs/en/about-claude/model-deprecations
+    title: Model deprecations
+    source_type: official_documentation
+    authority_tier: 2
+    publisher: Anthropic
+    retrieved_at: 2026-09-24
+    supports: [lifecycle]
+    notes: Refetched 2026-09-24; claude-sonnet-5 Active, tentative retirement not sooner than June 30, 2027.
+  - id: aws-sonnet-5-card-2026-09-24
+    url: https://docs.aws.amazon.com/bedrock/latest/userguide/model-card-anthropic-claude-sonnet-5.html
+    title: Claude Sonnet 5 - Amazon Bedrock
+    source_type: official_documentation
+    authority_tier: 2
+    publisher: Amazon Web Services
+    retrieved_at: 2026-09-24
+    supports: [platforms, lifecycle, capabilities]
+    notes: Refetched 2026-09-24; lifecycle Active (EOL no sooner than June 30, 2027), 1M context, 128K max output, geo/global inference profiles us/eu/au/global.

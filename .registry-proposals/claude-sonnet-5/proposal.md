@@ -66,3 +66,7 @@ refetched 2026-09-23) state $2 / $10 per million tokens as the base price with n
 introductory period. The `valid_until: 2026-08-31` expiry and the "standard $3 / $15
 after this period" notes are removed; pricing freshness is rechecked as of 2026-09-23.
 Approved and promoted.
+
+## Evidence refresh (2026-09-24)
+
+All five freshness categories rechecked 2026-09-24 against the refetched models overview, What's new page, deprecations page, and AWS model card; every recorded fact was unchanged. Approved and promoted. Visible-text baselines recorded in `refresh-evidence.yaml` for `llm-migrate registry refresh-evidence`.

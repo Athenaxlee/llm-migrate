@@ -298,7 +298,7 @@ def test_change_depending_on_contested_fact_is_marked_until_observed(
     finalization = service.finalize_migration_run(run_dir)
     assert finalization.contested_changes
     report = Path(finalization.report_path).read_text(encoding="utf-8")
-    assert "depend on a CONTESTED registry fact" in report
+    assert "rest on a CONTESTED registry fact" in report
 
     plan = service._plan_for_run(load_run_config(run_dir), run_dir)
     contested = next(item for item in plan.unknowns if item.kind is UnknownKind.CONTESTED_EVIDENCE)

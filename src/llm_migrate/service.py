@@ -187,6 +187,7 @@ from llm_migrate.core.prompt_documents import (
 )
 from llm_migrate.core.proposals import propose_registry_update
 from llm_migrate.core.recommendation import recommend_models
+from llm_migrate.core.refresh import RefreshReport, refresh_evidence
 from llm_migrate.core.registry import ModelRegistry, RegistryError
 from llm_migrate.core.research_prompts import ResearchPromptPack, render_research_prompts
 from llm_migrate.core.resolver import (
@@ -388,56 +389,54 @@ def _action_required_lines(
     lines: list[str] = []
     if contested:
         lines.append(
-            f"**{len(contested)} change(s) depend on a CONTESTED registry fact** — resolve "
-            "each empirically (run the probe, record_observation) before accepting: "
-            + "; ".join(contested)
+            f"**{len(contested)} change(s) rest on a CONTESTED registry fact** — run the "
+            "probe and record_observation before accepting: " + "; ".join(contested)
         )
     if plan.blockers:
         lines.append(
-            f"**{len(plan.blockers)} unresolved blocker(s)** — each needs your decision "
+            f"**{len(plan.blockers)} blocker(s) need your decision** "
             "(get_blocker_resolutions → record_blocker_decision)."
         )
     stale = [item for item in plan.decisions if item.status == "stale"]
     if stale:
-        lines.append(f"**{len(stale)} STALE blocker decision(s)** — no longer applied; review.")
+        lines.append(f"**{len(stale)} earlier blocker decision(s) no longer apply** — review them.")
     if plan.prompt_discovery.coverage is not PromptDiscoveryCoverage.RESOLVED:
         candidates = unreferenced_prompt_candidates(plan)
+        consumers = plan.prompt_discovery.dynamic_consumers
         lines.append(
-            f"**Prompt coverage is {plan.prompt_discovery.coverage.value}** — "
-            + (
-                f"{len(candidates)} candidate prompt file(s) were not prepared; include "
-                "the real ones with add_prompt_sources, or dismiss them with the "
-                "user's rationale (see Unresolved unknowns)."
-                if candidates
-                else "some prompt consumers have no static source; confirm each with "
-                "confirm_prompt_consumer or dismiss it with the user's rationale."
-            )
+            f"**{len(candidates)} candidate prompt file(s) were not prepared** — add the "
+            "live ones with add_prompt_sources, or dismiss them with your reason (see "
+            "Unresolved unknowns)."
+            if candidates
+            else f"**{consumers} prompt consumer(s) have no known prompt file** — confirm "
+            "which file each reads (confirm_prompt_consumer) or dismiss it with your reason."
         )
     still_open = [item for item in plan.unknowns if item.is_open]
     if still_open:
         lines.append(
-            f"**{len(still_open)} open unknown(s)** — each lists why it matters, its exact "
-            "action, and what closes it under Unresolved unknowns."
+            f"**{len(still_open)} open unknown(s)** — see Unresolved unknowns for what each needs."
         )
     if gaps:
-        lines.append(f"**{len(gaps)} affected file(s) lack a deliverable:** " + ", ".join(gaps))
+        lines.append(
+            f"**{len(gaps)} affected file(s) still need an adapted version:** " + ", ".join(gaps)
+        )
     if unaffected:
-        lines.append(f"**{len(unaffected)} unaffected file(s) await one confirm_unaffected call.**")
+        lines.append(
+            f"**{len(unaffected)} unaffected file(s) still need one confirm_unaffected call.**"
+        )
     if undecided:
         lines.append(
-            f"**{len(undecided)} deliverable(s) have changes awaiting your review "
-            "decision** (get_change_review)."
+            f"**{len(undecided)} deliverable(s) have changes waiting for your accept/reject** "
+            "(get_change_review)."
         )
     if consistency:
         lines.append(
-            f"**{len(consistency)} cross-surface consistency finding(s)** — see "
-            "Cross-surface consistency below."
+            f"**{len(consistency)} consistency finding(s)** — see Cross-surface consistency below."
         )
     if validation_disposition is None:
         lines.append(
-            "**Validation not recorded** — run the generated contract test or a BYOK "
-            "evaluation, record the outcome with record_validation_disposition, then "
-            "finalize again (validation is a two-pass flow by design)."
+            "**Not yet validated** — run the generated contract test or a BYOK evaluation, "
+            "record the result with record_validation_disposition, then finalize again."
         )
     elif validation_problem is not None:
         lines.append(f"**NOT VALIDATED** — {validation_problem}.")
@@ -450,7 +449,7 @@ def _with_action_required(report: str, lines: list[str]) -> str:
         [
             "## Action required",
             "",
-            *([f"- {line}" for line in lines] or ["- Nothing requires a human decision."]),
+            *([f"- {line}" for line in lines] or ["- Nothing. No decision or step is pending."]),
             "",
         ]
     )
@@ -539,6 +538,7 @@ class MigrationService:
     def __init__(self, registry: ModelRegistry, registry_root: Path | None = None) -> None:
         self.registry = registry
         self.registry_root = registry_root
+        self._registry_digest_value: str | None = None
 
     @classmethod
     def from_directory(cls, directory: Path | str) -> MigrationService:
@@ -1387,6 +1387,29 @@ class MigrationService:
             **kwargs,
         )
 
+    def refresh_evidence(
+        self,
+        proposals_root: Path | str,
+        *,
+        models: list[str] | None = None,
+        fetcher: SourceFetcher | None = None,
+        timeout: float = 5.0,
+        today: date | None = None,
+        rebaseline: bool = False,
+        record_baselines: bool = True,
+    ) -> RefreshReport:
+        """Maintainer refresh of recorded evidence; proposals and baselines only."""
+        return refresh_evidence(
+            self.registry,
+            Path(proposals_root),
+            models=models,
+            fetcher=fetcher,
+            timeout=timeout,
+            today=today,
+            rebaseline=rebaseline,
+            record_baselines=record_baselines,
+        )
+
     def refetch_research_sources(
         self,
         research: ResearchResult,
@@ -1521,10 +1544,19 @@ class MigrationService:
             if name is None:
                 reasons.append(f"The {label} model {identity.model!r} is not in the registry.")
             elif stale:
+                profile = self.registry.get(name)
+                checked = sorted(
+                    {
+                        str(metadata.checked_at)
+                        for category, metadata in profile.freshness.items()
+                        if category.value in {topic.value for topic in stale}
+                    }
+                )
                 reasons.append(
-                    f"Canonical facts for the {label} model {name!r} are stale for: "
+                    f"Recorded facts for the {label} model {name!r} are past their freshness "
+                    "window for: "
                     + ", ".join(topic.value for topic in stale)
-                    + "."
+                    + (f" (last checked {', '.join(checked)})." if checked else ".")
                 )
         source_name = side_names["source"]
         target_name = side_names["target"]
@@ -1744,22 +1776,25 @@ class MigrationService:
         discovery = analysis.prompt_discovery
         if discovery.coverage is not PromptDiscoveryCoverage.RESOLVED:
             next_steps.append(
-                f"WARNING: prompt coverage is {discovery.coverage.value} — "
-                f"{discovery.dynamic_consumers} prompt consumer(s) have no static source. "
-                "get_run_status lists them; confirm each that reads a prompt file with "
-                "confirm_prompt_consumer, include unreferenced prompt files with "
-                "add_prompt_sources, or dismiss genuinely runtime-built consumers there "
-                "with the user's rationale."
+                f"WARNING: {discovery.dynamic_consumers} prompt consumer(s) have no known "
+                "prompt file (coverage "
+                f"{discovery.coverage.value}). get_run_status lists them: confirm which file "
+                "each reads with confirm_prompt_consumer, add unreferenced prompt files with "
+                "add_prompt_sources, or dismiss runtime-built ones there with the user's "
+                "reason."
             )
         if need.level == "recommended":
             next_steps.extend(
                 (
-                    "Ask the user whether to run bounded research first (recommended: "
+                    "Research is recommended ("
                     + " ".join(need.reasons)
-                    + ") or proceed with canonical registry facts as-is.",
-                    "If researching: call get_research_prompts(run_dir), run each "
-                    "returned researcher/reviewer prompt with a separate agent, then "
-                    "call build_session_registry(run_dir).",
+                    + ") — run it now by default; ask the user first only if they asked "
+                    "to be consulted, and skip it only if they asked to skip research.",
+                    "Research needs NO user action: call get_research_prompts(run_dir), run "
+                    "each returned researcher/reviewer prompt with a separate NON-INTERACTIVE "
+                    "background agent (web search and page-fetch tools, never a visible "
+                    "browser), scopes in parallel, validate each artifact with "
+                    "validate_research_artifact, then call build_session_registry(run_dir).",
                 )
             )
         next_steps.extend(
@@ -2046,7 +2081,12 @@ class MigrationService:
     def _registry_digest(self) -> str:
         if self.registry_root is None:
             return "in-memory-registry"
-        return registry_content_sha256(self.registry_root)
+        # A service instance holds one parsed registry; the MCP server already
+        # rebuilds the instance when the registry files change, so the digest
+        # is computed once per instance instead of once per call.
+        if self._registry_digest_value is None:
+            self._registry_digest_value = registry_content_sha256(self.registry_root)
+        return self._registry_digest_value
 
     def _tasks_for_run(
         self,
@@ -2824,10 +2864,12 @@ class MigrationService:
                 "validation_pending",
             ] = "research_pending"
             next_action = (
-                "Research is recommended but optional: ask the user, then either run "
-                "the get_research_prompts stages (scopes pending: "
+                "Research is recommended: run the get_research_prompts stages (scopes "
+                "pending: "
                 + ", ".join(research_pending)
-                + ") and build_session_registry, or proceed to list_adaptation_tasks."
+                + ") with separate non-interactive background agents — no user action is "
+                "needed — then build_session_registry. Proceed straight to "
+                "list_adaptation_tasks only if the user asked to skip research."
             )
         elif tasks.prompt_coverage != "resolved" and (tasks.prompt_candidates or config.strict):
             state = "discovery_incomplete"
@@ -2893,25 +2935,25 @@ class MigrationService:
             and tasks.unknowns
         ):
             next_action += (
-                f" {len(tasks.unknowns)} open unknown(s) each carry their exact next action "
-                "(list_adaptation_tasks `unknowns`); ask the user before acting on one, and "
-                "record empirical results with record_observation."
+                f" {len(tasks.unknowns)} open unknown(s): each lists its next action under "
+                "list_adaptation_tasks `unknowns`; ask the user before acting on one, and "
+                "record what you observe with record_observation."
             )
         if state in {"tasks_pending", "review_pending", "ready_to_finalize"} and (
             tasks.prompt_coverage != "resolved"
         ):
             next_action = (
-                f"WARNING: prompt coverage is {tasks.prompt_coverage} — prompt adaptation "
-                "is incomplete. "
+                "WARNING: "
                 + (
-                    "Unreferenced candidate prompt file(s): "
+                    "unreferenced candidate prompt file(s) "
                     + ", ".join(tasks.prompt_candidates)
-                    + "; ask the user which are live prompts and include them with "
-                    "add_prompt_sources. "
+                    + " were not prepared; ask the user which are live prompts and add them "
+                    "with add_prompt_sources. "
                     if tasks.prompt_candidates
                     else f"{len(tasks.dynamic_prompt_consumers)} prompt consumer(s) have no "
-                    "static source; confirm each with confirm_prompt_consumer or dismiss it "
-                    "with the user's rationale (add_prompt_sources dismiss=...). "
+                    "known prompt file; confirm which file each reads with "
+                    "confirm_prompt_consumer or dismiss it with the user's reason "
+                    "(add_prompt_sources dismiss=...). "
                 )
                 + next_action
             )
@@ -3649,8 +3691,11 @@ class MigrationService:
                 undecided_changes.append(
                     f"{entry.source_path}: {len(pending)} change(s) pending review"
                 )
+        # Humans read the report: the run directory appears once, and every
+        # action shows `<run_dir>` instead of repeating the absolute path.
+        run_dir_text = str(Path(run_dir).resolve())
         report = _with_action_required(
-            self.migration_report(plan),
+            self.migration_report(plan).replace(run_dir_text, "<run_dir>"),
             _action_required_lines(
                 plan,
                 gaps=gaps,
@@ -3661,6 +3706,13 @@ class MigrationService:
                 validation_problem=validation_problem,
                 contested=contested_changes,
             ),
+        )
+        report = report.replace(
+            "\n## Summary\n\n",
+            "\n## Summary\n\n- Run directory: `"
+            + run_dir_text
+            + "` (shown as `<run_dir>` in actions)\n",
+            1,
         )
         report = (
             report.rstrip("\n")

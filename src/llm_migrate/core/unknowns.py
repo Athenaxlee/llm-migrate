@@ -39,9 +39,9 @@ from llm_migrate.core.models import (
 from llm_migrate.core.probes import contested_setting, probe_relative_path, probe_supported
 
 OBSERVATION_CLOSING = (
-    "Closed when the target's actual behavior is recorded with record_observation "
-    "(after the generated contract test, a BYOK evaluation, or a probe), or when "
-    "reviewed research resolves the registry fact."
+    "Closed when you record what the target actually does (record_observation, from the "
+    "contract test, a BYOK evaluation, or a probe), or when reviewed research settles the "
+    "registry fact."
 )
 
 
@@ -101,19 +101,19 @@ def candidate_unknown(source: PromptSource) -> MigrationUnknown:
         source.path,
         subject=f"Unreferenced candidate prompt file {source.path}",
         message=(
-            f"{source.path}{CANDIDATE_MARKER}; it was not prepared automatically. "
-            "Include it with add_prompt_sources (or prompt_sources at start) if it is live."
+            f"{source.path}{CANDIDATE_MARKER}; it was not prepared. "
+            "If it is a live prompt, add it with add_prompt_sources (or prompt_sources at start)."
         ),
         why=(
-            f"{source.path} holds prompt components ({keys}) that no scanned code or "
-            "configuration references; if the application loads it at runtime, those "
-            "prompts are not being migrated or validated."
+            f"Nothing in the scanned code or configuration references {source.path} (keys: "
+            f"{keys}). If the application loads it at runtime, its prompts are not migrated "
+            "or checked."
         ),
         action=tool_call("add_prompt_sources", run_dir=RUN_DIR_PLACEHOLDER, paths=[source.path]),
         closing=(
-            f"Closed when {source.path} is added as a prompt source, or dismissed as not a "
-            "live prompt with add_prompt_sources(run_dir, paths=[], "
-            f'dismiss=["{source.path}"], rationale="<the user\'s reason>").'
+            f"Closed when {source.path} is added as a prompt source, or dismissed with "
+            f'add_prompt_sources(run_dir, paths=[], dismiss=["{source.path}"], '
+            'rationale="<your reason>").'
         ),
         data={"path": source.path},
     )
@@ -200,13 +200,13 @@ def consumer_unknown(ref: ConsumerRef) -> MigrationUnknown:
         ref.location,
         subject=f"Dynamic prompt consumer {ref.location} ({ref.keyword})",
         message=(
-            f"Prompt consumer {ref.location} supplies dynamically built {ref.keyword} "
-            "content with no statically resolvable prompt source."
+            f"The {ref.keyword} prompt at {ref.location} is built at runtime; no prompt file "
+            "was found for it."
         ),
         why=(
-            f"The {ref.keyword} content passed to the model at {ref.location} is built at "
-            f"runtime{reads}; with no resolved prompt source its text is neither migrated "
-            f"nor validated for the target.{hint}"
+            f"The {ref.keyword} text sent to the model at {ref.location} is assembled at "
+            f"runtime{reads}. Until its file is known, that text is not migrated or "
+            f"checked for the target.{hint}"
         ),
         action=tool_call(
             "confirm_prompt_consumer",
@@ -215,9 +215,9 @@ def consumer_unknown(ref: ConsumerRef) -> MigrationUnknown:
             source_path=source,
         ),
         closing=(
-            "Closed when the consumer is confirmed to read a prompt file, or dismissed as "
-            "genuinely runtime-built content with add_prompt_sources(run_dir, paths=[], "
-            f'dismiss=["{ref.location}"], rationale="<the user\'s reason>").'
+            "Closed when you confirm which prompt file it reads, or dismiss it as "
+            "runtime-built with add_prompt_sources(run_dir, paths=[], "
+            f'dismiss=["{ref.location}"], rationale="<your reason>").'
         ),
         data={
             "location": ref.location,
@@ -242,8 +242,8 @@ def compatibility_unknown(assessment: CompatibilityAssessment) -> MigrationUnkno
         subject=f"Target {assessment.concern} compatibility",
         message=assessment.rationale,
         why=(
-            f"The application's {assessment.concern} usage{where} has no statically "
-            f"established target mapping: {assessment.rationale}"
+            f"The application uses {assessment.concern}{where}, and no target mapping is "
+            f"established: {assessment.rationale}"
         ),
         closing=OBSERVATION_CLOSING,
         data={"concern": assessment.concern, "files": files},
@@ -278,10 +278,9 @@ def difference_unknown(difference: ModelDifference, *, used: bool) -> MigrationU
         subject=f"Target {field_name} ({difference.category})",
         message=difference.migration_impact,
         why=(
-            f"The reviewed registry records {field_name} as "
-            f"{_value_text(difference.source_value)} on the source and "
-            f"{_value_text(difference.target_value)} on the target, so compatibility must "
-            f"not be assumed.{usage}"
+            f"The registry records {field_name} as {_value_text(difference.source_value)} on "
+            f"the source and {_value_text(difference.target_value)} on the target, so do not "
+            f"assume it behaves the same.{usage}"
         ),
         closing=OBSERVATION_CLOSING,
         evidence_urls=evidence,
@@ -326,8 +325,8 @@ def contested_unknowns(
             usage = f"The application sets {parameter!r}, so its behavior depends on this fact."
         else:
             usage = (
-                "The target's default governs every call the application makes, and any "
-                "adaptation that changes this setting depends on the contested fact."
+                "The target's default applies to every call, and any change to this setting "
+                "depends on which source is right."
             )
         testable = probe_supported(invocation, path)
         probe_path = probe_relative_path(path) if testable else None
@@ -337,19 +336,19 @@ def contested_unknowns(
                 UnknownKind.CONTESTED_EVIDENCE,
                 path,
                 subject=f"Contested registry fact {path}",
-                message=(f"Registry evidence for {path} is conflicting: " + " / ".join(statements)),
+                message=(f"Official sources disagree about {path}: " + " / ".join(statements)),
                 why=" ".join(
                     [
-                        "Reviewed sources disagree: " + " / ".join(statements) + ".",
+                        "Sources disagree: " + " / ".join(statements) + ".",
                         usage,
                         *([conflict.notes] if conflict.notes else []),
                     ]
                 ),
                 action=(f"python {RUN_DIR_PLACEHOLDER}/{probe_path}" if probe_path else None),
                 closing=(
-                    "Closed when the probe's printed result (or another empirical check) is "
-                    "recorded with record_observation for this unknown's id; promoting it to "
-                    "the registry is a separate propose_registry_update."
+                    "Closed when you run the probe (or another empirical check) and record its "
+                    "printed result with record_observation for this id. Updating the registry "
+                    "itself is a separate propose_registry_update."
                 ),
                 evidence_urls=[urls[item] for item in conflict.source_ids if item in urls],
                 data={

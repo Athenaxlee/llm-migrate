@@ -46,6 +46,23 @@ changes:
   - anthropic-models-invocation-2026-09-22
   reason: The Anthropic API model id is directly invocable; recording the fact keeps invocation-identity
     reports quiet for this platform.
+- field_path: freshness
+  change_type: update
+  current_value:
+    pricing: 2026-08-09
+    lifecycle: 2026-08-09
+    availability: 2026-08-09
+  proposed_value:
+    pricing: 2026-09-24
+    lifecycle: 2026-09-24
+    availability: 2026-09-24
+  confidence: authoritative
+  risk: low
+  supporting_sources:
+  - anthropic-pricing-2026-09-24
+  - anthropic-model-deprecations-2026-09-24
+  - aws-sonnet-4-6-card-2026-09-24
+  reason: "Maintainer evidence refresh of 2026-09-24: pricing ($3 / $15, now from the pricing page since the models overview lists only current models), lifecycle (Active, retirement not sooner than 2027-02-17 on both Anthropic and AWS pages) and Bedrock availability/selectors were re-verified unchanged. capabilities and prompting_guidance are NOT refreshed: the migration-guide URL now serves an index page and the AWS card states a 64K maximum output against the recorded 128K."
 conflicts: []
 unknown_fields:
 - parameters.adaptive_thinking.default
@@ -79,3 +96,11 @@ review:
     decision: approved
     disposition: promoted
     rationale: The Anthropic models overview documents direct invocation by model id (2026-09-22).
+  - field_path: freshness
+    decision: approved
+    disposition: promoted
+    rationale: Pricing, lifecycle and availability re-verified on 2026-09-24; only those checked_at dates move.
+  - field_path: freshness.capabilities|freshness.prompting_guidance
+    decision: hold
+    disposition: remains_stale
+    rationale: The AWS model card refetched 2026-09-24 states Max output tokens 64K while the profile records 128000 from a migration-guide URL that now serves an index page; the maximum-output fact and the prompt guidance need a fresh source before their freshness can move.

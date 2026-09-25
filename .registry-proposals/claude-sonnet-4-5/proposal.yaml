@@ -36,6 +36,25 @@ changes:
   - anthropic-models-invocation-2026-09-22
   reason: The Anthropic API model id is directly invocable; recording the fact keeps invocation-identity
     reports quiet for this platform.
+- field_path: freshness
+  change_type: update
+  current_value:
+    pricing: 2026-08-09
+    lifecycle: 2026-08-09
+    availability: 2026-08-09
+    capabilities: 2026-08-09
+  proposed_value:
+    pricing: 2026-09-24
+    lifecycle: 2026-09-24
+    availability: 2026-09-24
+    capabilities: 2026-09-24
+  confidence: authoritative
+  risk: low
+  supporting_sources:
+  - anthropic-pricing-2026-09-24
+  - anthropic-model-deprecations-2026-09-24
+  - aws-sonnet-4-5-card-2026-09-24
+  reason: "Maintainer evidence refresh of 2026-09-24: pricing ($3 / $15 from the pricing page), lifecycle (Active, retirement not sooner than 2026-09-29 on both pages), Bedrock availability/selectors and 200K / 64K capabilities were re-verified unchanged. prompting_guidance has no recorded source and stays stale."
 conflicts: []
 unknown_fields:
 - parameters.temperature
@@ -66,3 +85,11 @@ review:
     decision: approved
     disposition: promoted
     rationale: The Anthropic models overview documents direct invocation by model id (2026-09-22).
+  - field_path: freshness
+    decision: approved
+    disposition: promoted
+    rationale: Pricing, lifecycle, availability and capabilities re-verified on 2026-09-24; only those checked_at dates move.
+  - field_path: freshness.prompting_guidance
+    decision: hold
+    disposition: remains_stale
+    rationale: No recorded source supports prompt guidance for this model; nothing to re-verify.

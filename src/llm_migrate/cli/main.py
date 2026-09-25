@@ -38,6 +38,7 @@ from llm_migrate.core.models import (
     RecommendationConstraints,
 )
 from llm_migrate.core.moments import utc_moment
+from llm_migrate.core.refresh import refresh_report_markdown, write_refresh_report
 from llm_migrate.core.registry import RegistryError
 from llm_migrate.core.workspace import GuidanceDisposition
 from llm_migrate.service import MigrationService
@@ -198,6 +199,62 @@ def registry_stale(
         typer.echo("--as-of must use YYYY-MM-DD format.", err=True)
         raise typer.Exit(2) from exc
     _emit(_service(registry).check_registry_freshness(as_of_date))
+
+
+@registry_app.command("refresh-evidence")
+def registry_refresh_evidence(
+    model: Annotated[
+        list[str] | None,
+        typer.Option("--model", help="Canonical model to refresh; repeatable (default: all)."),
+    ] = None,
+    proposals: Annotated[
+        Path, typer.Option(help="Proposal bundle root holding refresh-evidence.yaml baselines.")
+    ] = Path(".registry-proposals"),
+    output: Annotated[
+        Path | None, typer.Option(help="Write the refresh report (YAML + Markdown) here.")
+    ] = None,
+    as_json: Annotated[bool, typer.Option("--json", help="Emit JSON instead of Markdown.")] = False,
+    as_of: Annotated[
+        str | None, typer.Option("--as-of", help="Fixed ISO date for the refresh (default today).")
+    ] = None,
+    timeout: Annotated[float, typer.Option(help="Per-URL fetch timeout in seconds.")] = 5.0,
+    rebaseline: Annotated[
+        bool,
+        typer.Option(
+            "--rebaseline",
+            help="Record changed pages as the new baseline (only after re-verifying them).",
+        ),
+    ] = False,
+    no_record: Annotated[
+        bool, typer.Option("--no-record", help="Do not write baselines; report only.")
+    ] = False,
+    registry: Annotated[Path | None, typer.Option(help="Registry root.")] = None,
+) -> None:
+    """Refetch recorded source URLs and propose freshness updates; never edits the registry."""
+    try:
+        today = date.fromisoformat(as_of) if as_of else None
+    except ValueError as exc:
+        typer.echo("--as-of must use YYYY-MM-DD format.", err=True)
+        raise typer.Exit(2) from exc
+    try:
+        report = _service(registry).refresh_evidence(
+            proposals,
+            models=model or None,
+            timeout=timeout,
+            today=today,
+            rebaseline=rebaseline,
+            record_baselines=not no_record,
+        )
+    except RegistryError as exc:
+        typer.echo(f"Refresh error: {exc}", err=True)
+        raise typer.Exit(2) from exc
+    if output:
+        written = write_refresh_report(report, output)
+        typer.echo(f"Wrote refresh report to {written}", err=True)
+    if as_json:
+        _emit(report)
+    else:
+        typer.echo(refresh_report_markdown(report), nl=False)
 
 
 @registry_app.command("propose-update")

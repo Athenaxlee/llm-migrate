@@ -30,9 +30,9 @@ migration:
     low_confidence_sources: 0
     coverage: resolved
   target_selection_rationale:
-  - The caller selected claude-sonnet-5 on anthropic-api.
-  - Static analysis found no proven blocker for the detected application requirements.
-  - Review 5 unresolved compatibility item(s) before deployment.
+  - 'Requested target: claude-sonnet-5 on anthropic-api.'
+  - The scan found no blocker for what this application uses.
+  - 5 open unknown(s) to settle before deployment.
   model_differences:
     source_model: claude-sonnet-4-5-20250929
     target_model: claude-sonnet-5
@@ -180,8 +180,8 @@ migration:
       target_value: null
       state: unknown
       severity: low
-      migration_impact: One or both values for 'parallel_tool_use' are unknown; compatibility
-        must not be assumed.
+      migration_impact: '''parallel_tool_use'' is unknown on the source or the target;
+        do not assume it is compatible.'
       recommended_action: Verify both source reliance and target support before migration.
       supporting_sources: []
       knowledge_id: null
@@ -299,8 +299,8 @@ migration:
       target_value: supported
       state: unknown
       severity: low
-      migration_impact: One or both values for 'adaptive_thinking' are unknown; compatibility
-        must not be assumed.
+      migration_impact: '''adaptive_thinking'' is unknown on the source or the target;
+        do not assume it is compatible.'
       recommended_action: Map, verify, or remove 'adaptive_thinking' before invoking
         the target.
       supporting_sources: []
@@ -315,8 +315,8 @@ migration:
       target_value: supported
       state: unknown
       severity: low
-      migration_impact: One or both values for 'effort' are unknown; compatibility
-        must not be assumed.
+      migration_impact: '''effort'' is unknown on the source or the target; do not
+        assume it is compatible.'
       recommended_action: Map, verify, or remove 'effort' before invoking the target.
       supporting_sources: []
       knowledge_id: null
@@ -348,8 +348,8 @@ migration:
       target_value: unsupported
       state: unknown
       severity: low
-      migration_impact: One or both values for 'temperature' are unknown; compatibility
-        must not be assumed.
+      migration_impact: '''temperature'' is unknown on the source or the target; do
+        not assume it is compatible.'
       recommended_action: Map, verify, or remove 'temperature' before invoking the
         target.
       supporting_sources: []
@@ -378,8 +378,8 @@ migration:
       target_value: unsupported
       state: unknown
       severity: low
-      migration_impact: One or both values for 'top_k' are unknown; compatibility
-        must not be assumed.
+      migration_impact: '''top_k'' is unknown on the source or the target; do not
+        assume it is compatible.'
       recommended_action: Map, verify, or remove 'top_k' before invoking the target.
       supporting_sources: []
       knowledge_id: null
@@ -393,8 +393,8 @@ migration:
       target_value: unsupported
       state: unknown
       severity: low
-      migration_impact: One or both values for 'top_p' are unknown; compatibility
-        must not be assumed.
+      migration_impact: '''top_p'' is unknown on the source or the target; do not
+        assume it is compatible.'
       recommended_action: Map, verify, or remove 'top_p' before invoking the target.
       supporting_sources: []
       knowledge_id: null
@@ -596,9 +596,8 @@ migration:
       column: 11
       end_line: 9
   - category: configuration
-    description: 'Model difference (high): Selected deployment platforms differ. Action:
-      Confirm endpoint, region, authentication, and platform feature support. (evidence:
-      https://platform.claude.com/docs/en/about-claude/models/overview)'
+    description: '[high] Selected deployment platforms differ. → Confirm endpoint,
+      region, authentication, and platform feature support. (evidence: https://platform.claude.com/docs/en/about-claude/models/overview)'
     files:
     - app.py
     locations:
@@ -607,9 +606,9 @@ migration:
       column: 10
       end_line: 5
   - category: invocation
-    description: 'Model difference (breaking): Assistant message prefilling accepted
-      by Sonnet 4.5 is rejected on Sonnet 5. Action: Use structured outputs, system
-      instructions, or output_config.format. (evidence: https://platform.claude.com/docs/en/about-claude/models/migration-guide)'
+    description: '[breaking] Assistant message prefilling accepted by Sonnet 4.5 is
+      rejected on Sonnet 5. → Use structured outputs, system instructions, or output_config.format.
+      (evidence: https://platform.claude.com/docs/en/about-claude/models/migration-guide)'
     files:
     - app.py
     locations:
@@ -618,9 +617,9 @@ migration:
       column: 11
       end_line: 9
   - category: invocation
-    description: 'Model difference (high): Sonnet 5 uses a new tokenizer; earlier
-      token counts must not be reused. Action: Recount prompts and revise token and
-      cost budgets. (evidence: https://platform.claude.com/docs/en/about-claude/models/whats-new-sonnet-5)'
+    description: '[high] Sonnet 5 uses a new tokenizer; earlier token counts must
+      not be reused. → Recount prompts and revise token and cost budgets. (evidence:
+      https://platform.claude.com/docs/en/about-claude/models/whats-new-sonnet-5)'
     files:
     - app.py
     locations:
@@ -636,17 +635,17 @@ migration:
   - id: model_difference:626670e236
     kind: model_difference
     subject: Target adaptive_thinking (parameters)
-    why_it_matters: The reviewed registry records adaptive_thinking as no recorded
-      value on the source and 'supported' on the target, so compatibility must not
-      be assumed. The target's value applies to every call the application makes.
+    why_it_matters: The registry records adaptive_thinking as no recorded value on
+      the source and 'supported' on the target, so do not assume it behaves the same.
+      The target's value applies to every call the application makes.
     action: record_observation(run_dir="<run_dir>", subject="model_difference:626670e236",
       outcome="<what the target actually did>", evidence="<test output, request id,
       or source URL>")
-    closing_condition: Closed when the target's actual behavior is recorded with record_observation
-      (after the generated contract test, a BYOK evaluation, or a probe), or when
-      reviewed research resolves the registry fact.
-    message: One or both values for 'adaptive_thinking' are unknown; compatibility
-      must not be assumed.
+    closing_condition: Closed when you record what the target actually does (record_observation,
+      from the contract test, a BYOK evaluation, or a probe), or when reviewed research
+      settles the registry fact.
+    message: '''adaptive_thinking'' is unknown on the source or the target; do not
+      assume it is compatible.'
     status: open
     closed_reason: null
     evidence_urls:
@@ -657,17 +656,17 @@ migration:
   - id: model_difference:07bc70b39f
     kind: model_difference
     subject: Target effort (parameters)
-    why_it_matters: The reviewed registry records effort as no recorded value on the
-      source and 'supported' on the target, so compatibility must not be assumed.
-      The target's value applies to every call the application makes.
+    why_it_matters: The registry records effort as no recorded value on the source
+      and 'supported' on the target, so do not assume it behaves the same. The target's
+      value applies to every call the application makes.
     action: record_observation(run_dir="<run_dir>", subject="model_difference:07bc70b39f",
       outcome="<what the target actually did>", evidence="<test output, request id,
       or source URL>")
-    closing_condition: Closed when the target's actual behavior is recorded with record_observation
-      (after the generated contract test, a BYOK evaluation, or a probe), or when
-      reviewed research resolves the registry fact.
-    message: One or both values for 'effort' are unknown; compatibility must not be
-      assumed.
+    closing_condition: Closed when you record what the target actually does (record_observation,
+      from the contract test, a BYOK evaluation, or a probe), or when reviewed research
+      settles the registry fact.
+    message: '''effort'' is unknown on the source or the target; do not assume it
+      is compatible.'
     status: open
     closed_reason: null
     evidence_urls:
@@ -678,17 +677,17 @@ migration:
   - id: model_difference:83c183fc60
     kind: model_difference
     subject: Target parallel_tool_use (parallel_tool_use)
-    why_it_matters: The reviewed registry records parallel_tool_use as no recorded
-      value on the source and no recorded value on the target, so compatibility must
-      not be assumed. The target's value applies to every call the application makes.
+    why_it_matters: The registry records parallel_tool_use as no recorded value on
+      the source and no recorded value on the target, so do not assume it behaves
+      the same. The target's value applies to every call the application makes.
     action: record_observation(run_dir="<run_dir>", subject="model_difference:83c183fc60",
       outcome="<what the target actually did>", evidence="<test output, request id,
       or source URL>")
-    closing_condition: Closed when the target's actual behavior is recorded with record_observation
-      (after the generated contract test, a BYOK evaluation, or a probe), or when
-      reviewed research resolves the registry fact.
-    message: One or both values for 'parallel_tool_use' are unknown; compatibility
-      must not be assumed.
+    closing_condition: Closed when you record what the target actually does (record_observation,
+      from the contract test, a BYOK evaluation, or a probe), or when reviewed research
+      settles the registry fact.
+    message: '''parallel_tool_use'' is unknown on the source or the target; do not
+      assume it is compatible.'
     status: closed_by_scan
     closed_reason: the scan shows the application does not use parallel_tool_use
     evidence_urls:
@@ -699,17 +698,17 @@ migration:
   - id: model_difference:2fac098e05
     kind: model_difference
     subject: Target temperature (parameters)
-    why_it_matters: The reviewed registry records temperature as no recorded value
-      on the source and 'unsupported' on the target, so compatibility must not be
-      assumed. The target's value applies to every call the application makes.
+    why_it_matters: The registry records temperature as no recorded value on the source
+      and 'unsupported' on the target, so do not assume it behaves the same. The target's
+      value applies to every call the application makes.
     action: record_observation(run_dir="<run_dir>", subject="model_difference:2fac098e05",
       outcome="<what the target actually did>", evidence="<test output, request id,
       or source URL>")
-    closing_condition: Closed when the target's actual behavior is recorded with record_observation
-      (after the generated contract test, a BYOK evaluation, or a probe), or when
-      reviewed research resolves the registry fact.
-    message: One or both values for 'temperature' are unknown; compatibility must
-      not be assumed.
+    closing_condition: Closed when you record what the target actually does (record_observation,
+      from the contract test, a BYOK evaluation, or a probe), or when reviewed research
+      settles the registry fact.
+    message: '''temperature'' is unknown on the source or the target; do not assume
+      it is compatible.'
     status: open
     closed_reason: null
     evidence_urls:
@@ -720,17 +719,17 @@ migration:
   - id: model_difference:9978572c46
     kind: model_difference
     subject: Target top_k (parameters)
-    why_it_matters: The reviewed registry records top_k as no recorded value on the
-      source and 'unsupported' on the target, so compatibility must not be assumed.
-      The target's value applies to every call the application makes.
+    why_it_matters: The registry records top_k as no recorded value on the source
+      and 'unsupported' on the target, so do not assume it behaves the same. The target's
+      value applies to every call the application makes.
     action: record_observation(run_dir="<run_dir>", subject="model_difference:9978572c46",
       outcome="<what the target actually did>", evidence="<test output, request id,
       or source URL>")
-    closing_condition: Closed when the target's actual behavior is recorded with record_observation
-      (after the generated contract test, a BYOK evaluation, or a probe), or when
-      reviewed research resolves the registry fact.
-    message: One or both values for 'top_k' are unknown; compatibility must not be
-      assumed.
+    closing_condition: Closed when you record what the target actually does (record_observation,
+      from the contract test, a BYOK evaluation, or a probe), or when reviewed research
+      settles the registry fact.
+    message: '''top_k'' is unknown on the source or the target; do not assume it is
+      compatible.'
     status: open
     closed_reason: null
     evidence_urls:
@@ -741,17 +740,17 @@ migration:
   - id: model_difference:8cfafca0d8
     kind: model_difference
     subject: Target top_p (parameters)
-    why_it_matters: The reviewed registry records top_p as no recorded value on the
-      source and 'unsupported' on the target, so compatibility must not be assumed.
-      The target's value applies to every call the application makes.
+    why_it_matters: The registry records top_p as no recorded value on the source
+      and 'unsupported' on the target, so do not assume it behaves the same. The target's
+      value applies to every call the application makes.
     action: record_observation(run_dir="<run_dir>", subject="model_difference:8cfafca0d8",
       outcome="<what the target actually did>", evidence="<test output, request id,
       or source URL>")
-    closing_condition: Closed when the target's actual behavior is recorded with record_observation
-      (after the generated contract test, a BYOK evaluation, or a probe), or when
-      reviewed research resolves the registry fact.
-    message: One or both values for 'top_p' are unknown; compatibility must not be
-      assumed.
+    closing_condition: Closed when you record what the target actually does (record_observation,
+      from the contract test, a BYOK evaluation, or a probe), or when reviewed research
+      settles the registry fact.
+    message: '''top_p'' is unknown on the source or the target; do not assume it is
+      compatible.'
     status: open
     closed_reason: null
     evidence_urls:

@@ -102,7 +102,7 @@ def test_prompt_tasks_carry_structure_and_evidence_guidance(
     knowledge_lines = [
         item.text
         for item in tasks.shared_prompt_guidance
-        if item.text.startswith("Model difference (")
+        if item.text.startswith("[") and "] " in item.text
     ]
     assert knowledge_lines, "migration-knowledge differences must reach the prompt tasks"
     assert any("(evidence: https://" in line for line in knowledge_lines)
