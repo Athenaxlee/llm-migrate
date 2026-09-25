@@ -106,7 +106,12 @@ For the recommended guided workflow:
 - Python 3.11 or newer
 - Git
 - a local Python application repository
-- an MCP-capable coding agent with a generative model
+- an MCP-capable coding agent with a generative model — use the most capable
+  reasoning model your host offers, with extended thinking enabled (for
+  example an Opus- or Fable-class Claude model, or a GPT-5-class model at high
+  reasoning effort). The agent researches, adapts prompts and files with
+  evidence-linked annotations, and relays review decisions; small or fast
+  tiers produce more rejected submissions and retries
 - web/search access in that agent host (for research on demand)
 - a separate agent or fresh isolated context for evidence review
 - the source and target model identifiers as you know them — vague spellings
@@ -251,7 +256,10 @@ after registration.
 
 The agent host must provide its own generative model and web/search capability.
 The `llm-migrate` MCP server does not contain an embedded model or general web
-search tool.
+search tool, and it never calls an LLM API itself: research, prompt adaptation,
+and review are done by your coding agent with its own model. Pick that model
+accordingly (see Prerequisites): the guided workflow is demanding, and a
+stronger reasoning model with extended thinking finishes it in fewer turns.
 
 Hosts with tight inline-tool budgets can set the environment variable
 `LLM_MIGRATE_TOOLSET=guided` on the server process to expose only the 23

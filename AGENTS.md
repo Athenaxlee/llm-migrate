@@ -24,6 +24,12 @@ For model facts, evidence, or registry changes, also read
 - Keep migration changes reviewable; never silently rewrite application code.
 - Do not require hosted infrastructure or project-owned credentials for core
   workflows.
+- The toolkit itself never calls an LLM API to research, adapt, or review. The
+  coding-agent host (Claude Code, GitHub Copilot, Codex, ...) does that work
+  with its own model; the toolkit generates prompts, validates artifacts, and
+  records results. Never propose or add toolkit-side model calls for these
+  steps. (BYOK evaluation runs of the user's own application are the one
+  deliberate exception and stay opt-in.)
 - Preserve provenance for every migration-critical model fact.
 
 ## Registry trust boundary

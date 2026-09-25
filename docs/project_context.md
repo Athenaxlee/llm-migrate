@@ -278,7 +278,11 @@ source and target model/platform pair in a user-requested migration. The local
 application scan determines which facts matter, so agents receive normalized
 requirements and identifiers rather than the full repository whenever
 possible. The user's agent host supplies inference/search capability and pays
-its own token or tool costs.
+its own token or tool costs. This is a hard project constraint, not a
+convenience: the toolkit never calls an LLM API to research, adapt, or review.
+The host agent does that work with its own model, and the workflow benefits
+from the most capable reasoning model the host offers, with extended thinking
+enabled; small or fast tiers produce more rejected submissions and retries.
 
 ### Proposal layer
 

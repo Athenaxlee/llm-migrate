@@ -103,6 +103,12 @@ exposes only its tools):
 
 Never edit the user's application directly; everything is a reviewable
 deliverable in the run's output/ directory.
+
+This toolkit never calls a model itself: you do the research, adaptation, and
+review with your own model. The work is demanding (evidence-linked
+annotations, verbatim review, research orchestration); if the host lets the
+user choose the model, recommend its most capable reasoning model with
+extended thinking rather than a small or fast tier.
 """
 
 mcp = FastMCP("llm-migrate", instructions=_WORKFLOW_INSTRUCTIONS)

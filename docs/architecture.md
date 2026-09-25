@@ -618,6 +618,10 @@ Do not:
 - crawl providers continuously
 - mutate registry files automatically from search results
 - let a single LLM response become canonical truth
+- call an LLM API from the toolkit to research, adapt, or review — the host
+  agent does that work with its own model; the toolkit only generates
+  prompts, validates artifacts, and records results (BYOK evaluation of the
+  user's own application is the one deliberate, opt-in exception)
 - overwrite verified facts without a reviewable diff
 - mix research observations directly into runtime registry facts
 - let agent consensus promote session knowledge into the shared canonical

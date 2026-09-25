@@ -3,6 +3,13 @@
 All notable changes are documented here. The project follows semantic
 versioning.
 
+## Unreleased
+
+- Documentation: the toolkit never calls an LLM API to research, adapt, or
+  review — the coding-agent host does that work with its own model. README
+  and the MCP playbook recommend the host's most capable reasoning model with
+  extended thinking for the guided workflow.
+
 ## 1.6.1 — 2026-09-24
 
 Run economics, evidence refresh, and plain-language output, driven by a
