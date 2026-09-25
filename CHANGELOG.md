@@ -3,6 +3,72 @@
 All notable changes are documented here. The project follows semantic
 versioning.
 
+## 1.6.1 — 2026-09-24
+
+Run economics, evidence refresh, and plain-language output, driven by a
+v1.6.0 guided run that was slow and token-hungry: every Anthropic profile's
+freshness had lapsed, so every run recommended research on every topic for
+both models, and the host stopped to ask, then drove four web-researching
+agents one at a time through a visible browser. No contract shape changes;
+ids are stable.
+
+### Hands-free default research
+
+- Research stays `recommended` whenever knowledge is missing or past its
+  freshness window, and now runs by default: `start_migration.next_steps`,
+  the `research_pending` status action, the server playbook, and the
+  generated researcher/reviewer prompts tell the host to run the stages with
+  separate non-interactive background agents (web search and page-fetch
+  tools, never a visible browser), scopes in parallel, asking the user first
+  only if they asked to be consulted. The README starting instruction no
+  longer says "ask me before running research".
+- Freshness reasons name the stale topics and their last-checked date.
+
+### Per-call economics
+
+- The application walk prunes ignored directories (`.venv`, `node_modules`,
+  the `.llm-migrate` workspace, ...) instead of listing everything beneath
+  them; snapshot-key file digests are cached by size, mtime, and ctime; the
+  MCP process keeps one service per registry content digest, and the digest
+  is computed once per service. Steady-state guided calls dropped from
+  0.7–2.3 s to about 36 ms on an 18k-file repository with a virtual
+  environment inside it.
+
+### Maintainer evidence refresh
+
+- `llm-migrate registry refresh-evidence [--model …] [--rebaseline]
+  [--no-record] [--output DIR]` refetches only the source URLs already
+  recorded in canonical profiles, hashes each page's visible text against
+  the baseline in `.registry-proposals/<bundle>/refresh-evidence.yaml`, and
+  reports: unchanged pages that still name the model propose moving
+  `checked_at` for the categories they support; a page silent on the model
+  vouches for nothing (`no_mention`); changed pages are held until
+  re-verified (`--rebaseline`); a URL without a baseline gets one recorded
+  and proposes nothing; a category the bundle's review put on hold stays
+  held with its rationale. Fetch failures, including truncated responses, are
+  recorded per URL. Registry files are never written.
+
+### Registry
+
+- `claude-sonnet-5` (all five categories), `claude-sonnet-4-6` (pricing,
+  lifecycle, availability), and `claude-sonnet-4-5-20250929` (pricing,
+  lifecycle, availability, capabilities) re-verified on 2026-09-24 against
+  the refetched official pages and promoted through their bundles. Legacy
+  pricing is now sourced from the pricing page (the models overview lists
+  only current models). Held: Sonnet 4.6 capabilities (the AWS model card
+  states a 64K maximum output against the recorded 128K) and prompt
+  guidance (the migration-guide URL now serves an index page).
+
+### Plain-language output
+
+- Blocker questions ("What do you want to do: … (retarget); … (redesign);
+  … (accept)?"), option summaries and consequences, unknown statements,
+  the report's "Action required" list, status warnings, and difference
+  guidance (`[high] impact → action (evidence: url)`) were rewritten to be
+  short and direct. The report shows the run directory once and `<run_dir>`
+  in every action, and empty change sections collapse into one "Not
+  affected" line.
+
 ## 1.6.0 — 2026-09-23
 
 Discovery that survives real repositories, and directions instead of dead
