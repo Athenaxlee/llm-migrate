@@ -147,11 +147,17 @@ _TOOLSET = os.environ.get("LLM_MIGRATE_TOOLSET", "full").strip().casefold() or "
 
 
 def _tool(fn: Callable[..., Any]) -> Any:
-    """Register one MCP tool, honoring the LLM_MIGRATE_TOOLSET selection.
+    """Put a function on the agent's tool menu, unless the toolset hides it.
 
-    With `LLM_MIGRATE_TOOLSET=guided` only the guided-workflow tools are
-    exposed over MCP; any other value (default `full`) exposes everything.
-    The Python function stays importable and callable either way.
+    `@mcp.tool()` adds a function to the menu the agent sees; every item on
+    that menu costs tokens on every turn (47 tools ≈ 8k tokens), and some
+    hosts cap the count. `LLM_MIGRATE_TOOLSET=guided` shows only the 23
+    tools the guided workflow needs (≈ 5k tokens). This wrapper asks that
+    one question in one place instead of at 47 call sites.
+
+    A hidden function is not removed: it stays ordinary Python, so the CLI,
+    the tests, and the full toolset keep calling it unchanged. Hidden means
+    "not on the menu right now", nothing more.
     """
     if _TOOLSET == "guided" and fn.__name__ not in _GUIDED_TOOL_NAMES:
         return fn
