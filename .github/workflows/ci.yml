@@ -57,8 +57,8 @@ jobs:
     steps:
       - name: Keep fixture line endings byte-identical to the goldens
         run: git config --global core.autocrlf false
-      - uses: actions/checkout@v5
-      - uses: actions/setup-python@v6
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.11"
           cache: pip
